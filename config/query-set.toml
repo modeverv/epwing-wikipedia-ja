@@ -1,0 +1,49 @@
+schema_version = 1
+identifier = "boookends-2023-baseline-v1"
+search_modes = ["word", "endword"]
+max_results_per_query = 100
+
+[[queries]]
+key = "emacs"
+text = "Emacs"
+expected_presence = true
+
+[[queries]]
+key = "linux"
+text = "Linux"
+expected_presence = true
+
+[[queries]]
+key = "japan"
+text = "日本"
+expected_presence = true
+
+[[queries]]
+key = "tokyo"
+text = "東京都"
+expected_presence = true
+
+[[queries]]
+key = "genji"
+text = "源氏物語"
+expected_presence = true
+
+[[queries]]
+key = "calculus"
+text = "微分積分学"
+expected_presence = true
+
+[[queries]]
+key = "quantum_mechanics"
+text = "量子力学"
+expected_presence = true
+
+[[queries]]
+key = "world_war_ii"
+text = "第二次世界大戦"
+expected_presence = true
+
+[[queries]]
+key = "missing_term"
+text = "存在しない語"
+expected_presence = false

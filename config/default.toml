@@ -1,0 +1,137 @@
+schema_version = 1
+project = "jawiki"
+profile = "lite"
+
+[paths]
+sources = "/data/sources"
+reference = "/data/reference"
+work = "/data/work"
+cache = "/data/cache"
+output = "/data/output"
+reports = "/data/reports"
+logs = "/data/logs"
+
+[source]
+provider = "enterprise"
+namespace = 0
+snapshot = "latest"
+allow_xml_fallback = true
+verify_sha256 = true
+
+[source.enterprise]
+api_base = "https://api.enterprise.wikimedia.com/v2"
+auth_base = "https://auth.enterprise.wikimedia.com/v1"
+request_timeout_seconds = 60
+download_timeout_seconds = 300
+max_retries = 5
+
+[source.xml]
+base_url = "https://dumps.wikimedia.org/jawiki/latest/"
+include_redirect_sql = true
+include_page_sql = false
+
+[ingest]
+batch_size = 500
+max_title_bytes = 4096
+max_url_bytes = 16384
+max_html_bytes = 67108864
+max_wikitext_bytes = 67108864
+zstd_level = 6
+strict_required_fields = true
+
+[normalize]
+workers = 8
+queue_depth = 64
+html_recover = true
+preserve_unknown_text = true
+max_dom_depth = 512
+remove_edit_ui = true
+remove_navboxes = true
+remove_authority_control = true
+
+[text]
+internal_unicode_normalization = "NFC"
+index_unicode_normalization = "NFKC"
+normalize_index_spaces = true
+casefold_ascii = true
+generate_hiragana_variant = true
+generate_katakana_variant = true
+remove_index_punctuation = false
+
+[tables]
+enabled = true
+simple_max_columns = 5
+simple_max_rows = 100
+wide_max_columns = 20
+max_rows = 2000
+max_cells = 20000
+oversized_action = "split"
+
+[infobox]
+enabled = true
+max_fields = 60
+remove_empty_fields = true
+
+[references]
+enabled = true
+max_references = 2000
+external_urls = "plain-text"
+
+[images]
+enabled = true
+max_per_article = 3
+preferred_width = 320
+max_download_bytes = 10485760
+max_pixels = 40000000
+allowed_hosts = ["upload.wikimedia.org"]
+allow_svg = true
+allow_animated = false
+missing_license_action = "warn"
+
+[math]
+enabled = true
+render_graphics = true
+max_source_bytes = 65536
+render_timeout_seconds = 10
+
+[gaiji]
+enabled = true
+font_family = "Noto Sans CJK JP"
+font_package_id = "debian-fonts-noto-cjk"
+fallback_format = "[U+{codepoint}]"
+
+[search]
+include_titles = true
+include_redirects = true
+include_aliases = true
+include_categories = false
+include_heading_keywords = false
+include_infobox_keywords = false
+max_terms_per_article = 64
+max_key_bytes = 255
+
+[epwing]
+backend = "freepwing"
+book_title = "Wikipedia Japanese 2026"
+subbook_name = "WIKIJA26"
+ebzip_level = 5
+entry_budget_bytes = 1048576
+archive_timestamp = "2000-01-01T00:00:00Z"
+
+[resources]
+worker_count = 8
+image_worker_count = 4
+math_worker_count = 2
+sqlite_cache_mib = 4096
+minimum_free_disk_gib = 200
+
+[verification]
+random_sample_size = 500
+fixed_seed = 20260713
+fail_on_fatal = true
+max_article_error_rate = 0.001
+
+[distribution]
+mode = "personal"
+include_attribution_appendix = true
+exclude_images_without_license = false

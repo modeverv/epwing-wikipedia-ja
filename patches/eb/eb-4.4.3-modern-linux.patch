@@ -1,0 +1,63 @@
+--- a/config.guess
++++ b/config.guess
+@@ -835,6 +835,10 @@ case "${UNAME_MACHINE}:${UNAME_SYSTEM}:${UNAME_RELEASE}:${UNAME_VERSION}" in
+     i*86:Minix:*:*)
+ 	echo ${UNAME_MACHINE}-pc-minix
+ 	exit ;;
++    aarch64:Linux:*:*)
++	echo aarch64-unknown-linux-gnu
++	exit ;;
++
+     arm*:Linux:*:*)
+ 	eval $set_cc_for_build
+ 	if echo __ARM_EABI__ | $CC_FOR_BUILD -E - 2>/dev/null \
+--- a/config.sub
++++ b/config.sub
+@@ -241,7 +241,7 @@ case $basic_machine in
+ 	| alpha64 | alpha64ev[4-8] | alpha64ev56 | alpha64ev6[78] | alpha64pca5[67] \
+ 	| am33_2.0 \
+ 	| arc | arm | arm[bl]e | arme[lb] | armv[2345] | armv[345][lb] | avr | avr32 \
+-	| bfin \
++	| aarch64 | bfin \
+ 	| c4x | clipper \
+ 	| d10v | d30v | dlx | dsp16xx \
+ 	| fido | fr30 | frv \
+--- a/eb/booklist.c
++++ b/eb/booklist.c
+@@ -113,7 +113,7 @@ eb_bind_booklist(EB_BookList *booklist, const char *path)
+ #ifndef ENABLE_EBNET
+     error_code = EB_ERR_EBNET_UNSUPPORTED;
+     goto failed;
+-#endif
++#else
+     if (!is_ebnet_url(path)) {
+ 	error_code = EB_ERR_BAD_FILE_NAME;
+ 	goto failed;
+@@ -133,6 +133,7 @@ eb_bind_booklist(EB_BookList *booklist, const char *path)
+ 	eb_error_string(EB_SUCCESS)));
+     eb_unlock(&booklist->lock);
+     return EB_SUCCESS;
++#endif
+ 
+     /*
+      * An error occurs...
+--- a/libebutils/puts_eucjp.c
++++ b/libebutils/puts_eucjp.c
+@@ -57,7 +57,7 @@ fputs_eucjp_to_locale(const char *string, FILE *stream)
+     char *buffer = NULL;
+     size_t buffer_size;
+     iconv_t cd = (iconv_t)-1;
+-    const char *in_p;
++    char *in_p;
+     char *out_p;
+     size_t in_left;
+     size_t out_left;
+@@ -89,7 +89,7 @@ fputs_eucjp_to_locale(const char *string, FILE *stream)
+ 	if (buffer == NULL)
+ 	    goto failed;
+ 
+-	in_p = string;
++	in_p = (char *)string;
+ 	in_left = string_length + 1;
+ 	out_p = buffer;
+ 	out_left = buffer_size;

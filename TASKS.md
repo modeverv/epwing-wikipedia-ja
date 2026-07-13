@@ -12,7 +12,7 @@
 
 ## EPIC A — Repository foundation
 
-### TASK-A001 [ ] Python package skeleton
+### TASK-A001 [x] Python package skeleton
 
 **依存:** なし
 
@@ -29,7 +29,7 @@
 
 **完了:** `uv run wikiepwing --help`成功。
 
-### TASK-A002 [ ] Quality tools
+### TASK-A002 [x] Quality tools
 
 **依存:** A001
 
@@ -39,7 +39,7 @@
 
 **完了:** 空に近いprojectで`make check`成功。
 
-### TASK-A003 [ ] Configuration loader
+### TASK-A003 [x] Configuration loader
 
 **依存:** A001
 
@@ -49,7 +49,7 @@
 
 **テスト:** valid/invalid/unknown key。
 
-### TASK-A004 [ ] Structured logging
+### TASK-A004 [x] Structured logging
 
 **依存:** A001
 
@@ -57,7 +57,7 @@
 
 **テスト:** token文字列が出力されない。
 
-### TASK-A005 [ ] Docker app image
+### TASK-A005 [x] Docker app image
 
 **依存:** A001-A004
 
@@ -65,7 +65,7 @@
 
 **テスト:** container UID非0。
 
-### TASK-A006 [ ] Compose and volumes
+### TASK-A006 [x] Compose and volumes
 
 **依存:** A005
 
@@ -73,7 +73,7 @@
 
 **完了:** `docker compose run --rm app wikiepwing --version`。
 
-### TASK-A007 [ ] Doctor command
+### TASK-A007 [x] Doctor command
 
 **依存:** A003-A006
 
@@ -85,61 +85,61 @@
 
 ## EPIC B — Legacy toolchain
 
-### TASK-B001 [ ] Pin EB source
+### TASK-B001 [x] Pin EB source
 
 **依存:** A006
 
 **実装:** URL、SHA-256、download script、checksum failure test。
 
-### TASK-B002 [ ] Build EB Library
+### TASK-B002 [x] Build EB Library
 
 **依存:** B001
 
 **実装:** multi-stage toolchain image、version command。
 
-### TASK-B003 [ ] Pin FreePWING source
+### TASK-B003 [x] Pin FreePWING source
 
 **依存:** B002
 
 **実装:** URL、SHA-256、patch directory。
 
-### TASK-B004 [ ] Build FreePWING
+### TASK-B004 [x] Build FreePWING
 
 **依存:** B003
 
 **実装:** reproducible build、required Perl/runtime deps。
 
-### TASK-B005 [ ] Verify ebzip
+### TASK-B005 [x] Verify ebzip
 
 **依存:** B002
 
 **実装:** command path/version、roundtrip fixture。
 
-### TASK-B006 [ ] Handcrafted three-entry source
+### TASK-B006 [x] Handcrafted three-entry source
 
 **依存:** B004
 
 **実装:** Emacs/Linux/Wikipedia、links、aliases、日本語。
 
-### TASK-B007 [ ] Graphic sample
+### TASK-B007 [x] Graphic sample
 
 **依存:** B006
 
 **実装:** generated small bitmap only。
 
-### TASK-B008 [ ] Gaiji sample
+### TASK-B008 [x] Gaiji sample
 
 **依存:** B006
 
 **実装:** narrow/wide sample、no silent fallback。
 
-### TASK-B009 [ ] Toolchain probe command
+### TASK-B009 [x] Toolchain probe command
 
 **依存:** B005-B008
 
 **出力:** `toolchain-capabilities.json`。
 
-### TASK-B010 [ ] Toolchain smoke package
+### TASK-B010 [x] Toolchain smoke package
 
 **依存:** B009
 
@@ -149,43 +149,43 @@
 
 ## EPIC C — Reference inspection
 
-### TASK-C001 [ ] Reference path validation
+### TASK-C001 [x] Reference path validation
 
 **依存:** A007
 
 **実装:** read-only expectation、CATALOGS discovery、no writes。
 
-### TASK-C002 [ ] Reference inventory
+### TASK-C002 [x] Reference inventory
 
 **依存:** C001, B002
 
 **実装:** file tree、sizes、subbook candidates。
 
-### TASK-C003 [ ] Reference DB schema
+### TASK-C003 [x] Reference DB schema
 
 **依存:** C001
 
 **実装:** explicit SQL migrations。
 
-### TASK-C004 [ ] Fixed query definition
+### TASK-C004 [x] Fixed query definition
 
 **依存:** C003
 
 **実装:** config/query-set.toml。
 
-### TASK-C005 [ ] Execute reference searches
+### TASK-C005 [x] Execute reference searches
 
 **依存:** C002-C004
 
 **実装:** EB utility adapter、timeout、result persistence。
 
-### TASK-C006 [ ] Reference entry sampling
+### TASK-C006 [x] Reference entry sampling
 
 **依存:** C005
 
 **実装:** extract available text/metadata; unsupported is manual item。
 
-### TASK-C007 [ ] Reference report
+### TASK-C007 [x] Reference report
 
 **依存:** C006
 

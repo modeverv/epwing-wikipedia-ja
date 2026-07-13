@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wikiepwing.invalid/schemas/doctor-report.schema.json",
+  "title": "wikiepwing doctor report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "ok", "checks"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "category", "status", "required", "detail", "data"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "enum": ["environment", "configuration", "path", "storage", "tool"]
+          },
+          "status": {
+            "enum": ["pass", "warning", "fail"]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

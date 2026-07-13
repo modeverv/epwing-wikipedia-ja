@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27.0,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wikiepwing"
+version = "0.1.0"
+description = "Reproducible Japanese Wikipedia to EPWING builder"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "Wikipedia EPWING Builder contributors" }]
+dependencies = []
+
+[project.scripts]
+wikiepwing = "wikiepwing.cli:main"
+
+[dependency-groups]
+dev = [
+    "jsonschema==4.25.1",
+    "mypy==1.16.0",
+    "pytest==8.4.0",
+    "ruff==0.11.13",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wikiepwing"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "-p", "no:cacheprovider"]
+markers = [
+    "manual: requires explicit manual execution",
+    "network: requires network access",
+    "slow: takes substantially longer than the default suite",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["v1"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]

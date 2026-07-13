@@ -3,7 +3,12 @@
 .mypy_cache
 .pytest_cache
 .ruff_cache
-__pycache__
+**/.DS_Store
+**/__pycache__
+*.egg-info
+data
+dist
 output
 reports
-data
+v1
+work

@@ -208,11 +208,11 @@ output/toolchain-smoke.epwing.zip
 
 ### 出口条件
 
-- [ ] clean Docker buildでtoolchain生成
-- [ ] 3記事を機械検索できる
-- [ ] internal link検査成功
-- [ ] image/gaiji検査成功または明示的な制約判明
-- [ ] ebzip後も読める
+- [x] clean Docker buildでtoolchain生成
+- [x] 3記事を機械検索できる
+- [x] internal link検査成功
+- [x] image/gaiji検査成功または明示的な制約判明
+- [x] ebzip後も読める
 - [ ] capability JSON固定
 
 ### Stop rule
@@ -266,10 +266,10 @@ Linux
 
 ### 出口条件
 
-- [ ] 参照辞書を変更しない
-- [ ] reference report生成
-- [ ] 自動取得不能項目がmanual checklistに分離
-- [ ] query結果を再実行して同じDBが得られる
+- [x] 参照辞書を変更しない
+- [x] reference report生成
+- [x] 自動取得不能項目がmanual checklistに分離
+- [x] query結果を再実行して同じDBが得られる
 
 ---
 
