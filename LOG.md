@@ -1226,3 +1226,19 @@ git diff --check
 **次タスク**
 
 - TASK-D003 Snapshot metadata client
+
+### 2026-07-14 00:30 UTC — セッション一時停止
+
+**目的**
+
+- TASK-D003(Snapshot metadata client)へ進む前に、実運用に必要な前提を確認する。
+
+**発見事項・判断**
+
+- ユーザーへ、Wikimedia Enterprise Snapshotの実取得にはWikimedia Enterpriseの実アカウント(`https://enterprise.wikimedia.com/`)登録とcredentials発行が必要であることを説明した。
+- ユーザーはアカウント作成を先に行うことを選択し、TASK-D003以降の実装はアカウント作成後まで保留すると回答した。
+- コード側(TASK-D001/D002)は実アカウントなしでオフラインテスト可能な形で完成しており、変更は不要。
+
+**次タスク**
+
+- ユーザーがWikimedia Enterpriseアカウントとcredentialsを用意した後、TASK-D003 Snapshot metadata clientを再開する。
