@@ -195,7 +195,7 @@
 
 ## EPIC D — Source acquisition
 
-### TASK-D001 [ ] Secret model and env example
+### TASK-D001 [x] Secret model and env example
 
 **依存:** A003-A004
 

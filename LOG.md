@@ -1133,3 +1133,59 @@ git diff --check
 **次タスク**
 
 - 人間によるreference manual checklistレビュー後、TASK-D001 Secret model and env example
+
+### 2026-07-14 00:00 UTC — セッション開始点検
+
+**目的**
+
+- 継続作業の開始前に、直前セッションの成果物と未コミット状態を確認する。
+
+**発見事項**
+
+- TASK-A001〜C007の実装一式(`src/`, `tests/`, `migrations/`, `schemas/`, `config/`, `docker/`, `pyproject.toml`, `uv.lock`, `Makefile`, `compose*.yaml`等)がgitに一切コミットされていなかった。
+- `reports/reference-manual-checklist.md`は生成済みだが、viewerによる目視確認欄は未記入だった。
+
+**判断**
+
+- ユーザーに確認し、(1) manual checklistレビュー未完のままTASK-D001へ進める、(2) 未コミットの実装一式を現状のまま1コミットにまとめる、の2点で承認を得た。
+- 未コミット分を`740e627`としてコミットした。
+
+**次タスク**
+
+- TASK-D001 Secret model and env example
+
+### 2026-07-14 00:10 UTC — TASK-D001
+
+**目的**
+
+- Wikimedia Enterprise認証情報の環境変数名・読取・検証を1箇所へ固定し、`.env.example`で必要な環境変数名を明示する。
+
+**変更**
+
+- `src/wikiepwing/secrets.py`に`WME_USERNAME`/`WME_PASSWORD`/`WME_ACCESS_TOKEN`/`WME_REFRESH_TOKEN`の名前定数、`EnterpriseSecrets`データクラス、`load_enterprise_secrets`、`redaction_values()`を実装した。
+- 空文字は未設定として扱い、前後空白・空白のみ・制御文字(`\n`/`\r`/`\t`)を含む値は`SecretError`で拒否した。
+- `WME_USERNAME`と`WME_PASSWORD`は対でのみ許可し、片方だけの設定を拒否した。値は環境変数からのみ読み、どこにも永続化しない。
+- `.env.example`に4変数の名前と設定方法のコメントのみを記載し、実値は含めていない。
+- `.gitignore`へ`.env`を追加した。
+- `tests/test_secrets.py`に11件のオフラインテストを追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_secrets.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート113件(新規11件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- access/refresh/login優先順位に基づく実HTTP認証処理はTASK-D002で扱う。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D002 Enterprise auth client
