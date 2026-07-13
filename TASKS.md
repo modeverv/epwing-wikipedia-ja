@@ -207,7 +207,7 @@
 
 **実装:** access/refresh/login priority、timeouts、no persistence。
 
-### TASK-D003 [ ] Snapshot metadata client
+### TASK-D003 [x] Snapshot metadata client
 
 **依存:** D002
 

@@ -1242,3 +1242,39 @@ git diff --check
 **次タスク**
 
 - ユーザーがWikimedia Enterpriseアカウントとcredentialsを用意した後、TASK-D003 Snapshot metadata clientを再開する。
+
+### 2026-07-14 01:00 UTC — TASK-D003
+
+**目的**
+
+- Snapshot metadataクライアントを実装する。project/namespaceでSnapshotを絞り込み、`latest`のような曖昧な文字列を残さず1つの具体的versionへ解決する。
+
+**変更**
+
+- `src/wikiepwing/source/enterprise.py`に`SnapshotMetadataClient`、`SnapshotMetadataTransport` Protocol、`HttpSnapshotMetadataTransport`、`SnapshotCandidate`/`ResolvedSnapshot`を追加した。
+- project/namespace不一致は明確な`SnapshotMetadataError`とし、該当Snapshotが1件も無い場合にMini/Liteを自動で品質低下させない方針(`ARCHITECTURE.md` 9.1)を守った。
+- `latest`は列挙結果から`(date_modified, version_identifier)`最大のものへ解決し、戻り値へ`"latest"`という文字列を残さない。サーバ応答が`version: "latest"`を返す異常系も拒否した。
+- メタデータ応答は4 MiB上限で読み、不正JSON・非配列・空配列・必須フィールド欠落・timezone欠落を拒否し、生レスポンスのSHA-256を`metadata_response_sha256`として返した(`DATA_CONTRACTS.md`のsource lock契約と整合)。
+- `HttpSnapshotMetadataTransport`はhttps以外のbase URLと空`access_token`を拒否し、401/403/5xx/timeoutを即座に失敗させた。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_enterprise_metadata.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート153件(新規23件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- Snapshot一覧APIの実endpoint(`GET {api_base}/snapshots`)とレスポンス形状は、`ARCHITECTURE.md`のnestedオブジェクト形式(`namespace.identifier`等)からの類推であり、一次資料の確認記録が`SOURCES.md`にない。
+- ユーザーはWikimedia Enterpriseアカウントを作成しusername/passwordを`.env`へ設定済みだが、本タスクはモック/テストダブルのみで実装し、実API呼び出しの疎通確認はまだ行っていない。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D004 Source lock schema、または実アカウントでの疎通確認(D002/D003)
