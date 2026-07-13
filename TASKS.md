@@ -201,7 +201,7 @@
 
 **実装:** environment names、redaction、validation。
 
-### TASK-D002 [ ] Enterprise auth client
+### TASK-D002 [x] Enterprise auth client
 
 **依存:** D001
 

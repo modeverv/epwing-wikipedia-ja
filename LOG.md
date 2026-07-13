@@ -1189,3 +1189,40 @@ git diff --check
 **次タスク**
 
 - TASK-D002 Enterprise auth client
+
+### 2026-07-14 00:20 UTC — TASK-D002
+
+**目的**
+
+- Wikimedia Enterprise認証クライアントを実装し、access token優先→refresh token→username/passwordの固定優先順位で1つのaccess tokenを解決する。timeoutを強制し、tokenをどこにも永続化しない。
+
+**変更**
+
+- `src/wikiepwing/source/auth.py`に`EnterpriseAuthClient`(優先順位解決)、`AuthTransport` Protocol、`HttpAuthTransport`(bounded urllib実装)、`ResolvedAccessToken`を追加した。
+- access tokenが存在する場合はtransportを一切呼ばない。refresh tokenをlogin(username/password)より優先する。
+- HTTPレスポンスは64 KiB上限で読み、上限超過・不正JSON・`access_token`欠落・空文字tokenを`AuthError`として拒否した。
+- 401/403、5xx、timeout、URLErrorはリトライせず即座に`AuthError`として失敗させた。
+- `HttpAuthTransport`はhttps以外のbase URLを拒否し、非正のtimeoutは両クラスで拒否した。
+- モジュールはファイルシステムへ一切触れず、tokenは戻り値のdataclassとしてのみ保持する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_auth.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート130件(新規17件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実際のWikimedia Enterprise auth APIのendpoint path(`/login`、`/token-refresh`)は一次資料未確認の仮定であり、`SOURCES.md`に確認記録がない。実クレデンシャルでの疎通確認は今後の作業または人間による実施が必要。
+- 5xx/timeoutのbounded retryはこのクライアントの責務外とし、将来のacquireコマンド(TASK-D007)に委ねた。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D003 Snapshot metadata client
