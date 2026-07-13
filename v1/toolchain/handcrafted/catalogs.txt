@@ -1,0 +1,9 @@
+[Catalog]
+FileName = catalogs
+Type = EPWING1
+Books = 1
+
+[Book]
+Title = "手作り辞書"
+BookType = 6001
+Directory = "WIKIEP"

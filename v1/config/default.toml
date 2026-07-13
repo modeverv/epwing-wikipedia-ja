@@ -1,0 +1,12 @@
+[build]
+schema_version = 1
+project = "jawiki"
+profile = "minimal"
+
+[paths]
+data_dir = "/data"
+output_dir = "/output"
+reports_dir = "/reports"
+
+[runtime]
+log_level = "INFO"

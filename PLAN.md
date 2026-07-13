@@ -1,1036 +1,1139 @@
 # PLAN.md
 
-# Wikipedia EPWING Builder Implementation Plan
+## 1. 実装計画の目的
 
-## 1. Objective
+この計画は、能力の弱い実装エージェントでも、巨大なWikipedia変換プロジェクトを小さな検証可能単位で完遂できるようにするものです。
 
-Build a reproducible Docker-based system that converts a current Japanese Wikipedia dump into a high-functionality EPWING dictionary.
+重要な方針:
 
-The project should first prove correctness with a small fixture and then scale to the complete Japanese Wikipedia dump.
-
-The implementation must favor:
-
-* Testable stages
-* Resumable builds
-* Explicit diagnostics
-* Stable intermediate formats
-* Practical dictionary readability
-* Reproducibility
-
-Do not begin by attempting a complete Wikipedia build.
+- 各Phaseは明確な入口条件と出口条件を持つ
+- 出口条件を満たさず次へ進まない
+- フルデータは最後まで使わない
+- 失敗を成果として記録する
+- 1つのPhase内でも`TASKS.md`の1タスクずつ進める
+- 実装順序を勝手に入れ替えない
 
 ---
 
-## 2. Delivery strategy
+## 2. リリース目標
 
-Development is divided into milestones.
+### v0.1 Toolchain Proof
 
-Each milestone must end with:
+- Docker起動
+- FreePWING/EB toolchain固定
+- 手作り3記事辞書
+- ebzip圧縮
+- 自動structure verify
 
-* Working code
-* Tests
-* Documented commands
-* Machine-readable outputs
-* No known critical errors
+### v0.2 Source and Model
 
-Milestones should be completed in order unless a later milestone is needed to unblock verification.
+- Enterprise Snapshot取得
+- NDJSON ingest
+- 10記事HTML normalization
+- 中間モデルとdiagnostics
+
+### v0.3 Mini Vertical Slice
+
+- 100記事fixture
+- title/redirect/internal link
+- Mini EPWING生成
+- 中断再開
+
+### v0.4 Content Features
+
+- table
+- infobox
+- references
+- gaiji
+- math fallback
+
+### v0.5 Lite
+
+- representative images
+- math bitmap
+- alias/kana search
+- 10,000記事試験
+
+### v0.8 Full Candidate
+
+- Full indexes
+- image attribution
+- Boookends比較
+- 全件trial
+
+### v1.0 Stable Personal Builder
+
+- Mini/Lite/Full全件生成
+- reproducibility
+- compatibility thresholds
+- monthly rebuild workflow
+- documentation complete
 
 ---
 
-## 3. Phase 0: repository and execution skeleton
+## 3. Phase共通の進め方
 
-### Goal
+各Phaseで必ず次を行います。
 
-Create a project that starts consistently in Docker and exposes an empty but functional CLI.
+1. `CURRENT_TASK.md`へ1タスクを設定
+2. fixtureまたは失敗テストを追加
+3. 最小実装
+4. 局所テスト
+5. 標準テスト
+6. manifest/report確認
+7. `LOG.md`更新
+8. Phase gate確認
 
-### Tasks
+---
 
-* Create the repository structure from `ARCHITECTURE.md`.
-* Add `pyproject.toml`.
-* Configure `uv`.
-* Add Python linting and formatting.
-* Add type checking.
-* Add pytest.
-* Add `compose.yaml`.
-* Add a non-root container user.
-* Create the `wikiepwing` CLI.
-* Create structured logging.
-* Create configuration loading from TOML.
-* Add `wikiepwing doctor`.
-* Add a Makefile with common commands.
+## 4. Phase 0 — リポジトリ基盤
 
-### Commands to support
+### 目的
+
+コードを安全・一貫して実行できる最小リポジトリを作ります。
+
+### 作業
+
+- Python 3.12 package作成
+- `uv`導入
+- `ruff`、type checker、pytest設定
+- CLI skeleton
+- config loader
+- structured logging
+- Makefile
+- Docker app image
+- non-root user
+- `.env.example`
+- Git ignore
+- docs配置
+
+### 必須CLI
 
 ```bash
-make build-image
-make test
-make lint
-make doctor
+wikiepwing --help
+wikiepwing doctor
 ```
 
-### Acceptance criteria
+### doctor検査
 
-* `docker compose build` succeeds.
-* `docker compose run --rm builder wikiepwing doctor` succeeds.
-* Unit test command succeeds.
-* The container writes only to declared data directories.
-* The container process does not run as root.
+- Python version
+- OS/architecture
+- locale
+- timezone
+- `/data` path書込
+- free disk
+- Docker environment marker
+- external executablesの存在（この時点ではmissingでも明示）
+- config parse
+
+### テスト
+
+- config default test
+- invalid config test
+- CLI help test
+- doctor JSON output test
+- non-root container test
+
+### 出口条件
+
+- [ ] `docker compose build`成功
+- [ ] `make test`成功
+- [ ] `make lint`成功
+- [ ] `make typecheck`成功
+- [ ] container UID 0ではない
+- [ ] `doctor --json`がschemaに沿う
+
+### 禁止
+
+このPhaseでFreePWINGやWikipedia parsingを実装しません。
 
 ---
 
-## 4. Phase 1: legacy EPWING toolchain proof
+## 5. Phase 1 — EPWING toolchain proof
 
-### Goal
+### 目的
 
-Prove that the container can generate and compress a minimal EPWING dictionary.
+最も古く不確実なFreePWING/EB部分を、Wikipedia処理より先に確定します。
 
-This phase isolates toolchain risk before Wikipedia parsing begins.
+### 作業
 
-### Tasks
+1. source archive取得URLとSHA-256固定
+2. Debian base image digest固定
+3. EB Library build
+4. FreePWING build
+5. `ebzip`確認
+6. toolchain version出力
+7. 3記事の手作り辞書source生成
+8. internal link
+9. 複数headword
+10. 1画像
+11. gaiji sample
+12. package
+13. machine verify
 
-* Build FreePWING from a pinned source archive.
-* Build EB Library and `ebzip`.
-* Store SHA-256 checksums for every downloaded archive.
-* Apply required compatibility patches.
-* Create a tiny handcrafted dictionary with 3–10 entries.
-* Generate EPWING output.
-* Compress it with `ebzip`.
-* Verify the catalog and entry count with EB tools.
-* Package it as a ZIP file.
+### 手作り記事
 
-### Sample entries
+- Emacs
+- Linux
+- Wikipedia
+
+機能:
+
+- 相互内部リンク
+- 日本語本文
+- ASCII
+- 標準外候補文字
+- 小画像
+- redirect相当headword
+
+### Toolchain probe
+
+probe項目:
+
+- catalog
+- subbook
+- search types
+- key length
+- graphic format
+- gaiji width
+- entry size
+- ebzip read
+
+### 成果物
+
+```text
+reports/toolchain-capabilities.json
+output/toolchain-smoke.epwing.zip
+```
+
+### 出口条件
+
+- [ ] clean Docker buildでtoolchain生成
+- [ ] 3記事を機械検索できる
+- [ ] internal link検査成功
+- [ ] image/gaiji検査成功または明示的な制約判明
+- [ ] ebzip後も読める
+- [ ] capability JSON固定
+
+### Stop rule
+
+このPhaseが通らない限り、Wikipedia取得へ進みません。
+
+---
+
+## 6. Phase 2 — Boookends参照検査器
+
+### 目的
+
+手元の2023版を「目で見た印象」ではなく測定可能な参照データにします。
+
+### 作業
+
+- read-only mount
+- path validation
+- CATALOGS scan
+- subbook scan
+- file inventory
+- EB utilitiesで可能なmetadata抽出
+- fixed queries定義
+- search result保存
+- fixed entries取得
+- manual checklist生成
+- reference.sqlite3
+
+### 固定query初期セット
 
 ```text
 Emacs
 Linux
-Wikipedia
+日本
+東京都
+源氏物語
+微分積分学
+量子力学
+第二次世界大戦
+存在しない語
 ```
 
-Each entry should include:
+### 固定記事観測
 
-* Heading
-* Body paragraph
-* Internal cross-reference
-* One small image if practical
+- title
+- result rank
+- body text hashまたは先頭数百文字
+- internal links数
+- graphics/gaiji検出可能数
+- search mode別結果数
 
-### Acceptance criteria
+### 出口条件
 
-* The generated dictionary opens in an EPWING reader.
-* `ebzip` compression succeeds.
-* Two entries can reference each other.
-* The generated catalog contains the expected subbook.
-* A toolchain image can be rebuilt from scratch.
-* Source archive checksums are verified.
-* Toolchain versions appear in the build manifest.
-
-### Stop condition
-
-Do not proceed until the minimal dictionary has been manually opened successfully.
+- [ ] 参照辞書を変更しない
+- [ ] reference report生成
+- [ ] 自動取得不能項目がmanual checklistに分離
+- [ ] query結果を再実行して同じDBが得られる
 
 ---
 
-## 5. Phase 2: dump acquisition
+## 7. Phase 3 — Source acquisition
 
-### Goal
+### 目的
 
-Reliably obtain and verify Wikimedia dump files.
+Wikimedia Enterprise Snapshotを安全にローカル固定します。
 
-### Tasks
+### 作業
 
-* Implement dump URL resolution.
-* Download dump checksum files.
-* Implement resumable HTTP downloads.
-* Verify SHA-1 or SHA-256 according to Wikimedia metadata.
-* Record source URLs and checksums.
-* Support local predownloaded dump files.
-* Add file locking to prevent concurrent duplicate downloads.
-* Add disk-space preflight checks.
+- auth client
+- token redaction
+- metadata取得
+- project/namespace filter
+- concrete snapshot version解決
+- HEAD size確認
+- resumable download
+- partial file
+- atomic finalize
+- SHA-256
+- source lock
+- local source registration
+
+### 開発用データ
+
+フルSnapshotを最初から取らず、次を用意します。
+
+1. 公式または実データから抽出した10記事NDJSON fixture
+2. edge case fixture
+3. malformed fixture
+
+fixtureにtokenや個人情報を含めません。
+
+### 可用性ゲート
+
+- metadata endpointで`jawiki_namespace_0`を確認する
+- 実sampleでHTML fieldの存在を確認する
+- Snapshotが利用不能ならLite/Fullを黙ってXML-onlyへ落とさない
+- XML fallbackはMini向けの明示モードとして扱う
+
+### 出口条件
+
+- [ ] access tokenがログに出ない
+- [ ] 途中download再開
+- [ ] corrupt file拒否
+- [ ] `latest`が具体versionへ解決
+- [ ] source lockから再検証可能
+- [ ] local file mode動作
+
+---
+
+## 8. Phase 4 — Raw ingest
+
+### 目的
+
+NDJSONをbounded memoryで検証・重複除去し、raw.sqlite3へ保存します。
+
+### 作業
+
+- tar.gz streaming
+- NDJSON line parsing
+- schema validation
+- field extraction
+- zstd compression
+- batch transaction
+- duplicate resolution
+- redirect/category/license保存
+- diagnostic保存
+- progress
+- interruption handling
+
+### fixture edge cases
+
+- HTMLあり
+- HTMLなし、Wikitextあり
+- 同page IDでrevision違い
+- 同revision同hash重複
+- 同revision異hash
+- title長すぎ
+- invalid URL
+- empty license
+- large article sample
+
+### 出口条件
+
+- [ ] 10記事期待件数
+- [ ] duplicate ruleテスト
+- [ ] bounded memory
+- [ ] DB integrity check
+- [ ] interruption後rerun可能
+- [ ] manifestのlogical hash安定
+
+---
+
+## 9. Phase 5 — Article modelとcodec
+
+### 目的
+
+HTMLとEPWINGの間に安定したsemantic modelを作ります。
+
+### 作業
+
+- dataclasses / discriminated union
+- validation
+- JSON debug codec
+- compressed DB codec
+- schema version
+- roundtrip tests
+- canonical ordering/hash
+
+### 最初に対応するblock
+
+- Heading
+- Paragraph
+- List
+- DefinitionList
+- Quote
+- Preformatted
+- Table placeholder
+- Infobox placeholder
+- Image reference
+- Math placeholder
+- References placeholder
+- Unsupported
+
+### 出口条件
+
+- [ ] roundtrip一致
+- [ ] invalid nesting拒否
+- [ ] canonical hash安定
+- [ ] unknown typeを黙って無視しない
+
+---
+
+## 10. Phase 6 — Baseline HTML normalization
+
+### 目的
+
+普通の文章中心記事を読みやすいArticle modelへ変換します。
+
+### 初期対応
+
+- headings
+- paragraphs
+- bold/italic
+- internal/external links
+- ordered/unordered list
+- definition list
+- pre/code
+- line break
+- simple quote
+- horizontal rule
+- HTML entities
+- section anchors
+
+### 除外
+
+- edit UI
+- script/style
+- navigation boxes
+- hidden metadata
+
+### 作業順
+
+1. HTML parse
+2. root selection
+3. unsafe node removal
+4. heading conversion
+5. paragraph/inline conversion
+6. list conversion
+7. unknown fallback
+8. whitespace normalization
+9. model validation
+
+### 出口条件
+
+- [ ] 10記事golden一致
+- [ ] unknown node diagnostic
+- [ ] internal link label保持
+- [ ] source order保持
+- [ ] malformed HTMLでprocess全体が落ちない
+
+---
+
+## 11. Phase 7 — Link graphとredirect
+
+### 目的
+
+記事間移動と別名検索を成立させます。
+
+### 作業
+
+- URL -> normalized title
+- page ID resolution
+- fragment保存
+- redirect aliases
+- broken link diagnostic
+- external link policy
+- stable entry ID
+
+### テスト
+
+- relative/absolute URL
+- percent encoding
+- fragment
+- missing target
+- redirect alias
+- title containing slash/parenthesis/unicode
+
+### 出口条件
+
+- [ ] fixture internal link解決率100%（意図的missing除く）
+- [ ] redirect検索語生成
+- [ ] title変更に影響しないpage ID entry ID
+
+---
+
+## 12. Phase 8 — Mini EPWING vertical slice
+
+### 目的
+
+100記事fixtureから実際に使えるMini辞書を生成します。
+
+### 作業
+
+- RenderedEntry
+- headword/index term
+- FreePWING source writer
+- catalog
+- internal references
+- generate
+- ebzip
+- zip
+- verify
+- inspect command
+
+### Miniの範囲
+
+- text
+- headings
+- lists
+- title
+- redirects
+- internal links
+- table/infoboxはfallback text
+- no images
+- math text
+
+### 出口条件
+
+- [ ] 100記事entry数一致
+- [ ] fixed title search
+- [ ] redirect search
+- [ ] internal link sample
+- [ ] Japanese text
+- [ ] verify JSON success
+- [ ] EBWin等で手動確認
+
+### Gate A
+
+ここまででend-to-end vertical slice完成です。以降は機能追加のみであり、pipelineを全書き換えません。
+
+---
+
+## 13. Phase 9 — Stage cacheとresume
+
+### 目的
+
+長時間ビルドを安全に中断・再開します。
+
+### 作業
+
+- manifests
+- input fingerprints
+- stage version
+- lock
+- atomic output
+- incomplete cleanup
+- `--resume`
+- `--from-stage`
+- `--force-stage`
+
+### テスト
+
+- normalize途中kill
+- incomplete manifest
+- output hash mismatch
+- config change invalidation
+- unrelated config does not invalidate
+- stage version bump
+
+### 出口条件
+
+- [ ] completed stage再利用
+- [ ] corrupt output再利用拒否
+- [ ] interrupted stageだけ再実行
+- [ ] manifest chain追跡可能
+
+---
+
+## 14. Phase 10 — 日本語索引
+
+### 目的
+
+Boookends系の実用的な検索体験へ近づけます。
+
+### 作業
+
+- normalized title
+- redirect
+- ASCII casefold
+- space normalization
+- kana variant
+- punctuation variant
+- alias priority
+- collision report
+- backend search type mapping
+
+### 非対象
+
+- 本文全文token index
+- MeCab必須化
+- LLMによるalias生成
+
+### 出口条件
+
+- [ ] title/redirectにregressionなし
+- [ ] configured kana variant
+- [ ] collision deterministic
+- [ ] dropped terms report
+
+---
+
+## 15. Phase 11 — Table
+
+### 目的
+
+Wikipediaの表情報をEPWINGで読みやすく保ちます。
+
+### 作業
+
+- DOM table parser
+- headers
+- row/col span
+- caption
+- nested content
+- complexity classification
+- simple renderer
+- wide renderer
+- oversized split/truncate policy
+
+### fixture
+
+- 2x2 simple
+- multi-header
+- rowspan
+- colspan
+- wide 12 columns
+- nested table
+- malformed table
+- very large table
+
+### 出口条件
+
+- [ ] simple cells lossless
+- [ ] wide table readable vertical layout
+- [ ] malformed fallback
+- [ ] oversized diagnostic
+
+---
+
+## 16. Phase 12 — Infobox
+
+### 目的
+
+記事冒頭の重要メタデータを読みやすく表示します。
+
+### 作業
+
+- class/role detection
+- label/value
+- title
+- image refs
+- nested links
+- empty/style row removal
+- field ordering
+- max fields
+- generic fallback
+
+### 出口条件
+
+- [ ] person/location/software/organization fixture
+- [ ] lead本文より前にcompact表示
+- [ ] duplicate data抑制
+- [ ] empty infobox非表示
+
+---
+
+## 17. Phase 13 — Referencesと関連情報
+
+### 目的
+
+脚注・参考文献・カテゴリを過不足なく残します。
+
+### 作業
+
+- superscript reference link
+- references list
+- backlink除去
+- external URL policy
+- reference count
+- category appendix
+- related article section detection optional
+
+### 出口条件
+
+- [ ] reference labelと本文対応
+- [ ] broken reference diagnostic
+- [ ] profile別省略
+- [ ] category index準備
+
+---
+
+## 18. Phase 14 — Unicodeとgaiji
+
+### 目的
+
+現代Wikipediaの文字をできるだけ失わず表示します。
+
+### 作業
+
+- backend representability probe
+- substitution table
+- NFC
+- variation selector
+- combining sequence
+- narrow/wide gaiji
+- bitmap generation
+- registry
+- usage count
+- fallback codepoint text
+
+### fixture
+
+- JIS標準
+- CJK拡張
+- rare symbol
+- emoji
+- combining dakuten
+- variation selector
+- mathematical symbol
+
+### 出口条件
+
+- [ ] silent replacementゼロ
+- [ ] gaiji reuse
+- [ ] fallback text
+- [ ] reportに頻出文字
+- [ ] viewer manual check
+
+---
+
+## 19. Phase 15 — Math
+
+### 目的
+
+数式をtext fallbackからbitmap表示へ拡張します。
+
+### 作業
+
+- MathML/alt/TeX extraction
+- canonical source
+- renderer isolation
+- cache
+- SVG sanitize/rasterize
+- inline/block sizes
+- fallback
+
+### 出口条件
+
+- [ ] inline/block formula
+- [ ] invalid formula fallback
+- [ ] same formula cache hit
+- [ ] deterministic bitmap hash
+
+---
+
+## 20. Phase 16 — Image planning and download
+
+### 目的
+
+安全に代表画像を取得し、Lite/Fullへ含めます。
+
+### 作業
+
+- main/infobox/lead/body classification
+- selection policy
+- download client
+- allowlist
+- MIME/magic validation
+- size/pixel limit
+- SVG sanitize
+- conversion
+- dedup
+- attribution metadata
+
+### 段階
+
+1. fixture local images only
+2. mocked HTTP
+3. network marker test
+4. 100記事real sample
+5. 10,000記事trial
+
+### 出口条件
+
+- [ ] networkless normal tests
+- [ ] unsafe URL reject
+- [ ] duplicate hash reuse
+- [ ] missing image nonfatal
+- [ ] attribution missing policy
+
+---
+
+## 21. Phase 17 — Lite profile
+
+### 目的
+
+日常利用できる画像・表・数式付き辞書を100〜10,000記事で成立させます。
+
+### 作業
+
+- profile config
+- image max
+- table/infobox full render
+- math bitmap
+- aliases
+- package name
+- report
+
+### 出口条件
+
+- [ ] 100記事Lite
+- [ ] 10,000記事Lite
+- [ ] fixed viewer checklist
+- [ ] no fatal diagnostic
+- [ ] output size予測
+
+### Gate B
+
+10,000記事Liteが成功するまで全件へ進みません。
+
+---
+
+## 22. Phase 18 — Full indexes
+
+### 目的
+
+条件検索・クロス検索に相当する実用索引を追加します。
+
+### 候補source
+
+- heading
+- category
+- infobox field/value
+- lead bold terms
+- redirect/alias components
+
+### 作業
+
+- extraction policy
+- term budget/article
+- global term budget
+- stop words
+- priority
+- collision
+- backend mapping
+- comparison query set
+
+### 出口条件
+
+- [ ] index size budget
+- [ ] fixed query precision
+- [ ] false-positive sample report
+- [ ] search time/viewer behavior確認
+
+---
+
+## 23. Phase 19 — Boookends compatibility comparison
+
+### 目的
+
+「同等」の意味を数値化します。
+
+### 作業
+
+- fixed query compare
+- fixed article compare
+- feature matrix
+- search result overlap
+- missing article count
+- layout manual checklist
+- image/table/gaiji checks
+
+### 出口条件
+
+- [ ] `compare-reference` JSON/HTML
+- [ ] COMPATIBILITY thresholds evaluated
+- [ ] intentional differences documented
+- [ ] brand-independent naming
+
+---
+
+## 24. Phase 20 — 10,000記事耐久試験
+
+### 目的
+
+全件前に、速度・メモリ・容量・診断傾向を把握します。
+
+### sample
+
+page ID rangeだけでなく、次を含むstratified sample:
+
+- long article
+- table-heavy
+- image-heavy
+- math-heavy
+- Japanese history/literature
+- technical
+- disambiguation
+- list article
+- rare Unicode
+
+### 収集
+
+- stage duration
+- records/sec
+- peak memory
+- DB size
+- image cache
+- diagnostics histogram
+- largest entries
+- slowest articles
+
+### 出口条件
+
+- [ ] no unbounded memory
+- [ ] no DB integrity error
+- [ ] fatal rate 0
+- [ ] article error rate threshold内
+- [ ] full size/time estimate
+
+---
+
+## 25. Phase 21 — 全件Mini trial
+
+### 目的
+
+画像などを除いた最小の全件変換を成功させます。
+
+### 前提
+
+- Gate A/B通過
+- 200GB以上の作業余裕をdoctor確認（設定値）
+- Docker named volume
+- persistent logs
+- source lock固定
+
+### 作業
+
+- ingest全件
+- normalize全件
+- Mini render
+- EPWING generate
+- package
+- verify
+- random sample
+
+### 出口条件
+
+- [ ] unattended completion
+- [ ] eligible article coverage 99.9%以上を目標
+- [ ] fatal 0
+- [ ] archive opens
+- [ ] fixed queries
+- [ ] build report complete
+
+失敗時は全体を即書き換えず、top diagnosticsを順番に修正します。
+
+---
+
+## 26. Phase 22 — 全件Lite trial
+
+### 目的
+
+代表画像・表・数式を含む実用版を生成します。
+
+### 作業
+
+- media plan全件
+- image fetch/convert
+- math cache
+- Lite render
+- package
+- verify
+
+### 出口条件
+
+- [ ] media failures are nonfatal and reported
+- [ ] attribution DB
+- [ ] fixed image article display
+- [ ] size budget
+- [ ] reference comparison
+
+---
+
+## 27. Phase 23 — 全件Full candidate
+
+### 目的
+
+高機能版を生成し、公開可能性を評価します。
+
+### 作業
+
+- richer indexes
+- more images
+- categories
+- attribution appendix
+- full verification
+- distributable policy
+
+### 出口条件
+
+- [ ] COMPATIBILITY target
+- [ ] licensing report
+- [ ] no secret/source path leakage
+- [ ] reproducibility metadata
+- [ ] viewer matrix
+
+---
+
+## 28. Phase 24 — 再現性試験
+
+### 目的
+
+同じ入力で同じ論理辞書が生成されることを確認します。
+
+### 作業
+
+- same machine two builds
+- clean image build
+- macOS Docker Desktop
+- native Linux Docker（可能なら）
+- logical hash compare
+- archive metadata normalization
+
+### 出口条件
+
+- [ ] entry logical hash一致
+- [ ] index logical hash一致
+- [ ] graphic hash一致
+- [ ] binary差異説明
+
+---
+
+## 29. Phase 25 — 月次更新ワークフロー
+
+### 目的
+
+新Snapshotへ更新する通常運用を1コマンド化します。
 
 ### CLI
 
 ```bash
-wikiepwing download --project jawiki --date latest
-wikiepwing download --project jawiki --date 20260701
-wikiepwing download --local /data/import/jawiki.xml.bz2
-```
-
-### Acceptance criteria
-
-* Interrupted downloads can resume.
-* A corrupted file is rejected.
-* A local dump can be registered without copying.
-* The manifest records the exact dump date and checksum.
-* No code assumes that `latest` remains unchanged after download.
-
----
-
-## 6. Phase 3: streaming XML ingestion
-
-### Goal
-
-Parse Wikimedia XML without fully expanding it to disk.
-
-### Tasks
-
-* Implement a streaming XML parser.
-* Extract page ID, title, namespace, revision ID, and Wikitext.
-* Detect redirects.
-* Filter namespaces based on configuration.
-* Store raw page records in SQLite.
-* Commit records in configurable batches.
-* Add progress reporting.
-* Add malformed-page diagnostics.
-* Create a synthetic fixture XML.
-* Create a small real-world fixture containing representative Japanese articles.
-
-### Database tables
-
-At minimum:
-
-```sql
-raw_pages
-build_diagnostics
-stage_metadata
-```
-
-### Acceptance criteria
-
-* Memory use remains bounded while parsing.
-* The fixture produces the expected page count.
-* Redirect pages are identified.
-* Namespace filtering works.
-* The stage can be interrupted and rerun safely.
-* A duplicate page ID cannot silently overwrite unrelated data.
-* Parsing speed and record count are reported.
-
----
-
-## 7. Phase 4: title normalization and redirect graph
-
-### Goal
-
-Create stable article identities and search aliases.
-
-### Tasks
-
-* Normalize Unicode using NFKC.
-* Normalize whitespace.
-* Implement project-aware title normalization.
-* Parse redirect targets.
-* Resolve redirect chains.
-* Detect redirect cycles.
-* Generate aliases from redirects.
-* Detect disambiguation pages where practical.
-* Build indexes on normalized titles.
-
-### Acceptance criteria
-
-* One-step redirects resolve.
-* Multi-step redirects resolve.
-* Redirect cycles are reported.
-* Broken redirect targets are reported.
-* Exact original titles are preserved.
-* Search normalization does not destroy Japanese distinctions unnecessarily.
-
----
-
-## 8. Phase 5: intermediate article model
-
-### Goal
-
-Define and serialize the normalized semantic model.
-
-### Tasks
-
-* Implement article, block, inline, media, and diagnostic dataclasses.
-* Add schema versioning.
-* Add JSON serialization for debugging.
-* Add database serialization.
-* Add stable ordering rules.
-* Add model validation.
-* Create snapshot tests.
-
-### Acceptance criteria
-
-* A parsed article round-trips through storage.
-* Schema version is recorded.
-* Invalid block nesting is rejected.
-* Serialization output is deterministic.
-* Snapshot changes require intentional test updates.
-
----
-
-## 9. Phase 6: baseline Wikitext parsing
-
-### Goal
-
-Render ordinary text-heavy articles correctly.
-
-### Supported initially
-
-* Paragraphs
-* Headings
-* Bold and italic text
-* Internal links
-* External links
-* Ordered lists
-* Unordered lists
-* Definition lists
-* Preformatted text
-* Horizontal rules
-* Categories
-* Basic HTML entities
-* Basic `<br>` handling
-
-### Tasks
-
-* Integrate `mwparserfromhell`.
-* Convert parse nodes into the internal model.
-* Resolve internal links against canonical titles.
-* Preserve readable anchor text.
-* Drop comments.
-* Normalize whitespace.
-* Sanitize unsupported control characters.
-* Produce diagnostics for unsupported nodes.
-
-### Acceptance criteria
-
-* Text-heavy fixture articles render readably.
-* Internal links point to canonical targets.
-* Missing targets remain readable.
-* Unsupported markup does not terminate the build.
-* Article sections preserve source order.
-* Parser tests cover malformed Wikitext.
-
----
-
-## 10. Phase 7: template rule engine
-
-### Goal
-
-Handle common templates without implementing full MediaWiki execution.
-
-### Tasks
-
-* Define YAML rule format.
-* Implement exact-name and regular-expression matching.
-* Support actions:
-
-```text
-drop
-keep_arguments
-format_text
-internal_link
-external_link
-notice
-citation
-infobox
-custom_handler
-```
-
-* Add Japanese maintenance-template rules.
-* Add link-related template rules.
-* Add date and unit formatting rules where simple.
-* Count unknown templates.
-* Produce a top-unknown-template report.
-
-### Initial strategy
-
-Implement common templates according to frequency.
-
-Do not attempt hundreds of templates before collecting statistics from a real sample.
-
-### Acceptance criteria
-
-* Rule loading is validated.
-* Unknown templates have readable fallback behavior.
-* Maintenance templates can be removed.
-* Template frequency reporting works.
-* Rule changes are testable without rerunning XML ingestion.
-
----
-
-## 11. Phase 8: EPWING text-only vertical slice
-
-### Goal
-
-Generate a usable text-only Wikipedia EPWING from a small fixture.
-
-### Tasks
-
-* Implement article-to-entry rendering.
-* Generate FreePWING input.
-* Create title and redirect indexes.
-* Generate catalog metadata.
-* Build EPWING.
-* Compress with `ebzip`.
-* Verify generated entries.
-* Add `wikiepwing inspect`.
-
-### CLI
-
-```bash
-wikiepwing build \
-  --fixture tests/fixtures/jawiki-small.xml \
-  --profile minimal
-```
-
-### Acceptance criteria
-
-* At least 100 fixture articles build successfully.
-* Exact-title search works.
-* Redirect search works.
-* Cross-references work.
-* Japanese characters render correctly.
-* No manual file editing is required after generation.
-* The dictionary opens in two readers where available.
-
-### Important checkpoint
-
-This is the first complete vertical slice.
-
-Do not add images or complex tables before this milestone is stable.
-
----
-
-## 12. Phase 9: table support
-
-### Goal
-
-Preserve the information content of Wikipedia tables.
-
-### Tasks
-
-* Parse Wiki table syntax into rows and cells.
-* Support row and column spans in the model.
-* Strip nonessential CSS.
-* Detect narrow and wide tables.
-* Implement compact table rendering.
-* Implement row-oriented fallback rendering.
-* Limit maximum table size.
-* Add diagnostics for malformed tables.
-* Add snapshot fixtures.
-
-### Rendering rules
-
-For narrow tables:
-
-```text
-Year | Event | Result
-2024 | Example | Success
-```
-
-For wide tables:
-
-```text
-Row 1
-  Year: 2024
-  Event: Example
-  Result: Success
-```
-
-### Acceptance criteria
-
-* Simple tables preserve headers and cells.
-* Wide tables remain readable.
-* Malformed tables do not abort article generation.
-* Very large tables are truncated or summarized according to configuration.
-* Truncation is reported.
-
----
-
-## 13. Phase 10: infobox support
-
-### Goal
-
-Present important article metadata near the beginning of entries.
-
-### Tasks
-
-* Detect infobox templates.
-* Preserve selected key/value fields.
-* Ignore style-only fields.
-* Normalize nested links.
-* Resolve image fields through the media pipeline.
-* Add per-template field preference rules.
-* Provide a generic fallback for unknown infobox types.
-
-### Acceptance criteria
-
-* Common Japanese person, location, software, and organization infoboxes render.
-* Empty fields are removed.
-* Internal links in values remain functional.
-* Infoboxes do not overwhelm the lead section.
-* Unknown infoboxes degrade into generic key/value metadata.
-
----
-
-## 14. Phase 11: image pipeline
-
-### Goal
-
-Include selected article images in a reproducible and legally traceable manner.
-
-### Tasks
-
-* Extract image references during parsing.
-* Resolve image metadata.
-* Resolve Commons redirects.
-* Download thumbnails only.
-* Cache source files.
-* Convert SVG to raster.
-* Convert unsupported formats.
-* Limit dimensions and size.
-* Deduplicate by content hash.
-* Generate attribution metadata.
-* Map graphics into EPWING resources.
-* Add image-free configuration.
-
-### Image selection policy
-
-Initial default:
-
-1. Lead image
-2. Infobox image
-3. First meaningful article image
-4. Hard limit per article
-
-Skip:
-
-* Icons
-* Flags used decoratively
-* Maintenance graphics
-* Tiny images
-* Tracking pixels
-* Most navigation images
-
-### Acceptance criteria
-
-* A fixture article includes at least one image.
-* Duplicate images are stored once.
-* Missing images do not break article generation.
-* Image source and license metadata are recorded where available.
-* The full pipeline can run with images disabled.
-* The ImageMagick policy forbids unsafe delegates.
-
----
-
-## 15. Phase 12: math support
-
-### Goal
-
-Render common mathematical formulas as EPWING-compatible graphics.
-
-### Tasks
-
-* Extract TeX source.
-* Render using a pinned toolchain.
-* Rasterize to a viewer-friendly format.
-* Cache formulas by source hash.
-* Generate inline and block formula layouts.
-* Fall back to textual TeX.
-* Add formula diagnostics.
-
-### Acceptance criteria
-
-* Inline formulas render.
-* Block formulas render.
-* Duplicate formulas are cached.
-* Invalid TeX falls back to text.
-* Formula rendering is deterministic.
-* Mathematical articles remain navigable.
-
----
-
-## 16. Phase 13: enhanced search indexes
-
-### Goal
-
-Provide practical dictionary search beyond exact page titles.
-
-### Tasks
-
-* Index redirects.
-* Index aliases.
-* Index normalized title variants.
-* Generate Hiragana/Katakana variants.
-* Generate Latin case-folded variants.
-* Support optional category lookup.
-* Evaluate keyword search feasibility.
-* Enforce index-size limits.
-* Report collisions.
-
-### Keyword search approach
-
-Do not immediately index every word in every article.
-
-Evaluate these options:
-
-1. Lead-section keywords only
-2. Section-title keywords
-3. Category names
-4. High-information noun extraction
-5. A separate reduced full-text subbook
-
-Implement exact-title and alias search first.
-
-### Acceptance criteria
-
-* Redirect titles find the canonical article.
-* Kana variants work for configured cases.
-* Alias collisions are deterministic.
-* Index generation does not exceed configured limits.
-* Index statistics appear in the report.
-
----
-
-## 17. Phase 14: complete Japanese Wikipedia trial build
-
-### Goal
-
-Run the complete pipeline against a current Japanese Wikipedia dump.
-
-### Preparation
-
-Before starting:
-
-* Confirm at least 200 GB free space.
-* Set Docker disk image limit appropriately.
-* Use named volumes.
-* Disable images for the first complete trial.
-* Set a conservative worker count.
-* Persist logs outside ephemeral containers.
-
-### First full-build profile
-
-Use:
-
-```text
-Text
-Headwords
-Redirects
-Basic tables
-Basic infoboxes
-No images
-Math as text fallback
-No full-text keyword index
-```
-
-### Tasks
-
-* Run all stages.
-* Record stage durations.
-* Record peak disk use.
-* Record failure counts.
-* Inspect top unsupported templates.
-* Inspect encoding failures.
-* Inspect largest entries.
-* Inspect random articles.
-* Verify final dictionary structure.
-
-### Acceptance criteria
-
-* The build completes without manual intervention.
-* At least 99.9% of eligible articles produce entries or a documented skip reason.
-* No fatal encoding errors remain.
-* The generated archive opens successfully.
-* A fixed regression set is readable.
-* Redirect searches work.
-* Build manifest and report are complete.
-
----
-
-## 18. Phase 15: quality iteration from real statistics
-
-### Goal
-
-Improve functionality based on actual failure frequencies.
-
-### Tasks
-
-Use the complete-build report to rank:
-
-* Unknown templates
-* Broken tables
-* Missing links
-* Oversized entries
-* Unsupported Unicode
-* Failed formulas
-* Missing images
-* Slowest article types
-
-Implement fixes in descending impact order.
-
-### Rule
-
-Do not optimize rare constructs before high-frequency failures.
-
-### Acceptance criteria
-
-* Top unsupported-template count decreases substantially.
-* Entry readability improves on sampled articles.
-* No regression in previously supported fixtures.
-* Build time does not regress without explanation.
-
----
-
-## 19. Phase 16: image-enabled full build
-
-### Goal
-
-Generate the standard high-functionality dictionary.
-
-### Tasks
-
-* Enable selected thumbnails.
-* Monitor cache size.
-* Verify attribution output.
-* Measure final EPWING graphics size.
-* Tune image limits.
-* Confirm reader compatibility.
-* Add image-specific verification samples.
-
-### Acceptance criteria
-
-* Images appear in supported readers.
-* Missing images do not cause broken entries.
-* Attribution metadata is included.
-* Output size remains within configured budget.
-* Image cache is reusable across builds.
-
----
-
-## 20. Phase 17: reproducibility verification
-
-### Goal
-
-Prove that the build can be repeated.
-
-### Tasks
-
-* Build the same fixture twice.
-* Compare manifests.
-* Compare logical entry hashes.
-* Normalize non-deterministic archive metadata.
-* Build on macOS Docker Desktop.
-* Build on native Linux Docker.
-* Compare logical outputs.
-* Record expected platform-dependent binary differences.
-
-### Acceptance criteria
-
-* Fixture logical content hashes match.
-* Index contents match.
-* Entry counts match.
-* Image hashes match.
-* Any remaining binary differences are documented.
-* Toolchain image digest is recorded.
-
----
-
-## 21. Phase 18: update workflow
-
-### Goal
-
-Make monthly rebuilding routine.
-
-### Tasks
-
-* Add a command that resolves a requested dump date.
-* Reuse cached images and formulas.
-* Reuse toolchain images.
-* Permit stage invalidation from changed inputs.
-* Generate output names from source dump dates.
-* Add old-work cleanup commands.
-* Add disk-usage reporting.
-
-### CLI
-
-```bash
-wikiepwing update --project jawiki --profile standard
-wikiepwing clean --keep-builds 2
+wikiepwing update --project jawiki --profile full
+wikiepwing clean --keep-runs 2
 wikiepwing disk-usage
 ```
 
-### Acceptance criteria
+### 作業
 
-* A new dump can be built with one command.
-* Existing source dumps are not redownloaded unnecessarily.
-* Cache reuse is visible in metrics.
-* Old build data can be removed safely.
-* Final archives are never deleted by default.
+- new source lock
+- source diff metrics
+- cache reuse
+- old runs cleanup
+- output retention
+- release notes
 
----
+### 出口条件
 
-## 22. Phase 19: English Wikipedia support
-
-### Goal
-
-Support English Wikipedia without coupling language-specific behavior to Japanese logic.
-
-### Tasks
-
-* Add `enwiki.toml`.
-* Add English title normalization.
-* Add English template rules.
-* Add English namespace handling.
-* Add English infobox policies.
-* Test Simple English Wikipedia first.
-* Evaluate full English Wikipedia storage and build time.
-
-### Acceptance criteria
-
-* Simple English Wikipedia builds successfully.
-* Language-specific rules are configuration-driven where practical.
-* Japanese builds remain unchanged.
-* Full English Wikipedia can at least complete a minimal-profile trial.
+- [ ] old outputを自動削除しない
+- [ ] same media/math cache reuse
+- [ ] source version naming
+- [ ] update report
 
 ---
 
-## 23. Performance work
+## 30. Full build前ゲート一覧
 
-Performance optimization should begin only after profiling.
+全件ビルド前にすべて満たすこと。
 
-### Likely hotspots
-
-* Wikitext parsing
-* Template traversal
-* SQLite writes
-* Image downloads and conversion
-* FreePWING generation
-* Index sorting
-* `ebzip`
-
-### Optimization options
-
-* Batch database inserts
-* WAL mode
-* Partitioned article processing
-* Multiprocessing for CPU-bound parsing
-* Asynchronous image downloads
-* Content-addressed caches
-* Rust replacement for XML or Wikitext parsing
-* Pre-sorted index streams
-* Native Linux builds for final production
-
-### Prohibited optimization
-
-Do not trade silent data corruption for speed.
+- [ ] Phase 0〜20完了
+- [ ] toolchain smoke green
+- [ ] reference scan complete
+- [ ] 100記事Mini green
+- [ ] 100記事Lite green
+- [ ] 10,000記事Lite green
+- [ ] resume test green
+- [ ] gaiji test green
+- [ ] image security test green
+- [ ] no network after acquire verified
+- [ ] Docker disk capacity verified
+- [ ] logs/reports persistent
+- [ ] source.lock concrete
+- [ ] user-facing profile settings fixed
 
 ---
 
-## 24. Failure handling
-
-All stages must classify failures.
-
-### Fatal failures
-
-Examples:
-
-* Dump checksum mismatch
-* Database corruption
-* Missing required toolchain executable
-* EPWING catalog generation failure
-* Output filesystem full
-
-Fatal failures stop the stage.
-
-### Recoverable failures
-
-Examples:
-
-* One malformed article
-* One unsupported template
-* One unavailable image
-* One invalid formula
-* One broken internal link
-
-Recoverable failures produce diagnostics and continue.
-
-### Retryable failures
-
-Examples:
-
-* HTTP timeout
-* Wikimedia 5xx response
-* Temporary DNS failure
-
-Use bounded retries with exponential backoff.
-
----
-
-## 25. Codex working rules
-
-Codex should follow these rules while implementing.
-
-1. Read `ARCHITECTURE.md` before changing architecture.
-2. Implement one milestone at a time.
-3. Do not start a full Wikipedia build until the fixture vertical slice works.
-4. Add tests with every parser or renderer feature.
-5. Do not hide unsupported markup.
-6. Do not add unpinned dependencies.
-7. Do not place build artifacts in Git.
-8. Do not broaden scope without updating documentation.
-9. Preserve stage resumability.
-10. Avoid shell commands constructed from untrusted article content.
-11. Do not rewrite the entire pipeline to fix one stage.
-12. Keep FreePWING-specific code inside the EPWING adapter.
-13. Use typed data structures.
-14. Prefer deterministic ordering.
-15. Update the build report when adding a new diagnostic category.
-
----
-
-## 26. Initial Codex task sequence
-
-Codex should execute the first implementation in this order.
-
-### Task 1
-
-Create repository skeleton, Python package, CLI, configuration loader, tests, Docker image, and `doctor` command.
-
-### Task 2
-
-Build FreePWING and EB Library in Docker with pinned archives and checksums.
-
-### Task 3
-
-Generate a handcrafted three-entry EPWING dictionary.
-
-### Task 4
-
-Create and verify a compressed archive using `ebzip`.
-
-### Task 5
-
-Implement Wikimedia dump downloader and checksum verification.
-
-### Task 6
-
-Implement streaming XML parsing into SQLite.
-
-### Task 7
-
-Implement title normalization and redirect resolution.
-
-### Task 8
-
-Implement the intermediate article model.
-
-### Task 9
-
-Implement baseline Wikitext parsing.
-
-### Task 10
-
-Implement text-only article rendering and indexes.
-
-### Task 11
-
-Generate a fixture Wikipedia EPWING end to end.
-
-Only after Task 11 succeeds should Codex begin table, infobox, image, and math work.
-
----
-
-## 27. Release criteria for version 0.1
-
-Version 0.1 is a text-first technical preview.
-
-Required:
-
-* Docker build
-* Pinned legacy toolchain
-* Japanese Wikipedia dump ingestion
-* Text article parsing
-* Headword search
-* Redirect search
-* Internal cross-references
-* Resumable stages
-* Minimal build report
-* Complete fixture tests
-* Successful limited real-dump build
-
-Not required:
-
-* Images
-* Formula graphics
-* Advanced tables
-* Full English Wikipedia
-* Keyword search
-
----
-
-## 28. Release criteria for version 0.5
-
-Version 0.5 is a practical personal-use release.
-
-Required:
-
-* Complete Japanese Wikipedia build
-* Tables
-* Generic infoboxes
-* Selected images
-* Formula fallback or rendering
-* Enhanced aliases
-* Detailed diagnostics
-* Reproducibility manifest
-* EPWING reader verification
-* Monthly update command
-
----
-
-## 29. Release criteria for version 1.0
-
-Version 1.0 is a stable repeatable builder.
-
-Required:
-
-* Reliable Japanese full build
-* Reliable Simple English build
-* Documented full English limitations
-* Image attribution output
-* Stable configuration schema
-* Stable intermediate schema or migration process
-* Complete recovery and resume behavior
-* Resource usage documentation
-* Reproducibility verification
-* Security review
-* User-facing installation and build guide
-
----
-
-## 30. Final definition of done
-
-The project is done when a user can run:
-
-```bash
-git clone <repository>
-cd wikipedia-epwing
-docker compose build
-docker compose run --rm builder \
-  wikiepwing build \
-  --project jawiki \
-  --date latest \
-  --profile standard
-```
-
-and receive:
-
-```text
-output/jawiki-YYYYMMDD-epwing-standard.zip
-```
-
-without manually installing FreePWING, Perl modules, EB Library, ImageMagick, or MediaWiki tooling on the host.
-
-The resulting dictionary must:
-
-* Open in common EPWING readers
-* Search Japanese article titles
-* Resolve redirects
-* Navigate internal links
-* Display readable article structure
-* Preserve common tables and infoboxes
-* Include selected images in the standard profile
-* Record unsupported content
-* Identify the exact Wikimedia dump and build toolchain used
+## 31. v1.0 Definition of Done
+
+次をすべて満たします。
+
+### Build
+
+- [ ] clean clone + Dockerで生成可能
+- [ ] hostへlegacy dependency不要
+- [ ] Mini/Lite/Full
+- [ ] resume
+- [ ] source lock
+
+### Content
+
+- [ ] title
+- [ ] redirects
+- [ ] internal links
+- [ ] headings/lists
+- [ ] tables
+- [ ] infoboxes
+- [ ] references
+- [ ] gaiji fallback
+- [ ] images Lite/Full
+- [ ] math Lite/Full
+
+### Quality
+
+- [ ] structured diagnostics
+- [ ] source/model/EPWING verify
+- [ ] fixed article regression
+- [ ] reference comparison
+- [ ] compatibility thresholds
+
+### Reproducibility
+
+- [ ] dependency lock
+- [ ] toolchain source hashes
+- [ ] Docker digest
+- [ ] logical hashes
+- [ ] BUILD-INFO
+
+### Documentation
+
+- [ ] README build instructions
+- [ ] config reference
+- [ ] troubleshooting
+- [ ] license/attribution notes
+- [ ] viewer verification notes

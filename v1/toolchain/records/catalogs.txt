@@ -1,0 +1,10 @@
+[Catalog]
+FileName = catalogs
+Type = EPWING1
+Books = 1
+
+[Book]
+Title = "ＷＩＫＩＪＰ２０２６０７０１"
+BookType = 6001
+Directory = "WIKIEP"
+ZenGaiji = "GAI16F"

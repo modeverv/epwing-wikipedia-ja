@@ -1,0 +1,1 @@
+"""Logical dictionary-entry rendering."""

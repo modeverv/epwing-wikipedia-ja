@@ -1,399 +1,753 @@
 # ARCHITECTURE.md
 
-# Wikipedia EPWING Builder Architecture
+## 1. 文書の目的
 
-## 1. Project overview
+この文書は、Wikipedia EPWING Builder v2の構造、境界、データ契約、実行モデル、失敗処理、再現性、セキュリティを定義します。
 
-This project builds a modern, reproducible EPWING/JIS X 4081 dictionary from Wikimedia dumps.
+実装詳細がこの文書と矛盾する場合、実装を正当化するのではなく、次のどちらかを行います。
 
-The initial target is Japanese Wikipedia, with optional support for English Wikipedia and other Wikimedia projects.
-
-The generated dictionary should provide more functionality than the traditional `wikipedia-fpw` output:
-
-* Full-text article body
-* Headword search
-* Alternate-title and redirect search
-* Keyword search
-* Cross-reference links
-* Image inclusion
-* Table rendering
-* Infobox rendering
-* Math formula rendering
-* Category metadata
-* Disambiguation handling
-* Compressed EPWING output using `ebzip`
-* Reproducible builds using Docker
-* Incremental and resumable build stages
-* Build verification and statistics
-
-The project must not depend on the host operating system beyond Docker and basic filesystem access.
+1. 実装を設計へ合わせる
+2. 意図的な設計変更として`DECISIONS.md`へADRを追加し、この文書を更新する
 
 ---
 
-## 2. Goals
+## 2. プロジェクト定義
 
-### 2.1 Primary goals
+### 2.1 目的
 
-1. Generate a usable Japanese Wikipedia EPWING dictionary from current Wikimedia dumps.
-2. Preserve substantially more article information than legacy `wikipedia-fpw`.
-3. Make the build reproducible across macOS and Linux.
-4. Allow failed builds to resume without repeating all stages.
-5. Make every transformation stage observable and testable.
-6. Separate Wikipedia parsing from EPWING generation.
-7. Support future output formats without rewriting the parser.
+2026年時点の日本語Wikipediaを、個人利用を主眼とした高機能EPWING/JIS X 4081互換辞書へ変換します。
 
-### 2.2 Secondary goals
+目標機能:
 
-* Support Simple English Wikipedia and English Wikipedia.
-* Support Wiktionary or other MediaWiki-based projects.
-* Allow image-free and lightweight build profiles.
-* Allow article filtering by namespace, category, or popularity.
-* Allow deterministic nightly or monthly builds.
-* Produce machine-readable build reports.
+- 記事本文
+- 見出し語検索
+- リダイレクト・別名検索
+- 前方・後方・複合検索の実用的な索引
+- 記事内見出し
+- 内部リンク
+- 表
+- Infobox
+- 数式
+- 代表画像
+- カテゴリ・メタデータ
+- 外字フォールバック
+- Mini / Lite / Fullプロファイル
+- ebzip圧縮
+- 再現可能なDockerビルド
+- 中断・再開
+- 検証レポート
+- Boookends 2023版との機能比較
 
-### 2.3 Non-goals
+### 2.2 Boookendsとの関係
 
-The first implementation does not need to:
+Boookends 2023年版は、次の用途だけに使用します。
 
-* Reproduce the live Wikipedia website exactly.
-* Execute arbitrary Lua modules or MediaWiki extensions.
-* Download every original image at full resolution.
-* Support article editing.
-* Provide a standalone EPWING viewer.
-* Implement a complete MediaWiki rendering engine.
-* Guarantee perfect rendering of every template.
+- サブブック構造の観察
+- 検索機能の観察
+- 記事レイアウトの比較
+- 画像・表・外字の扱いの比較
+- Mini / Lite / Fullの差分把握
+- ゴールデン記事の比較基準
+
+目標は機能的互換性です。次は目標外です。
+
+- バイナリ一致
+- 未公開生成スクリプトの復元
+- ブランド・名称・ロゴの流用
+- 2023年版ファイルの改変配布
+- 作者固有の実装を推測して模倣すること
+
+### 2.3 成功状態
+
+プロジェクトが成功した状態は次です。
+
+1. 固定した入力Snapshotから、再実行可能なDockerビルドで辞書を生成できる
+2. Mini / Lite / Fullの3成果物を生成できる
+3. 主要記事が読みやすく、内部リンク・見出し語・redirect検索が機能する
+4. 変換失敗や欠落が機械可読なレポートへ出る
+5. 代表的なEPWINGビューア2種類以上とEmacs Lookup系で確認できる
+6. 同一入力・設定・コードから論理内容ハッシュが一致する
+7. 参照版との差が説明可能である
 
 ---
 
-## 3. Design principles
+## 3. 最上位設計原則
 
-### 3.1 Pipeline over monolith
+### 3.1 ネットワーク取得と変換を分離する
 
-The system must be implemented as explicit stages.
+`source acquire`だけがネットワークへ接続します。取得完了後、変換パイプラインはオフラインで動作します。
 
-Each stage:
+理由:
 
-* Reads well-defined input artifacts
-* Writes immutable or replaceable output artifacts
-* Produces logs and metrics
-* Can be rerun independently
-* Can be skipped when outputs are still valid
+- 再現性
+- API障害やtoken期限からの分離
+- リトライ範囲の限定
+- 同一入力によるデバッグ
+- 途中からの再開
 
-### 3.2 Parser and renderer separation
+### 3.2 レンダリング済みHTMLを標準入力とする
 
-MediaWiki parsing must not directly emit EPWING records.
+標準入力はWikimedia Enterprise通常Snapshotの`article_body.html`です。
 
-The system first generates a normalized intermediate representation.
+理由:
+
+- MediaWiki本体がテンプレート展開した結果を利用できる
+- 複雑なLua/Template展開を自前実装しなくてよい
+- 表、Infobox、脚注、数式、内部リンクをDOMとして扱える
+- Wikitextの時代差によるパーサー破損を減らせる
+
+ただし標準SnapshotのHTML項目はoptionalであるため、欠落時の診断とWikitextフォールバックを持ちます。
+
+### 3.3 Structured Contentsに依存しない
+
+2026年7月時点のStructured Contents Snapshotは日本語Wikipediaを対象としていません。したがって、テーブルやInfoboxの抽出をStructured Contentsへ依存させません。
+
+将来jawikiが対応しても、追加adapterとして扱い、既存HTML経路を壊しません。
+
+### 3.4 中間モデルを正本とする
+
+HTMLから直接FreePWING記法へ変換しません。
 
 ```text
-Wikimedia dump
-    ↓
-Parsed article model
-    ↓
-Normalized article model
-    ↓
-Rendered dictionary entry
-    ↓
-EPWING source
-    ↓
-EPWING binary
+Source snapshot
+  -> RawArticle
+  -> NormalizedArticle
+  -> RenderedEntry
+  -> EpwingBookModel
+  -> FreePWING input
+  -> EPWING files
 ```
 
-### 3.3 Deterministic builds
+各矢印は独立したステージです。
 
-Given identical:
+### 3.5 機能不足は劣化表示し、データ損失を記録する
 
-* Source code
-* Configuration
-* Dump files
-* Image files
-* Toolchain image
+未対応DOMを見つけた場合:
 
-the generated logical dictionary contents should be identical.
+1. 可能な限りテキストを抽出
+2. `UnsupportedBlock`または`UnsupportedInline`へ保存
+3. diagnosticを記録
+4. 記事全体の生成は継続
 
-Timestamps and archive metadata may be normalized where necessary.
+記事全体を落とすのは、構造破損や出力制約により安全に処理できない場合だけです。
 
-### 3.4 Graceful degradation
+### 3.6 巨大処理を不変ステージへ分割する
 
-Unsupported markup must not abort the entire build.
+ステージ完了成果物は原則として再書き換えません。次のステージが別ファイル・別DBを生成します。
 
-Preferred behavior:
+利点:
 
-1. Render supported content.
-2. Replace unsupported elements with readable fallback text.
-3. Record the unsupported construct in diagnostics.
-4. Continue processing.
-
-### 3.5 No silent data loss
-
-Every skipped article, template, image, table, formula, or malformed record must be counted.
-
-Representative samples must be included in the final build report.
+- 再開
+- 差分比較
+- 破損範囲の限定
+- キャッシュ判定
+- 弱い実装エージェントでも責務を理解しやすい
 
 ---
 
-## 4. High-level architecture
+## 4. 外部事実と制約
+
+### 4.1 Wikimedia Enterprise通常Snapshot
+
+通常Snapshotは、プロジェクト・namespace単位のtar.gzで、NDJSONを含みます。記事項目には次が含まれ得ます。
+
+- `identifier`: page ID
+- `name`: 記事名
+- `url`
+- `namespace.identifier`
+- `version.identifier`: revision ID
+- `date_modified`
+- `article_body.html`
+- `article_body.wikitext`
+- `redirects`
+- `categories`
+- `templates`
+- `license`
+- `image`: 主画像
+
+Snapshotには少量の重複・削除済み記事が混入する可能性があるため、同一page IDでは最大の`version.identifier`を採用し、削除・visibility情報を扱います。
+
+### 4.2 Wikimedia公式ダンプ
+
+補助入力として次を利用できます。
+
+- `pages-articles-multistream.xml.bz2`
+- `pages-articles-multistream-index.txt.bz2`
+- `redirect.sql.gz`
+- `page.sql.gz`
+- `page_props.sql.gz`
+- `categorylinks.sql.gz`
+- checksums
+
+必須ではありませんが、次の用途で有効です。
+
+- Snapshot欠落検証
+- redirectの比較
+- 記事数比較
+- Wikitextフォールバック
+- Snapshot APIを使えないときのMini生成
+
+### 4.3 EPWING/FreePWING
+
+EPWING固有の制約は、推測でコードへ埋め込まず、toolchain probeで確認します。
+
+確認対象:
+
+- 対応検索種別
+- 文字コード・外字
+- 一記事あたりの実用上限
+- 画像形式・サイズ
+- サブブック数
+- index key長
+- 内部参照
+- `ebzip`対象ファイル
+
+probe結果は`toolchain-capabilities.json`として固定します。
+
+---
+
+## 5. システム全体像
 
 ```text
-┌──────────────────────────────────────────────────────────────┐
-│                         CLI / Orchestrator                   │
-│  build / download / parse / render / package / verify       │
-└───────────────────────────────┬──────────────────────────────┘
-                                │
-        ┌───────────────────────┼─────────────────────────┐
-        │                       │                         │
-        ▼                       ▼                         ▼
-┌───────────────┐      ┌─────────────────┐       ┌────────────────┐
-│ Dump Manager  │      │ Build Manifest  │       │ Cache Manager  │
-│ download/hash │      │ stages/versions │       │ content cache  │
-└───────┬───────┘      └─────────────────┘       └────────────────┘
-        │
-        ▼
-┌──────────────────────────────────────────────────────────────┐
-│                     MediaWiki Ingestion                      │
-│ XML stream parser / page filter / revision extraction       │
-└───────────────────────────────┬──────────────────────────────┘
-                                ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    Article Normalization                     │
-│ templates / redirects / links / sections / tables / math   │
-└───────────────────────────────┬──────────────────────────────┘
-                                ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    Intermediate Database                     │
-│ SQLite or partitioned JSONL/MessagePack                     │
-└───────────────┬───────────────────────────────┬──────────────┘
-                │                               │
-                ▼                               ▼
-┌────────────────────────────┐      ┌──────────────────────────┐
-│ Image and Media Pipeline   │      │ Search Index Pipeline    │
-│ metadata/thumb/cache       │      │ headword/redirect/keyword│
-└───────────────┬────────────┘      └────────────┬─────────────┘
-                │                                │
-                └───────────────┬────────────────┘
-                                ▼
-┌──────────────────────────────────────────────────────────────┐
-│                     EPWING Renderer                          │
-│ article layout / references / graphics / menus             │
-└───────────────────────────────┬──────────────────────────────┘
-                                ▼
-┌──────────────────────────────────────────────────────────────┐
-│              FreePWING / EB Toolchain Adapter               │
-│ catalog / honmon / indexes / graphics / sound placeholders │
-└───────────────────────────────┬──────────────────────────────┘
-                                ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    Packaging and Verification                │
-│ ebzip / archive / smoke tests / report / checksums          │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ CLI / Orchestrator                                          │
+│ doctor, acquire, inspect, ingest, normalize, render, build  │
+└─────────────┬───────────────────────────────────────────────┘
+              │
+              ▼
+┌───────────────────────────────┐
+│ Source Acquisition            │
+│ Enterprise / XML / Reference  │
+└─────────────┬─────────────────┘
+              ▼
+┌───────────────────────────────┐
+│ Immutable Source Bundle       │
+│ tar.gz, checksums, lock file  │
+└─────────────┬─────────────────┘
+              ▼
+┌───────────────────────────────┐
+│ Raw Ingest                    │
+│ dedup, validate, compress     │
+│ raw.sqlite3                   │
+└─────────────┬─────────────────┘
+              ▼
+┌───────────────────────────────┐
+│ HTML Normalization            │
+│ DOM cleanup, semantic blocks  │
+│ model.sqlite3                 │
+└───────┬───────────────┬───────┘
+        │               │
+        ▼               ▼
+┌───────────────┐  ┌───────────────────┐
+│ Media Pipeline│  │ Search Pipeline   │
+│ images/math   │  │ titles/aliases    │
+└───────┬───────┘  └─────────┬─────────┘
+        └────────────┬────────┘
+                     ▼
+┌───────────────────────────────┐
+│ Rendered Entry Store          │
+│ rendered.sqlite3              │
+└─────────────┬─────────────────┘
+              ▼
+┌───────────────────────────────┐
+│ EPWING Backend Adapter        │
+│ FreePWING source generation   │
+└─────────────┬─────────────────┘
+              ▼
+┌───────────────────────────────┐
+│ Package / Verify / Compare    │
+│ ebzip, zip, reports, hashes   │
+└───────────────────────────────┘
 ```
 
 ---
 
-## 5. Repository structure
+## 6. リポジトリ構造
 
 ```text
-wikipedia-epwing/
+wikipedia-epwing-v2/
 ├── AGENTS.md
 ├── ARCHITECTURE.md
 ├── PLAN.md
+├── TASKS.md
+├── TESTING.md
+├── COMPATIBILITY.md
+├── CONFIG_REFERENCE.md
+├── DECISIONS.md
+├── CURRENT_TASK.md
+├── LOG.md
+├── MEMORY.md
 ├── README.md
-├── LICENSE
 ├── Makefile
 ├── compose.yaml
 ├── pyproject.toml
 ├── uv.lock
+├── .env.example
+├── .gitignore
 ├── config/
 │   ├── default.toml
-│   ├── jawiki.toml
-│   ├── enwiki.toml
+│   ├── projects/
+│   │   ├── jawiki.toml
+│   │   └── enwiki.toml
 │   ├── profiles/
-│   │   ├── minimal.toml
-│   │   ├── standard.toml
+│   │   ├── mini.toml
+│   │   ├── lite.toml
 │   │   └── full.toml
-│   └── template-rules/
-│       ├── common.yaml
-│       └── ja.yaml
+│   ├── dom-rules/
+│   │   ├── common.toml
+│   │   └── jawiki.toml
+│   └── gaiji/
+│       └── substitutions.toml
 ├── docker/
-│   ├── builder.Dockerfile
+│   ├── app.Dockerfile
 │   ├── toolchain.Dockerfile
-│   └── scripts/
-├── src/
-│   └── wikiepwing/
-│       ├── cli.py
-│       ├── config.py
-│       ├── manifest.py
-│       ├── logging.py
-│       ├── pipeline/
-│       │   ├── orchestrator.py
-│       │   ├── stage.py
-│       │   └── cache.py
-│       ├── dump/
-│       │   ├── downloader.py
-│       │   ├── checksum.py
-│       │   └── xml_reader.py
-│       ├── mediawiki/
-│       │   ├── parser.py
-│       │   ├── templates.py
-│       │   ├── redirects.py
-│       │   ├── links.py
-│       │   ├── tables.py
-│       │   ├── math.py
-│       │   └── namespaces.py
-│       ├── model/
-│       │   ├── article.py
-│       │   ├── block.py
-│       │   ├── inline.py
-│       │   ├── media.py
-│       │   └── diagnostics.py
-│       ├── storage/
-│       │   ├── database.py
-│       │   ├── schema.sql
-│       │   └── partitions.py
-│       ├── media/
-│       │   ├── commons.py
-│       │   ├── downloader.py
-│       │   ├── converter.py
-│       │   └── cache.py
-│       ├── search/
-│       │   ├── headwords.py
-│       │   ├── redirects.py
-│       │   ├── aliases.py
-│       │   └── keywords.py
-│       ├── render/
-│       │   ├── article.py
-│       │   ├── text.py
-│       │   ├── tables.py
-│       │   ├── infobox.py
-│       │   ├── references.py
-│       │   └── epwing_source.py
-│       ├── epwing/
-│       │   ├── freepwing.py
-│       │   ├── catalog.py
-│       │   ├── graphics.py
-│       │   ├── indexes.py
-│       │   └── package.py
-│       └── verify/
-│           ├── structure.py
-│           ├── content.py
-│           ├── encoding.py
-│           └── report.py
+│   ├── entrypoint.sh
+│   └── toolchain/
+│       ├── build-freepwing.sh
+│       ├── build-eb.sh
+│       └── probe.sh
+├── migrations/
+│   ├── raw/
+│   ├── model/
+│   ├── rendered/
+│   └── reference/
 ├── patches/
 │   ├── freepwing/
-│   ├── eb/
-│   └── legacy/
+│   └── eb/
 ├── scripts/
-│   ├── build.sh
-│   ├── smoke-test.sh
-│   └── inspect-entry.sh
+│   ├── build-fixture.sh
+│   ├── build-full.sh
+│   ├── inspect-artifact.sh
+│   └── compare-viewers.md
+├── src/wikiepwing/
+│   ├── __init__.py
+│   ├── cli.py
+│   ├── config.py
+│   ├── errors.py
+│   ├── logging.py
+│   ├── hashing.py
+│   ├── paths.py
+│   ├── pipeline/
+│   │   ├── orchestrator.py
+│   │   ├── stage.py
+│   │   ├── manifest.py
+│   │   ├── locks.py
+│   │   └── progress.py
+│   ├── source/
+│   │   ├── base.py
+│   │   ├── enterprise.py
+│   │   ├── xml_dump.py
+│   │   ├── downloader.py
+│   │   ├── auth.py
+│   │   ├── checksums.py
+│   │   └── lockfile.py
+│   ├── ingest/
+│   │   ├── ndjson.py
+│   │   ├── xml.py
+│   │   ├── deduplicate.py
+│   │   ├── validate.py
+│   │   └── repository.py
+│   ├── model/
+│   │   ├── article.py
+│   │   ├── blocks.py
+│   │   ├── inline.py
+│   │   ├── media.py
+│   │   ├── diagnostics.py
+│   │   └── codec.py
+│   ├── normalize/
+│   │   ├── html_parser.py
+│   │   ├── dom_cleanup.py
+│   │   ├── sections.py
+│   │   ├── paragraphs.py
+│   │   ├── links.py
+│   │   ├── lists.py
+│   │   ├── tables.py
+│   │   ├── infoboxes.py
+│   │   ├── references.py
+│   │   ├── math.py
+│   │   ├── media.py
+│   │   └── unknown.py
+│   ├── text/
+│   │   ├── unicode.py
+│   │   ├── japanese.py
+│   │   ├── whitespace.py
+│   │   ├── title.py
+│   │   └── gaiji.py
+│   ├── search/
+│   │   ├── headword.py
+│   │   ├── redirect.py
+│   │   ├── alias.py
+│   │   ├── keyword.py
+│   │   ├── cross.py
+│   │   └── collisions.py
+│   ├── media/
+│   │   ├── downloader.py
+│   │   ├── policy.py
+│   │   ├── metadata.py
+│   │   ├── image_convert.py
+│   │   ├── svg_sanitize.py
+│   │   ├── math_render.py
+│   │   └── cache.py
+│   ├── render/
+│   │   ├── entry.py
+│   │   ├── layout.py
+│   │   ├── table.py
+│   │   ├── infobox.py
+│   │   ├── reference.py
+│   │   └── profile.py
+│   ├── epwing/
+│   │   ├── backend.py
+│   │   ├── freepwing.py
+│   │   ├── source_writer.py
+│   │   ├── catalog.py
+│   │   ├── indexes.py
+│   │   ├── graphics.py
+│   │   ├── gaiji.py
+│   │   ├── package.py
+│   │   └── probe.py
+│   ├── reference/
+│   │   ├── scanner.py
+│   │   ├── searches.py
+│   │   ├── entries.py
+│   │   ├── report.py
+│   │   └── repository.py
+│   ├── verify/
+│   │   ├── source.py
+│   │   ├── database.py
+│   │   ├── model.py
+│   │   ├── epwing.py
+│   │   ├── content.py
+│   │   ├── compatibility.py
+│   │   └── report.py
+│   └── report/
+│       ├── json_report.py
+│       ├── html_report.py
+│       └── metrics.py
 ├── tests/
 │   ├── fixtures/
+│   │   ├── enterprise/
+│   │   ├── html/
+│   │   ├── xml/
+│   │   ├── images/
+│   │   └── epwing/
+│   ├── golden/
 │   ├── unit/
 │   ├── integration/
-│   ├── snapshot/
-│   └── end_to_end/
-├── work/
-│   └── .gitkeep
-└── output/
-    └── .gitkeep
+│   ├── end_to_end/
+│   ├── toolchain/
+│   └── compatibility/
+├── output/
+├── reports/
+└── work/
 ```
+
+`output/`, `reports/`, `work/`の巨大内容はGit管理しません。
 
 ---
 
-## 6. Technology choices
+## 7. 実行コンポーネント
 
-### 6.1 Primary implementation language
+### 7.1 CLI
 
-Use Python 3.12 or a later version explicitly pinned in the Docker image.
-
-Reasons:
-
-* Mature streaming XML parsers
-* Mature MediaWiki parsing libraries
-* Easy Unicode handling
-* Good image and archive tooling
-* Fast enough when streaming and batching are used
-* Easier maintenance than extending old Perl code
-* Good compatibility with Codex-assisted development
-
-The architecture must permit performance-critical stages to be replaced by Rust later.
-
-### 6.2 Package management
-
-Use `uv` with a committed lockfile.
-
-All Python dependencies must be pinned.
-
-### 6.3 MediaWiki parsing
-
-Start with `mwparserfromhell` for syntactic parsing.
-
-Do not assume it renders templates semantically.
-
-Template handling must be implemented as a separate rule system.
-
-Potential future alternatives:
-
-* `wikitextparser`
-* Parsoid output
-* A Rust parser
-* MediaWiki API-assisted template expansion
-
-### 6.4 Intermediate storage
-
-Use SQLite initially.
-
-Reasons:
-
-* One-file artifact
-* Transactional
-* Searchable during debugging
-* Supports resumable stages
-* Supports indexes
-* Available everywhere
-* Adequate for sequential bulk import
-
-SQLite configuration:
-
-```sql
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-PRAGMA temp_store = MEMORY;
-PRAGMA mmap_size = 8589934592;
-```
-
-For very large builds, split data into shards by page ID range or normalized title prefix.
-
-### 6.5 Container base
-
-Use Debian, not Alpine.
-
-Preferred base:
+単一エントリポイントは`wikiepwing`です。
 
 ```text
-debian:bookworm-slim
+wikiepwing doctor
+wikiepwing source acquire
+wikiepwing source inspect
+wikiepwing reference scan
+wikiepwing ingest
+wikiepwing normalize
+wikiepwing media
+wikiepwing render
+wikiepwing epwing generate
+wikiepwing verify
+wikiepwing compare-reference
+wikiepwing package
+wikiepwing build
+wikiepwing report
+wikiepwing clean
 ```
 
-Create a dedicated toolchain image containing:
+CLIは薄く保ちます。ビジネスロジックをClick/Typer command関数へ直接書きません。
 
-* FreePWING
-* EB Library
-* ebzip
-* ImageMagick
-* librsvg
-* fonts
-* TeX or Math rendering tools where required
-* patched legacy dependencies
+### 7.2 Orchestrator
 
-Pin downloaded source archives by URL and SHA-256.
+Orchestratorは次だけを担当します。
+
+- stage依存関係解決
+- manifest比較
+- lock取得
+- stage開始・終了記録
+- 失敗状態記録
+- resume判定
+- progress集約
+
+記事変換ロジックを持ちません。
+
+### 7.3 Stageインターフェース
+
+```python
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+
+@dataclass(frozen=True)
+class StageResult:
+    output_paths: tuple[Path, ...]
+    record_count: int
+    diagnostic_count: int
+    logical_hash: str
+
+class Stage(Protocol):
+    name: str
+    version: int
+
+    def input_fingerprints(self, ctx: "BuildContext") -> dict[str, str]: ...
+    def run(self, ctx: "BuildContext") -> StageResult: ...
+    def verify(self, ctx: "BuildContext", result: StageResult) -> None: ...
+```
+
+Stage versionを変更すると、そのstage以降のキャッシュを無効にします。
 
 ---
 
-## 7. Core domain model
+## 8. データディレクトリと成果物
 
-The parser must produce a semantic intermediate model rather than HTML.
+コンテナ内部の標準パス:
 
-### 7.1 Article
+```text
+/data/sources       取得済みSnapshot・dump
+/data/reference     手元Boookends 2023版（read-only）
+/data/work          stage DB・一時成果物
+/data/cache         画像・数式・HTTP content cache
+/data/output        最終EPWING・ZIP
+/data/reports       JSON/HTML/CSVレポート
+/data/logs          build log
+/app                ソースコード（read-only運用可能）
+```
+
+runごとの構造:
+
+```text
+/data/work/runs/<run_id>/
+├── run.json
+├── manifests/
+│   ├── 00-doctor.json
+│   ├── 10-ingest.json
+│   ├── 20-normalize.json
+│   └── ...
+├── raw.sqlite3
+├── model.sqlite3
+├── rendered.sqlite3
+├── index.sqlite3
+├── epwing-source/
+└── tmp/
+```
+
+run_id例:
+
+```text
+jawiki-20260701-full-git-a1b2c3d4
+```
+
+run_idへ秘密情報やホスト絶対パスを含めません。
+
+---
+
+## 9. Source Bundle設計
+
+### 9.1 Snapshot availability gate
+
+実装は`jawiki_namespace_0`の存在やHTML fieldの充足を固定知識として決め打ちしません。acquire時にmetadata endpointを問い合わせ、次を検証します。
+
+- requested project/namespaceのSnapshotが列挙される
+- download endpointが利用可能
+-取得したsample recordに期待schemaがある
+- HTML充足率が設定thresholdを満たす
+
+標準Snapshotが取得不能、またはHTML充足率が不足する場合:
+
+- `enterprise` modeは明示的に失敗する
+- `xml` fallbackでMini相当を作ることは許可する
+- Lite/Fullを自動的に品質低下させて生成しない
+- alternative rendererを追加するまではblock状態をreportする
+
+### 9.2 Source lock
+
+`source.lock.json`は取得入力を固定します。
+
+```json
+{
+  "schema_version": 1,
+  "project": "jawiki",
+  "namespace": 0,
+  "provider": "wikimedia-enterprise-snapshot",
+  "snapshot_identifier": "jawiki_namespace_0",
+  "snapshot_version": "2026-07-01",
+  "date_modified": "2026-07-01T12:00:00Z",
+  "downloaded_at": "2026-07-13T10:00:00Z",
+  "files": [
+    {
+      "path": "jawiki_namespace_0.tar.gz",
+      "size_bytes": 0,
+      "sha256": "..."
+    }
+  ],
+  "supplements": [],
+  "tool": {
+    "name": "wikiepwing",
+    "version": "0.1.0"
+  }
+}
+```
+
+`latest`という文字列を後続manifestへ残しません。必ず具体的versionへ解決します。
+
+### 9.3 認証
+
+認証環境変数例:
+
+```text
+WME_USERNAME
+WME_PASSWORD
+WME_ACCESS_TOKEN
+WME_REFRESH_TOKEN
+```
+
+優先順位:
+
+1. 有効なaccess token
+2. refresh tokenからaccess token更新
+3. username/passwordでlogin
+
+tokenは永続DBへ保存しません。必要ならroot以外のみ読める一時ファイルを使い、終了時に削除します。
+
+### 9.4 ダウンロード
+
+要件:
+
+- HEADでサイズ取得
+- HTTP Range対応時にresume
+- `.partial`へ保存
+- 完了後にSHA-256計算
+- atomic rename
+- 5xxとtimeoutだけbounded retry
+- 401/403は即時失敗
+- disk free事前確認
+- `source.lock.json`は全ファイル検証後にのみ作成
+
+---
+
+## 10. Raw ingest設計
+
+### 10.1 入力
+
+- tar.gz内NDJSON
+- 1行1記事
+- UTF-8
+
+### 10.2 ストリーミング
+
+tar.gzを全展開せず、tar streamからNDJSONを読みます。
+
+禁止:
+
+- 全NDJSONをメモリへ読む
+- 全展開してから読むことを必須にする
+- 記事ごとの小ファイルを数百万個作る
+
+### 10.3 RawArticle
+
+```python
+@dataclass(frozen=True)
+class RawArticle:
+    page_id: int
+    revision_id: int
+    title: str
+    namespace_id: int
+    url: str
+    date_modified: datetime
+    html: str | None
+    wikitext: str | None
+    redirects: tuple[str, ...]
+    categories: tuple[str, ...]
+    templates: tuple[str, ...]
+    licenses: tuple["LicenseRecord", ...]
+    main_image: "SourceImage" | None
+    source_sequence: int
+    source_hash: str
+```
+
+### 10.4 raw.sqlite3
+
+主要テーブル:
+
+```sql
+CREATE TABLE articles (
+    page_id INTEGER PRIMARY KEY,
+    revision_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    normalized_title TEXT NOT NULL,
+    namespace_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    date_modified TEXT NOT NULL,
+    html_zstd BLOB,
+    wikitext_zstd BLOB,
+    source_hash TEXT NOT NULL,
+    source_sequence INTEGER NOT NULL,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    ingest_status TEXT NOT NULL,
+    CHECK (ingest_status IN ('accepted', 'rejected', 'deleted'))
+) STRICT;
+
+CREATE TABLE redirects (
+    target_page_id INTEGER NOT NULL,
+    redirect_title TEXT NOT NULL,
+    normalized_redirect_title TEXT NOT NULL,
+    PRIMARY KEY (target_page_id, normalized_redirect_title),
+    FOREIGN KEY (target_page_id) REFERENCES articles(page_id)
+) WITHOUT ROWID;
+
+CREATE TABLE categories (...);
+CREATE TABLE templates (...);
+CREATE TABLE licenses (...);
+CREATE TABLE diagnostics (...);
+CREATE TABLE metadata (...);
+```
+
+詳細schemaは実装時にmigrationへ分割します。
+
+### 10.5 重複処理
+
+同じpage_idが複数回現れた場合:
+
+1. revision IDが大きい方を採用
+2. 同じrevision IDでhashが同じなら重複として無視
+3. 同じrevision IDでhashが異なるならfatal diagnostic候補
+4. 古いレコードは`ingest_duplicates`へ記録
+
+titleだけで同一記事判定しません。
+
+### 10.6 入力上限
+
+設定可能な安全上限:
+
+- title: 4 KiB
+- URL: 16 KiB
+- HTML: 64 MiB/article
+- Wikitext: 64 MiB/article
+- redirects: 100,000/article
+- categories: 100,000/article
+- JSON nesting: parserが対応する現実的上限
+
+上限超過は記事を落とすのではなく、field単位truncate可能性を設計判断として記録します。HTML本体上限超過は原則rejectし、ページIDとサイズを報告します。
+
+---
+
+## 11. Normalized Article Model
+
+### 11.1 Article
 
 ```python
 @dataclass(frozen=True)
@@ -402,828 +756,1142 @@ class Article:
     revision_id: int
     title: str
     normalized_title: str
-    namespace: int
-    redirect_target: str | None
-    language: str
+    source_url: str
+    source_date_modified: datetime
+    abstract: str | None
     blocks: tuple["Block", ...]
+    aliases: tuple["Alias", ...]
     categories: tuple[str, ...]
-    aliases: tuple[str, ...]
     media: tuple["MediaReference", ...]
     diagnostics: tuple["Diagnostic", ...]
+    source_license_ids: tuple[str, ...]
 ```
 
-### 7.2 Block types
+### 11.2 Block union
 
 ```text
-Paragraph
-Heading
-ListBlock
-DefinitionList
+ParagraphBlock
+HeadingBlock
+UnorderedListBlock
+OrderedListBlock
+DefinitionListBlock
 QuoteBlock
-CodeBlock
 PreformattedBlock
+CodeBlock
 TableBlock
 InfoboxBlock
 ImageBlock
 MathBlock
-HorizontalRule
-ReferenceList
+ReferencesBlock
 NoticeBlock
+HorizontalRuleBlock
 UnsupportedBlock
 ```
 
-### 7.3 Inline types
+### 11.3 Inline union
 
 ```text
-Text
-Emphasis
-Strong
-InternalLink
-ExternalLink
-Ruby
-Code
+TextInline
+StrongInline
+EmphasisInline
+InternalLinkInline
+ExternalLinkInline
+CodeInline
 MathInline
-LineBreak
+LineBreakInline
+RubyInline
 UnsupportedInline
 ```
 
-### 7.4 Diagnostics
+### 11.4 Link
 
-Every recoverable parser or renderer issue must use structured diagnostics.
+```python
+@dataclass(frozen=True)
+class InternalLinkInline:
+    label: tuple["Inline", ...]
+    target_title: str
+    target_normalized_title: str
+    target_fragment: str | None
+    target_page_id: int | None
+    resolution: Literal["resolved", "missing", "externalized"]
+```
+
+HTMLのURLをそのままEPWING内部リンクへしません。title/page IDへ解決します。
+
+### 11.5 Table
+
+```python
+@dataclass(frozen=True)
+class TableCell:
+    blocks: tuple["Block", ...]
+    row_span: int
+    col_span: int
+    is_header: bool
+
+@dataclass(frozen=True)
+class TableBlock:
+    caption: tuple["Inline", ...]
+    rows: tuple[tuple[TableCell, ...], ...]
+    source_class_names: tuple[str, ...]
+    complexity: Literal["simple", "wide", "complex", "unsupported"]
+```
+
+### 11.6 Infobox
+
+InfoboxはTableBlockの単なる別名にしません。記事冒頭メタデータとして別型にします。
+
+```python
+@dataclass(frozen=True)
+class InfoboxField:
+    name: str
+    value: tuple["Block", ...]
+
+@dataclass(frozen=True)
+class InfoboxBlock:
+    title: str | None
+    fields: tuple[InfoboxField, ...]
+    images: tuple[str, ...]
+```
+
+### 11.7 Diagnostic
 
 ```python
 @dataclass(frozen=True)
 class Diagnostic:
     code: str
-    severity: Literal["info", "warning", "error"]
-    page_id: int
-    title: str
+    severity: Literal["info", "warning", "error", "fatal"]
+    stage: str
+    page_id: int | None
+    title: str | None
     message: str
-    source_fragment: str | None
+    source_path: str | None
+    source_excerpt: str | None
+    details: dict[str, object]
 ```
 
-Diagnostic codes must be stable and documented.
+Diagnostic codeは安定APIです。
 
-Examples:
+例:
 
 ```text
-TEMPLATE_UNSUPPORTED
-TABLE_COLUMN_OVERFLOW
-IMAGE_METADATA_MISSING
-INVALID_INTERNAL_LINK
-UNSUPPORTED_UNICODE
-ENTRY_SIZE_EXCEEDED
+SRC_HTML_MISSING
+SRC_DUPLICATE_PAGE
+DOM_UNKNOWN_ELEMENT
+DOM_INVALID_NESTING
+TABLE_TOO_COMPLEX
+INFOBOX_EMPTY
+LINK_TARGET_MISSING
+MEDIA_DOWNLOAD_FAILED
+MEDIA_LICENSE_MISSING
+MATH_RENDER_FAILED
+CHAR_GAIJI_REQUIRED
+CHAR_UNREPRESENTABLE
+EPWING_ENTRY_TOO_LARGE
+EPWING_INDEX_COLLISION
+VERIFY_CATALOG_INVALID
 ```
 
 ---
 
-## 8. Pipeline stages
+## 12. HTML Normalization
 
-## 8.1 Stage 00: environment inspection
+### 12.1 DOM parser
 
-Validate:
+- `lxml`を第一候補とする
+- recovery modeの使用有無を設定化する
+- script/style/template-like executable contentを除去する
+- 外部entity解決を無効にする
+- ネットワークアクセスを無効にする
 
-* Docker architecture
-* Disk availability
-* Memory availability
-* Required executable versions
-* Locale
-* Writable work directories
-* Current configuration
+### 12.2 Pass構成
 
-Output:
+Normalizationは順序付きpassとして実装します。
 
 ```text
-work/manifest/environment.json
+N00 Parse HTML
+N10 Root selection
+N20 Remove unsafe/non-content nodes
+N30 Normalize headings and section anchors
+N40 Classify infobox/navbox/metadata tables
+N50 Convert paragraphs and inline markup
+N60 Convert lists
+N70 Convert tables
+N80 Convert images and figures
+N90 Convert math
+N100 Convert references
+N110 Resolve internal links
+N120 Normalize whitespace
+N130 Validate model
+N140 Store diagnostics
 ```
 
-## 8.2 Stage 01: dump acquisition
+各passは入力ArticleDraftを受け、新ArticleDraftとdiagnosticsを返します。global mutable stateを避けます。
 
-Download:
+### 12.3 除外候補
 
-* `pages-articles-multistream.xml.bz2`
-* multistream index
-* optional page metadata
-* optional image metadata
-* dump checksums
+デフォルトで本文から除外するもの:
 
-Features:
+- 編集リンク
+- navigation UI
+- coordinates UIの重複表示
+- hidden metadata
+- maintenance category表示
+- navbox
+- authority control box
+- portal box
+- language switch UI
+- script/style
 
-* Resume partial downloads
-* Verify checksums
-* Record exact source URLs
-* Never silently use a partially downloaded file
+ただし情報を落とす可能性があるclassは、fixtureで確認してからruleへ追加します。
 
-## 8.3 Stage 02: raw page extraction
+### 12.4 DOM rule設定
 
-Stream the XML dump.
-
-Do not fully decompress the dump to disk unless explicitly configured.
-
-Extract:
-
-* Page ID
-* Namespace
-* Title
-* Latest revision ID
-* Latest revision text
-* Redirect information
-
-Write raw records into SQLite or compressed partition files.
-
-## 8.4 Stage 03: title and redirect graph
-
-Build:
-
-* Canonical title table
-* Redirect map
-* Case normalization map
-* Namespace map
-* Alias candidates
-* Disambiguation markers
-
-Resolve redirect chains with cycle detection.
-
-## 8.5 Stage 04: article parsing
-
-Convert Wikitext into the intermediate article model.
-
-Operations:
-
-* Parse sections
-* Parse paragraphs
-* Parse links
-* Parse lists
-* Parse tables
-* Detect infoboxes
-* Detect image references
-* Detect math
-* Extract categories
-* Extract display-title aliases
-* Remove maintenance markup
-* Record unsupported templates
-
-The stage must support parallel workers with deterministic output ordering.
-
-## 8.6 Stage 05: template normalization
-
-Templates are classified into:
-
-1. Semantic templates
-2. Formatting templates
-3. Navigation templates
-4. Maintenance templates
-5. Infobox templates
-6. Citation templates
-7. Unknown templates
-
-Rule examples:
-
-```yaml
-templates:
-  - pattern: "^Infobox"
-    action: infobox
-
-  - names:
-      - 要出典
-      - 出典の明記
-      - Cleanup
-    action: drop
-
-  - names:
-      - 仮リンク
-    action: internal_link
-
-  - pattern: "^Cite "
-    action: citation
-```
-
-Unknown templates should usually degrade to selected positional or named argument text rather than disappear entirely.
-
-## 8.7 Stage 06: image resolution
-
-Resolve image references to Wikimedia Commons or local project files.
-
-Policy options:
+CSS selector/class名の判断をコードへ散在させません。
 
 ```toml
-[images]
-enabled = true
-max_per_article = 4
-thumbnail_width = 320
-thumbnail_height = 320
-max_file_bytes = 2000000
-formats = ["jpeg", "png"]
+[[remove]]
+selector = ".mw-editsection"
+reason = "editing UI"
+
+[[classify]]
+selector = "table.infobox"
+as = "infobox"
+
+[[classify]]
+selector = "table.wikitable"
+as = "table"
 ```
 
-The image pipeline must:
+rule versionをmanifestへ記録します。
 
-* Cache by content hash
-* Respect redirects
-* Generate thumbnails
-* Convert unsupported formats
-* Strip metadata
-* Record attribution information
-* Avoid duplicate images
-* Permit image-free builds
+### 12.5 内部リンク解決
 
-SVG should normally be rasterized.
-
-Animated media should use a static preview frame.
-
-## 8.8 Stage 07: table normalization
-
-Convert Wiki tables into structured rows and cells.
-
-Rendering policy:
-
-* Small tables: text grid or compact EPWING layout
-* Wide tables: row-oriented key/value representation
-* Complex tables: simplified readable fallback
-* Nested tables: flatten where practical
-* Style attributes: mostly ignored
-
-The renderer must prioritize readable content over visual fidelity.
-
-## 8.9 Stage 08: mathematical formulas
-
-Preferred pipeline:
+対象URL例:
 
 ```text
-TeX source
-    ↓
-KaTeX/LaTeX renderer
-    ↓
-SVG
-    ↓
-monochrome or grayscale bitmap
-    ↓
-EPWING graphic
+/wiki/Emacs
+https://ja.wikipedia.org/wiki/Emacs
+./Emacs
 ```
 
-Fallback:
+処理:
 
-* Preserve original TeX as text
-* Record a diagnostic
+1. URL decode
+2. fragment分離
+3. project base URL確認
+4. namespace/title抽出
+5. normalized title生成
+6. raw DBでpage ID解決
+7. redirect targetの扱いを設定に従う
+8. EPWING entry IDへ後段で変換
 
-Formula output must remain readable in monochrome viewers.
+外部サイトへのリンクはplain URLまたは注記として残します。
 
-## 8.10 Stage 09: entry rendering
+---
 
-Generate an EPWING-oriented logical entry.
+## 13. Text normalizationと日本語索引
 
-Recommended article layout:
+### 13.1 保存用本文
+
+本文は過剰にNFKCしません。視覚・意味が変わる可能性があるためです。
+
+処理対象:
+
+- Unicode validation
+- CRLF -> LF
+- 不正制御文字除去
+- ゼロ幅文字の方針適用
+- 連続空白の文脈別整理
+
+### 13.2 索引用文字列
+
+索引用に別の正規化関数を持ちます。
 
 ```text
-Article title
-Pronunciation or aliases
-Short metadata line
-
-Lead section
-
-1. Heading
-   Body
-
-2. Heading
-   Body
-
-Categories
-Related articles
-Source metadata
+Unicode NFKC
+全角/半角統一
+ASCII case fold
+空白統一
+一部句読点除去
+長音・中点のvariant生成（設定）
+ひらがな/カタカナvariant生成（設定）
 ```
 
-References should use internal EPWING links where possible.
+本文文字列と索引keyを混同しません。
 
-External URLs may be retained as plain text based on profile settings.
+### 13.3 alias source
 
-## 8.11 Stage 10: index generation
+alias候補:
 
-Generate indexes for:
+- redirects
+- 記事title
+- normalized title variant
+- HTML中のdisplay title
+- lead sentenceのbold alias（後期実装）
+- Wikidata alias（将来optional）
 
-* Exact article titles
-* Normalized article titles
-* Redirect titles
-* Alternate titles
-* Japanese readings where available
-* Latin aliases
-* Optional keywords
-* Optional category lookup
+aliasにはsourceとconfidenceを付けます。
 
-Avoid generating unbounded keyword indexes during the first implementation.
+---
 
-Headword normalization must be language-specific.
+## 14. Search architecture
 
-Japanese normalization may include:
+### 14.1 SearchTerm
 
-* Unicode NFKC
-* Full-width and half-width normalization
-* Hiragana and Katakana variants
-* Latin case folding
-* Space normalization
-* Optional punctuation removal
+```python
+@dataclass(frozen=True)
+class SearchTerm:
+    key: str
+    normalized_key: str
+    target_page_id: int
+    kind: Literal[
+        "title",
+        "redirect",
+        "alias",
+        "reading",
+        "category",
+        "keyword",
+        "cross_component",
+    ]
+    priority: int
+    source: str
+```
 
-## 8.12 Stage 11: EPWING source generation
+### 14.2 衝突規則
 
-Convert rendered entries and indexes into FreePWING-compatible input.
+同一keyが複数記事へ向く場合:
 
-The FreePWING adapter must be isolated behind an interface.
+- silently overwriteしない
+- 全候補を保持可能なbackend方式を優先
+- backend制約で単一候補しか持てない場合はpriorityと安定sortで選ぶ
+- dropped候補をレポートする
+
+### 14.3 プロファイル別索引
+
+Mini:
+
+- title
+- normalized title
+- redirect
+
+Lite:
+
+- Mini
+- alias
+- kana variant
+- limited cross component
+
+Full:
+
+- Lite
+- category
+- heading keyword
+- infobox selected values
+- lead bold term
+- configured keyword
+
+本文全単語の全文索引は初期スコープ外です。
+
+---
+
+## 15. Media architecture
+
+### 15.1 画像は別stage
+
+Normalizationは画像参照だけを保存します。ダウンロードしません。
+
+### 15.2 MediaReference
+
+```python
+@dataclass(frozen=True)
+class MediaReference:
+    media_id: str
+    source_url: str
+    source_name: str | None
+    alt_text: str | None
+    caption: str | None
+    role: Literal["main", "infobox", "lead", "body", "icon", "unknown"]
+    source_width: int | None
+    source_height: int | None
+```
+
+### 15.3 選択ポリシー
+
+優先順位:
+
+1. 主画像
+2. Infobox主要画像
+3. lead figure
+4. 本文先頭の意味ある画像
+5. 追加本文画像
+
+除外候補:
+
+- 16pxなどのicon
+- edit/help icon
+- decorative flag（設定で許可可能）
+- tracking image
+- blank placeholder
+- duplicate hash
+
+### 15.4 ダウンロード安全性
+
+- HTTPSのみ
+- host allowlist
+- redirect回数制限
+- timeout
+- content-length上限
+- 実デコード後pixel上限
+- MIMEとmagic byte検証
+- SVG sanitize
+- external entity禁止
+- ImageMagick delegate制限
+
+### 15.5 Cache key
+
+```text
+sha256(canonical_url + requested_width + converter_version + policy_version)
+```
+
+source responseのETag/Last-Modifiedもmetadataへ保存します。
+
+### 15.6 画像ライセンス
+
+通常Snapshotのtop-level licenseは記事本文ライセンスであり、個別画像ライセンスの完全な代替と見なしません。
+
+画像再配布を行うFull成果物では、Commons/Fileページ由来の帰属情報取得を別機能として実装します。
+
+ライセンス情報がない画像は:
+
+- personal buildではwarning付きで含めるか設定可能
+- distributable buildでは除外するのが既定
+
+### 15.7 数式
+
+HTML中のMathML/TeX/画像表現から、次の優先順位で扱います。
+
+1. テキスト代替を保存
+2. TeX sourceがあればcache keyに使用
+3. SVG/PNGへ安全にレンダリング
+4. EPWING graphicへ変換
+5. 失敗時はTeX/plain textへフォールバック
+
+---
+
+## 16. RenderedEntry
+
+```python
+@dataclass(frozen=True)
+class RenderedEntry:
+    entry_id: str
+    page_id: int
+    title: str
+    headwords: tuple[str, ...]
+    body: tuple["RenderNode", ...]
+    internal_targets: tuple[str, ...]
+    graphics: tuple[str, ...]
+    estimated_size: int
+    diagnostics: tuple[Diagnostic, ...]
+```
+
+### 16.1 entry ID
+
+安定ID:
+
+```text
+p<page_id>
+```
+
+例: `p12345`
+
+タイトル変更で内部参照が壊れないよう、page IDを基準にします。
+
+### 16.2 標準レイアウト
+
+```text
+[記事タイトル]
+別名: ...
+更新: YYYY-MM-DD
+
+[Infoboxの主要項目]
+
+導入文
+
+1. 見出し
+本文
+
+1.1 小見出し
+本文
+
+関連項目
+カテゴリ
+出典情報
+```
+
+EPWING画面幅を考え、深い入れ子や広い表を縦方向へ変換します。
+
+### 16.3 Table render policy
+
+simple:
+
+- 小列数
+- 短いcell
+- grid-like text
+
+wide:
+
+- 1行をrecordとして縦表示
+
+complex:
+
+- row/sectionごとのkey-value化
+- captionと注記を保持
+
+oversized:
+
+- configured row上限で分割
+- 続きentryを作るか、要約とtruncate diagnostic
+
+### 16.4 Entry size budget
+
+backend実測上限より安全率を引いた値をbudgetにします。
+
+超過時の順序:
+
+1. nav/referenceの重複を削る
+2. oversized tableを分割
+3. reference一覧を別entryへ分割
+4. 本文sectionを続きentryへ分割
+5. それでも不可ならfatal article diagnostic
+
+本文を無言で切り捨てません。
+
+---
+
+## 17. EPWING backend
+
+### 17.1 interface
 
 ```python
 class EpwingBackend(Protocol):
-    def write_entry(self, entry: RenderedEntry) -> None: ...
-    def write_index(self, index: SearchIndex) -> None: ...
-    def write_graphic(self, image: RenderedImage) -> None: ...
-    def finalize(self) -> Path: ...
+    def capabilities(self) -> "BackendCapabilities": ...
+    def begin_book(self, metadata: "BookMetadata") -> None: ...
+    def add_entry(self, entry: RenderedEntry) -> None: ...
+    def add_search_term(self, term: SearchTerm) -> None: ...
+    def add_graphic(self, graphic: "GraphicAsset") -> None: ...
+    def finalize(self) -> "BackendOutput": ...
 ```
 
-This permits future replacement of FreePWING.
+### 17.2 FreePWING adapter
 
-## 8.13 Stage 12: package and compression
+責務:
 
-Run:
+- FreePWING source file生成
+- catalog/subbook設定
+- index登録
+- graphic/gaiji登録
+- command invocation
+- stderr解析
+- output構造確認
 
-* FreePWING generation
-* structural validation
-* `ebzip -l 5`
-* checksum generation
-* archive creation
+非責務:
 
-Output example:
+- HTML解析
+- table flatten
+- alias抽出
+- 日本語正規化
+- image download
 
-```text
-output/
-├── jawiki-20260701-epwing-full.zip
-├── jawiki-20260701-epwing-full.zip.sha256
-├── jawiki-20260701-build-report.json
-├── jawiki-20260701-build-report.html
-└── jawiki-20260701-manifest.json
-```
+### 17.3 toolchain image
 
-## 8.14 Stage 13: verification
+`toolchain.Dockerfile`で固定:
 
-Verification must include:
+- Debian base digest
+- build dependencies
+- FreePWING source URL + SHA-256
+- EB Library source URL + SHA-256
+- patch files
+- fonts package version
+- image conversion tools
 
-* EPWING directory structure
-* Catalog readability
-* Index readability
-* Entry count
-* Redirect count
-* Image count
-* Missing link count
-* Invalid character count
-* Random article sampling
-* Fixed regression article set
-* Archive checksum
+build後にcompilerや不要パッケージを削減してもよいですが、最初はデバッグ可能性を優先します。
 
-Where possible, use EB Library command-line utilities to inspect generated entries.
+### 17.4 toolchain probe
+
+probeは手作り辞書で次を測定します。
+
+- Japanese text
+- internal link
+- exact/prefix/suffix/keyword系検索
+- bitmap graphic
+- narrow/wide gaiji
+- large entry
+- long key
+- many aliases
+- ebzip roundtrip
+
+probe結果が期待と違う場合、Wikipedia pipelineへ進みません。
 
 ---
 
-## 9. Build profiles
+## 18. 外字設計
 
-### 9.1 Minimal
+### 18.1 文字分類
 
-```text
-Article text
-Headword search
-Redirect search
-No images
-No formulas as graphics
-Simplified tables
-```
-
-### 9.2 Standard
+出力時に各Unicode scalarを分類します。
 
 ```text
-Article text
-Headword and redirect search
-Selected images
-Tables
-Infoboxes
-Math graphics
-Cross references
+A. backend標準文字として表現可能
+B. 設定済み文字列へ置換可能
+C. gaiji bitmapとして表現
+D. 表現不能
 ```
 
-### 9.3 Full
+### 18.2 置換例
+
+- non-breaking space -> normal space
+- typographic quote -> configured quote
+- variation selector -> base glyph + diagnostic
+- combining sequence -> NFC化後に再判定
+
+意味を変える置換は行いません。
+
+### 18.3 Gaiji registry
 
 ```text
-Standard profile
-More images
-More aliases
-Category metadata
-Keyword index
-References
-Additional diagnostic metadata
+Unicode sequence
+normalized sequence
+width class
+font source identifier
+bitmap hash
+assigned gaiji code
+usage count
 ```
 
-Profiles must be configuration only. They must not fork the implementation.
+同じ文字列は一度だけbitmap生成します。
+
+### 18.4 フォント
+
+Docker内の再配布可能なNoto CJK系などを利用し、package versionとhashをmanifestへ記録します。フォントファイルそのものを成果物へ含めません。成果物には生成済みbitmapだけを含めます。
+
+### 18.5 失敗
+
+D分類の文字はreplacement markerだけで済ませず、コードポイント表記をfallbackにします。
+
+例:
+
+```text
+[U+1Fxxx]
+```
+
+件数・頻出順・記事例をreportへ出します。
 
 ---
 
-## 10. CLI contract
+## 19. Reference dictionary inspector
 
-Primary commands:
+### 19.1 目的
 
-```bash
-wikiepwing doctor
-wikiepwing download
-wikiepwing parse
-wikiepwing normalize
-wikiepwing media
-wikiepwing render
-wikiepwing generate
-wikiepwing verify
-wikiepwing package
-wikiepwing build
-wikiepwing inspect "Emacs"
-wikiepwing report
+Boookends 2023版を読み取り、比較可能な観測値を作ります。
+
+### 19.2 読み取りのみ
+
+参照辞書はread-only mountします。変更・再圧縮・再配布しません。
+
+### 19.3 収集項目
+
+- CATALOGS
+- subbook名
+- directory/file構造
+- file size
+- EB/EPWING識別情報
+- 利用可能検索種別
+- title検索件数
+- fixed query結果
+- fixed articleの本文抜粋hash
+- internal link数
+- image/gaiji利用数（取得可能範囲）
+
+### 19.4 reference.sqlite3
+
+```text
+reference_books
+reference_subbooks
+reference_queries
+reference_query_results
+reference_entries
+reference_metrics
+reference_diagnostics
 ```
 
-Typical build:
+### 19.5 比較不能項目
 
-```bash
-docker compose run --rm builder \
-  wikiepwing build \
-  --config config/jawiki.toml \
-  --profile standard
-```
-
-Resume:
-
-```bash
-docker compose run --rm builder \
-  wikiepwing build \
-  --resume
-```
-
-Rebuild one stage:
-
-```bash
-wikiepwing build --from-stage render
-```
-
-Small fixture build:
-
-```bash
-wikiepwing build \
-  --fixture tests/fixtures/jawiki-small.xml \
-  --profile standard
-```
+ビューアやtoolchainから機械取得できない項目は、manual checklistへ回します。無理にHTML scrapingやOCRで取得しません。
 
 ---
 
-## 11. Manifest and stage cache
+## 20. Pipeline stages
 
-Each stage must write a manifest.
+ステージ番号は予約範囲を持たせます。
+
+```text
+00 doctor
+05 toolchain-probe
+10 reference-scan
+20 source-acquire
+25 source-verify
+30 ingest
+35 raw-verify
+40 normalize
+45 model-verify
+50 search-extract
+55 media-plan
+60 media-fetch
+65 media-convert
+70 render
+75 gaiji-build
+80 epwing-source
+85 epwing-generate
+90 package
+95 verify
+97 compare-reference
+99 report
+```
+
+### 20.1 Manifest
+
+各stage manifest:
 
 ```json
 {
-  "stage": "parse",
-  "version": 3,
-  "input_hashes": {
-    "dump": "sha256:..."
-  },
-  "config_hash": "sha256:...",
-  "code_version": "git:...",
+  "schema_version": 1,
+  "stage": "normalize",
+  "stage_version": 3,
+  "status": "complete",
+  "run_id": "...",
   "started_at": "...",
   "completed_at": "...",
-  "record_count": 1234567,
-  "status": "complete"
+  "inputs": {
+    "raw_db": "sha256:...",
+    "config": "sha256:...",
+    "dom_rules": "sha256:..."
+  },
+  "outputs": [
+    {
+      "path": "model.sqlite3",
+      "size_bytes": 0,
+      "sha256": "...",
+      "logical_hash": "..."
+    }
+  ],
+  "metrics": {
+    "records_read": 0,
+    "records_written": 0,
+    "warnings": 0,
+    "errors": 0
+  }
 }
 ```
 
-A stage is reusable only when:
+### 20.2 Cache validity
 
-* Stage version matches
-* Input hashes match
-* Relevant configuration hash matches
-* Output files exist
-* Completion status is valid
+再利用条件:
 
-Do not use file timestamps alone for cache validity.
+- stage version一致
+- input fingerprint一致
+- relevant config hash一致
+- output file存在
+- output hash一致
+- manifest status complete
+- verify成功
+
+mtimeだけで再利用判定しません。
+
+### 20.3 Lock
+
+同じrun/stageを複数processが同時実行しないようlock fileを使います。古いlockはPIDと開始時刻を確認して明示的に解除します。
 
 ---
 
-## 12. Docker architecture
+## 21. Profiles
 
-Use two images.
+### 21.1 Mini
 
-### 12.1 Toolchain image
+目的: 小容量・高速・本文検索中心。
 
-Contains slow-changing native dependencies:
+- 本文
+- 見出し
+- title
+- redirect
+- internal links
+- Infoboxは主要textのみ
+- tableはplain vertical text
+- imageなし
+- mathはtext fallback
+- referencesは短縮
+
+### 21.2 Lite
+
+目的: 日常利用で高い実用性。
+
+- Miniすべて
+- 代表画像最大2〜3
+- Infobox整形
+- table整形
+- math bitmap
+- alias/kana variant
+- limited cross/keyword
+- references保持
+
+### 21.3 Full
+
+目的: 参照版に近い高機能。
+
+- Liteすべて
+- 画像最大8程度（設定）
+- category index
+- heading/infobox keyword
+- richer alias
+- attribution appendix
+- large table分割
+- detailed references
+- compatibility metrics
+
+同じコードパスを使い、profile設定で差を作ります。`if profile == "full"`を各所へ散在させません。
+
+---
+
+## 22. Resource management
+
+### 22.1 CPU
+
+- parse/normalizeはprocess pool候補
+- SQLite writerは単一writer + queueを基本
+- image convertは別worker limit
+- worker数はconfigとcgroup CPUから決定
+
+### 22.2 Memory
+
+- 記事単位処理
+- batch size上限
+- BLOBをまとめて保持しない
+- queue depth制限
+- memory telemetry optional
+
+### 22.3 Disk
+
+事前見積もり:
 
 ```text
-FreePWING
-EB Library
-ebzip
-ImageMagick
-SVG renderer
-font packages
-legacy patches
+source tar.gz
+raw.sqlite3
+model.sqlite3
+rendered.sqlite3
+image cache
+math cache
+epwing source
+epwing uncompressed
+ebzip output
+zip output
+safety margin
 ```
 
-### 12.2 Application image
+4TB環境では容量よりもDocker Desktop disk image上限とI/O配置が問題になるため、named volumeとDocker storage設定をdoctorで確認します。
 
-Contains:
+### 22.4 Progress
+
+表示項目:
+
+- stage
+- records done/total
+- records/sec
+- bytes read/written
+- warning/error count
+- current shard/page ID
+- elapsed
+
+時間予測は不安定なので必須にしません。
+
+---
+
+## 23. Error model
+
+### 23.1 Fatal
+
+- checksum mismatch
+- source lock不整合
+- DB corruption
+- schema mismatch
+- disk full
+- FreePWING executable missing
+- catalog generation failure
+- output verify failure
+- 同revision IDで異なる内容hash
+
+### 23.2 Recoverable article error
+
+- unsupported element
+- malformed table
+- missing link target
+- missing image
+- failed formula
+- unrepresentable char
+
+### 23.3 Retryable
+
+- HTTP timeout
+- 5xx
+- transient DNS
+- rate limit with retry-after
+
+### 23.4 Exit codes
 
 ```text
-Python runtime
-locked dependencies
-project source
-CLI
+0 success
+2 configuration error
+3 source acquisition error
+4 source validation error
+5 stage data error
+6 toolchain error
+7 verification failure
+8 compatibility threshold failure
+9 interrupted
 ```
 
-Example volume design:
+---
 
-```yaml
-services:
-  builder:
-    build:
-      context: .
-      dockerfile: docker/builder.Dockerfile
-    volumes:
-      - wiki-dumps:/data/dumps
-      - wiki-work:/data/work
-      - wiki-cache:/data/cache
-      - ./output:/data/output
-      - ./config:/app/config:ro
+## 24. Verification architecture
 
-volumes:
-  wiki-dumps:
-  wiki-work:
-  wiki-cache:
-```
+### 24.1 Source verification
 
-Do not place high-I/O intermediate files in macOS bind mounts.
+- lock fileとactual file hash
+- tar member数
+- NDJSON parse sample
+- project/namespace一致
+- expected schema fields
 
-Only final output, logs, and selected reports should be written to bind-mounted host directories.
+### 24.2 DB verification
+
+- `PRAGMA integrity_check`
+- foreign key check
+- expected table count
+- duplicate constraints
+- status totals
+
+### 24.3 Model verification
+
+- block nesting
+- unique page IDs
+- title not empty
+- internal links validity
+- diagnostics consistency
+- serialization roundtrip
+
+### 24.4 EPWING verification
+
+- directory structure
+- catalog parse
+- subbook count/name
+- entry count
+- search query sample
+- internal reference sample
+- graphic sample
+- gaiji sample
+- ebzip decompression/read test
+
+### 24.5 Compatibility verification
+
+`COMPATIBILITY.md`のthresholdを評価します。
 
 ---
 
-## 13. Resource management
+## 25. Reporting
 
-The pipeline must support configured limits.
+### 25.1 JSON report
 
-```toml
-[resources]
-workers = 12
-memory_limit_gb = 64
-sqlite_cache_mb = 8192
-image_workers = 8
-download_workers = 4
-```
+機械処理用の正本です。
 
-Do not default to using all cores or all memory.
+必須:
 
-Large stages must stream data and commit in batches.
+- source lock
+- git commit
+- image digest
+- config hashes
+- toolchain versions
+- stage durations
+- counts
+- diagnostics histogram
+- top unsupported DOM/classes
+- char/gaiji statistics
+- image statistics
+- search term statistics
+- output hashes
+- verification results
+- compatibility results
 
-A stage should report:
+### 25.2 HTML report
 
-* Records per second
-* Estimated remaining records
-* Current memory use where available
-* Current partition
-* Error count
+人間向け:
 
----
+- summary
+- failure highlights
+- representative article links
+- charts/table
+- profile sizes
+- reference comparison
 
-## 14. Testing strategy
+### 25.3 CSV
 
-### 14.1 Unit tests
-
-Cover:
-
-* Title normalization
-* Redirect resolution
-* Template rules
-* Link conversion
-* Table parsing
-* Image selection
-* Character sanitization
-* Index key generation
-
-### 14.2 Snapshot tests
-
-Maintain expected normalized and rendered output for representative articles.
-
-Fixtures should include:
-
-* Japanese article
-* Redirect
-* Disambiguation page
-* Infobox-heavy article
-* Table-heavy article
-* Math-heavy article
-* Image-heavy article
-* Article containing uncommon Unicode
-* Deeply nested templates
-* Malformed Wikitext
-
-### 14.3 Integration tests
-
-Run:
-
-```text
-fixture XML
-    ↓
-parse
-    ↓
-normalize
-    ↓
-render
-    ↓
-EPWING generation
-    ↓
-verification
-```
-
-### 14.4 Full-build smoke tests
-
-After a real build, inspect a stable regression list.
-
-Suggested Japanese articles:
-
-```text
-日本
-東京都
-Emacs
-Linux
-源氏物語
-量子力学
-微分積分学
-第二次世界大戦
-曖昧さ回避
-```
-
-Do not assume current article text. Verify structural properties instead.
+大量diagnosticの詳細をCSV/JSONLで出せるようにします。
 
 ---
 
-## 15. Observability
+## 26. Reproducibility
 
-Use structured JSON logs in addition to human-readable console output.
+### 26.1 完全一致と論理一致
 
-Each log event should include:
+ZIP timestampやfilesystem orderingによりbinary hashが変わる可能性があります。
 
-```text
-timestamp
-level
-stage
-page_id
-title
-diagnostic_code
-message
-```
+二種類を記録します。
 
-Final reports must include:
+- physical SHA-256: 実ファイルhash
+- logical hash: entry/index/graphicのcanonical stream hash
 
-* Source dump date
-* Source dump checksum
-* Git commit
-* Container image digest
-* Configuration
-* Article counts
-* Redirect counts
-* Image counts
-* Table counts
-* Formula counts
-* Unsupported template counts
-* Skipped page counts
-* Build duration by stage
-* Output file sizes
-* Verification results
+### 26.2 決定論
+
+- DB queryにはORDER BY
+- worker処理結果をpage ID順にmerge
+- archive timestamp固定
+- locale固定
+- timezone UTC
+- random seed固定またはrandom不使用
+- dependency lock
+- Docker base digest固定
+
+### 26.3 Provenance
+
+生成物に`BUILD-INFO.json`を添付します。
 
 ---
 
-## 16. Licensing and attribution
+## 27. Security architecture
 
-Wikipedia text is generally distributed under CC BY-SA and may also contain GFDL-licensed history.
+### 27.1 Container user
 
-The build must include:
+- non-root
+- `/data`必要箇所だけwrite
+- `/app` read-only可能
+- no-new-privileges
+- capability drop
 
-* Wikimedia source attribution
-* Dump date
-* Project URL
-* License notices
-* Build tool source information
-* Image attribution metadata where practical
+### 27.2 HTML/XML
 
-Do not claim that the generated archive itself changes the licensing of the underlying content.
+- XXE禁止
+- entity expansion禁止
+- script実行禁止
+- network fetch禁止
+- parser limits
 
-The project repository license applies only to project source code, not to generated Wikipedia content.
+### 27.3 Images
 
-Image licensing is more complicated than text licensing.
+- allowlist domain
+- sanitize SVG
+- decompression bomb detection
+- pixel limit
+- process timeout
+- temp directory isolation
 
-For the initial release:
+### 27.4 subprocess
 
-* Include only thumbnails whose source metadata is recorded.
-* Generate an attribution database or text appendix.
-* Allow users to disable all images.
-* Avoid distributing generated image archives publicly until licensing output has been reviewed.
-
----
-
-## 17. Security
-
-Treat dump content and image files as untrusted input.
-
-Requirements:
-
-* Never execute Wikitext.
-* Never execute Lua from templates.
-* Disable ImageMagick delegates that can invoke external commands.
-* Limit decompression sizes.
-* Limit image dimensions and file sizes.
-* Use request timeouts.
-* Validate downloaded MIME types.
-* Prevent path traversal.
-* Avoid shell interpolation.
-* Run the container as a non-root user.
-* Use read-only mounts where possible.
+- shell=False
+- fixed executable path
+- untrusted valueをoption名に使わない
+- timeout
+- stdout/stderr capture limit
 
 ---
 
-## 18. Compatibility strategy
+## 28. Licensing and attribution
 
-The project must not expose FreePWING-specific details throughout the parser.
+### 28.1 本文
 
-FreePWING compatibility belongs only in:
+- 記事ライセンス配列を保存
+- source URL、記事名、revision ID、更新日を保持
+- BUILD-INFOにWikimedia projectとsnapshot版を記載
 
-```text
-src/wikiepwing/epwing/
-```
+### 28.2 画像
 
-If legacy tools fail on a newer Debian version, preserve a known-working toolchain image.
+- source file page
+- author
+- license identifier
+- license URL
+- source URL
+- transformed size/hash
 
-The application layer should communicate with the toolchain through files or a stable subprocess interface.
+取得できない項目はmissingとして記録し、distributable profileの方針に従います。
 
----
+### 28.3 コード
 
-## 19. Architectural decisions
-
-### ADR-001: Use a normalized intermediate model
-
-Accepted.
-
-Reason:
-
-Direct Wikitext-to-EPWING conversion makes parsing, rendering, and testing inseparable.
-
-### ADR-002: Use SQLite as initial intermediate storage
-
-Accepted.
-
-Reason:
-
-It provides durability, debugging, indexing, and resumability without running a database server.
-
-### ADR-003: Replace legacy Perl parsing with Python
-
-Accepted.
-
-Reason:
-
-Legacy Perl code may remain as a compatibility reference, but new parsing and normalization logic should be maintainable and testable.
-
-### ADR-004: Keep FreePWING as the first backend
-
-Accepted with isolation.
-
-Reason:
-
-It is a proven path to valid EPWING output, but should not dictate the whole architecture.
-
-### ADR-005: Use Docker named volumes for intermediate data
-
-Accepted.
-
-Reason:
-
-Large intermediate I/O performs poorly through Docker Desktop bind mounts.
-
-### ADR-006: Do not implement full template expansion initially
-
-Accepted.
-
-Reason:
-
-Complete MediaWiki template and Lua execution is too large and creates security and reproducibility problems.
+プログラムライセンスは別途選択し、Wikipedia contentのライセンスを上書きしません。
 
 ---
 
-## 20. Definition of architectural success
+## 29. 拡張点
 
-The architecture is successful when:
+将来追加可能:
 
-1. A small fixture dump builds into a readable EPWING dictionary.
-2. The same fixture produces equivalent output on macOS and Linux.
-3. A failed build resumes at the failed stage.
-4. Unsupported templates are reported instead of silently discarded.
-5. Article parsing can be tested without FreePWING.
-6. EPWING generation can be tested without downloading Wikipedia.
-7. Images can be disabled without altering parser behavior.
-8. A complete Japanese Wikipedia build can finish without manual intervention.
-9. Build inputs and outputs are fully traceable from the manifest.
-10. The generated dictionary can be opened by at least two independent EPWING readers.
+- enwiki
+- Simple English
+- Wiktionary
+- Structured Contents adapter
+- Wikidata aliases
+- incremental update
+- alternative backend
+- ZIM/SQLite/HTML出力
+- separate full-text index
 
+初期実装では拡張点のinterfaceだけを用意し、未使用機能を先回り実装しません。
 
+---
+
+## 30. 主要ADR要約
+
+- ADR-001: HTML Snapshotを標準入力
+- ADR-002: Structured Contents非依存
+- ADR-003: 中間semantic model
+- ADR-004: stage別SQLite
+- ADR-005: ORM不使用
+- ADR-006: FreePWING隔離
+- ADR-007: UTF-8内部表現と出力時gaiji
+- ADR-008: named volume
+- ADR-009: reference compatibilityは測定
+- ADR-010: profilesは設定駆動
+
+詳細は`DECISIONS.md`。
+
+---
+
+## 31. 実装開始前の設計ゲート
+
+次を確認するまでコードを大量に書きません。
+
+- [ ] toolchainの取得元とhash方針が決まった
+- [ ] Wikimedia Enterprise account/tokenの注入方法が決まった
+- [ ] 手元Boookends 2023版をread-only mountできる
+- [ ] Mini/Lite/Fullの定義に合意している
+- [ ] raw/model/rendered DBの責務が理解されている
+- [ ] fixtureの入手・匿名化・コミット方針が決まった
+- [ ] 公開配布か個人利用かをconfigで分ける方針がある
+
+---
+
+## 32. 参考仕様URL
+
+実装時に最新版を再確認します。
+
+- Wikimedia Enterprise docs: `https://enterprise.wikimedia.com/docs/`
+- Snapshot API: `https://enterprise.wikimedia.com/docs/snapshot/`
+- Data dictionary: `https://enterprise.wikimedia.com/docs/data-dictionary/`
+- Wikimedia dumps: `https://dumps.wikimedia.org/jawiki/latest/`
+- Wikimedia dump documentation: `https://meta.wikimedia.org/wiki/Data_dumps`
+- FreePWING archive/index: `https://openlab.ring.gr.jp/edict/fpw/`

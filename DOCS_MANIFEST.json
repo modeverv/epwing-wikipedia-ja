@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-13T00:00:00+09:00",
+  "package": "wikipedia-epwing-v2-docs",
+  "files": [
+    {
+      "name": "AGENTS.md",
+      "size_bytes": 13010,
+      "sha256": "33110f73453570e8ce6624db9141089fd78fff665a91f536f6e8875f44da930a",
+      "lines": 388
+    },
+    {
+      "name": "ARCHITECTURE.md",
+      "size_bytes": 44301,
+      "sha256": "3b22e60c1ca7371b33664b060bd463849967532b3c7061f228d75de34def5377",
+      "lines": 1897
+    },
+    {
+      "name": "CODEX_PROMPT.md",
+      "size_bytes": 2199,
+      "sha256": "214f416bf7d02211495263e17ea35da16b152c05dee8e9390236efad8649bd06",
+      "lines": 71
+    },
+    {
+      "name": "COMPATIBILITY.md",
+      "size_bytes": 7962,
+      "sha256": "aa2001571ae47aa8fbebf258f8276354307df4863bebe93ef5b20c23c5c0ecab",
+      "lines": 380
+    },
+    {
+      "name": "CONFIG_REFERENCE.md",
+      "size_bytes": 9039,
+      "sha256": "6ac1206dae1895453b3a32103f9f8de8d1fdf20b6e35ccb42183368e435f529d",
+      "lines": 487
+    },
+    {
+      "name": "CURRENT_TASK.md",
+      "size_bytes": 406,
+      "sha256": "0379476830f6c44b31bc15143df828f3b82e91ac0964ccebaf58ece52c58cd01",
+      "lines": 38
+    },
+    {
+      "name": "DATA_CONTRACTS.md",
+      "size_bytes": 13272,
+      "sha256": "13576cd9aea4ddcfe4fd0204493c1086a48cd102ac5f38fe814107052a1fda61",
+      "lines": 628
+    },
+    {
+      "name": "DECISIONS.md",
+      "size_bytes": 5489,
+      "sha256": "d3b8309e688e477a7117b02b6dc2719ef97bc28b777bd795e954bc805f621897",
+      "lines": 270
+    },
+    {
+      "name": "LOG.md",
+      "size_bytes": 368,
+      "sha256": "7de9c3713faaa30ab73e9215ab7987d64586225efb009823a8bf48cee9d1c198",
+      "lines": 33
+    },
+    {
+      "name": "MEMORY.md",
+      "size_bytes": 1805,
+      "sha256": "cd40f906b062b55fffcd079cac8354fb2659a7cc8e7d56016c5038c3f102f40f",
+      "lines": 37
+    },
+    {
+      "name": "PLAN.md",
+      "size_bytes": 19851,
+      "sha256": "cd3c8891a951a437ed617bedcfa414c8fd23e3130d961ab61284dd9c84ae53a7",
+      "lines": 1139
+    },
+    {
+      "name": "README.md",
+      "size_bytes": 3727,
+      "sha256": "c7bfb7df00192417aa34b4024bf32930fbcb6fb739f456503c4b386fc308472f",
+      "lines": 125
+    },
+    {
+      "name": "SOURCES.md",
+      "size_bytes": 2689,
+      "sha256": "f85b45ba8989196e71e2d202a093580e6f911c2576516049b6e5facef3eec9ef",
+      "lines": 123
+    },
+    {
+      "name": "TASKS.md",
+      "size_bytes": 15229,
+      "sha256": "0f8799bb90d1f36e6c2935cebe5ab7055610589a966d5dd4a1a2af93c31f679e",
+      "lines": 908
+    },
+    {
+      "name": "TESTING.md",
+      "size_bytes": 13439,
+      "sha256": "26e9a6f35dbedbfb1fa78138773c0c1cbe068d83c743723b28cd5f125846a914",
+      "lines": 748
+    }
+  ]
+}

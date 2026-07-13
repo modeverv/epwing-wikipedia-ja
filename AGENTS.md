@@ -1,1364 +1,388 @@
 # AGENTS.md
 
-# Wikipedia EPWING Builder — Agent Instructions
+## 0. このファイルの目的
 
-## 1. Purpose of this file
+このリポジトリは、2026年時点の日本語Wikipediaから、Boookends 2023年版を参照実装とした高機能EPWING/JIS X 4081互換辞書を生成するためのものです。
 
-This file defines the mandatory working rules for AI coding agents operating in this repository.
+このファイルはCodexなどの実装エージェント向けの最上位作業規約です。ほかのドキュメントと矛盾した場合は、次の優先順位で判断してください。
 
-The project builds a reproducible, Docker-based system that converts current Wikimedia dumps into high-functionality EPWING/JIS X 4081 dictionaries.
+1. ユーザーが現在の会話で明示した指示
+2. `AGENTS.md`
+3. `CURRENT_TASK.md`
+4. `ARCHITECTURE.md`
+5. `PLAN.md`
+6. `TASKS.md`
+7. `TESTING.md`
+8. `COMPATIBILITY.md`
+9. `CONFIG_REFERENCE.md`
+10. その他の文書・コメント
 
-The primary target is Japanese Wikipedia.
-
-The system must remain:
-
-* Reproducible
-* Resumable
-* Observable
-* Testable
-* Deterministic where practical
-* Safe against untrusted dump content
-* Independent of the host environment
-* Maintainable without depending on undocumented legacy behavior
-
-Agents must treat this file as binding project policy.
+不明点があっても、広範囲を書き換えて推測で埋めてはいけません。小さな仮定を明記し、テスト可能な最小変更を行ってください。
 
 ---
 
-## 2. Required reading order
+## 1. 毎セッションの必須読書順
 
-Before making changes, read these files in order:
+作業開始時は、必ず次の順で読みます。
 
 1. `AGENTS.md`
-2. `ARCHITECTURE.md`
-3. `PLAN.md`
-4. `README.md`
-5. Relevant source files and tests
+2. `MEMORY.md`
+3. `LOG.md` の末尾100行程度
+4. `CURRENT_TASK.md`
+5. `TASKS.md` の対象タスク
+6. 対象タスクから参照される設計文書の節
 
-Do not begin implementation based only on an issue title or user prompt.
+毎回 `ARCHITECTURE.md` 全文を読み直す必要はありません。ただし、次の変更を行う場合は該当節だけでなく全文を確認してください。
 
-If the requested change conflicts with `ARCHITECTURE.md`, do not silently change the architecture.
+- データベーススキーマの変更
+- パイプラインのステージ追加・削除・順序変更
+- 入力ソースの追加・変更
+- EPWINGバックエンドの変更
+- ビルド成果物の互換性変更
+- 公開設定形式の変更
+- 依存ライブラリの大幅変更
 
-Either:
-
-* Implement the request within the existing architecture, or
-* Update the architecture documentation explicitly as part of the same change
-
----
-
-## 3. Source of truth
-
-The following priority order applies when instructions conflict:
-
-1. Explicit current user request
-2. `AGENTS.md`
-3. `ARCHITECTURE.md`
-4. `PLAN.md`
-5. Existing tests
-6. Existing implementation
-7. Comments and historical behavior
-
-Existing code is not automatically correct merely because it exists.
-
-Existing tests are not automatically correct if they contradict the documented architecture, but they must not be changed merely to make a broken implementation pass.
+`CURRENT_TASK.md` が空、曖昧、または複数タスクを含む場合は、実装を始めず、`TASKS.md`から最小の未完了タスクを1つ選び、`CURRENT_TASK.md`を具体化します。
 
 ---
 
-## 4. Primary development rule
+## 2. 絶対に守る開発原則
 
-Implement the smallest complete vertical improvement that satisfies the current milestone.
+### 2.1 一度に1タスクだけ実装する
 
-Do not attempt to build the entire system in one pass.
+- `TASKS.md`の1つのタスクIDだけを対象とします。
+- 同じ変更で別タスクまで「ついでに」実装しません。
+- リファクタリングは、そのタスクを成立させる最小限に限定します。
+- 変更ファイル数が予定より増えた場合は、いったん停止して理由を`LOG.md`へ記録します。
 
-Prefer:
+### 2.2 フルWikipediaビルドを早期に実行しない
 
-```text
-small fixture
-→ parser
-→ normalized model
-→ renderer
-→ EPWING output
-→ verification
-```
+次の条件をすべて満たすまで、完全版日本語Wikipediaの生成を開始してはいけません。
 
-over:
+- 手作り3記事EPWINGが生成できる
+- 小規模fixtureのend-to-endテストが通る
+- 100記事fixtureが生成できる
+- 中断・再開テストが通る
+- 文字変換と外字フォールバックのテストが通る
+- `wikiepwing verify` が機械的に成功判定できる
+- `PLAN.md`のフルビルド前ゲートが完了している
 
-```text
-large speculative implementation
-→ full Wikipedia build
-→ debugging thousands of unrelated failures
-```
+### 2.3 入力データを直接信頼しない
 
----
+以下はすべて外部入力です。
 
-## 5. Milestone discipline
+- Wikimedia Enterprise SnapshotのNDJSON
+- Wikimedia公式XML/SQLダンプ
+- Wikipedia HTML/Wikitext
+- Wikimedia Commons画像
+- 手元のBoookends 2023版EPWING
+- 設定ファイル
 
-Follow the milestone order in `PLAN.md`.
+必ずサイズ上限、文字列長、パス、URL、MIME、圧縮率、HTML構造を検証します。Wikitext、HTML、テンプレート、Lua、JavaScript、SVG内スクリプトを実行してはいけません。
 
-The first required sequence is:
+### 2.4 秘密情報をリポジトリへ書かない
 
-1. Repository and CLI skeleton
-2. Docker toolchain
-3. Handcrafted minimal EPWING dictionary
-4. `ebzip` compression
-5. Dump download and checksum verification
-6. Streaming XML ingestion
-7. Title and redirect normalization
-8. Intermediate article model
-9. Baseline Wikitext parser
-10. Text-only renderer
-11. Small end-to-end fixture build
+以下はコミット禁止です。
 
-Do not begin the following before the text-only vertical slice works:
+- Wikimedia Enterpriseのユーザー名・パスワード
+- access token / refresh token / id token
+- `.env`の実値
+- API応答の認証ヘッダー
+- ホスト側の個人パス
 
-* Image downloading
-* Formula rendering
-* Advanced table layout
-* Large keyword indexes
-* Full English Wikipedia
-* Full Japanese Wikipedia production build
+秘密情報は環境変数またはDocker secret相当で渡します。ログへ値を出してはいけません。
 
-A complete Wikipedia build is not an acceptable substitute for unit and fixture testing.
+### 2.5 ホスト環境を汚さない
 
----
+ホストにFreePWING、EB Library、Perlモジュール、ImageMagick設定などを直接インストールしません。通常の開発・テスト・生成はDocker内で完結させます。
 
-## 6. Definition of a completed task
+許可されるホスト要件は次だけです。
 
-A task is complete only when all applicable conditions are met:
+- Docker / Docker Compose
+- Git
+- 任意のEPWINGビューアによる手動確認
 
-* Implementation is present
-* Tests are present or updated
-* Tests pass
-* Type checking passes
-* Linting passes
-* Documentation is updated when behavior changes
-* New configuration options are documented
-* New diagnostics are documented
-* Failure behavior is explicit
-* No generated build artifacts are committed
-* No unrelated files are modified
-* The implementation works inside Docker
-* The implementation does not require undocumented host setup
+### 2.6 失敗を隠さない
 
-Do not report a task as complete merely because code was written.
+- `except Exception: pass` を禁止します。
+- 記事単位で回復可能な失敗は構造化診断として保存します。
+- ステージ全体の整合性を壊す失敗は即座に停止します。
+- スキップした記事・画像・表・数式は必ず件数を集計します。
+- 「たぶん動く」を完了条件にしません。
+
+### 2.7 互換性は測定する
+
+Boookends互換とは、バイナリ一致やブランドの再現ではありません。`COMPATIBILITY.md`の測定項目で比較します。
+
+以下を根拠なしに主張してはいけません。
+
+- Boookendsと完全互換
+- すべてのEPWINGビューアで動く
+- すべての記事を完全に再現
+- すべてのUnicode文字を表示可能
+- 画像ライセンス処理が完全
 
 ---
 
-## 7. Architecture boundaries
+## 3. 実装の技術的境界
 
-Maintain these boundaries.
+### 3.1 正規の入力経路
 
-### 7.1 MediaWiki ingestion
+v2の標準入力は、Wikimedia Enterpriseの通常Snapshotに含まれるレンダリング済みHTMLです。標準Snapshotには記事HTML、Wikitext、redirects、categories、licenseなどの項目が含まれます。
 
-Responsible for:
+ただし、APIやネットワークへ依存したまま後続処理を動かしてはいけません。
 
-* Reading Wikimedia XML
-* Extracting page metadata
-* Extracting revision text
-* Detecting raw redirects
-* Namespace filtering
+正しい流れは次です。
 
-It must not generate EPWING files.
+1. `acquire` ステージでSnapshotをローカルへ固定
+2. SHA-256、識別子、版、取得日時を`source.lock.json`へ記録
+3. 以後のステージはローカルファイルのみを読む
+4. 必要に応じて通常のWikimedia XML/SQLダンプを検証・フォールバック用に追加
 
-### 7.2 MediaWiki parsing
+Structured Contents Snapshotは2026年7月時点で日本語Wikipediaを対象としていないため、必須経路にしてはいけません。
 
-Responsible for:
+### 3.2 内部文字コード
 
-* Parsing Wikitext
-* Producing semantic article structures
-* Recording unsupported constructs
-* Resolving syntax into the intermediate model
+- 内部表現はUTF-8 Unicodeです。
+- Unicodeを早い段階でJISへ丸めません。
+- EPWING出力直前のbackend adapterで、標準文字・置換・外字へ分類します。
+- 文字損失は件数と文字集合をレポートします。
 
-It must not know FreePWING output syntax.
+### 3.3 FreePWING境界
 
-### 7.3 Intermediate model
-
-Responsible for:
-
-* Representing articles
-* Representing blocks and inline content
-* Representing media references
-* Representing diagnostics
-
-It must remain independent of the EPWING backend.
-
-### 7.4 Rendering
-
-Responsible for:
-
-* Turning semantic articles into logical dictionary entries
-* Applying readable layout rules
-* Simplifying tables and templates
-* Preparing internal references
-
-It must not invoke dump downloads or mutate source records.
-
-### 7.5 EPWING adapter
-
-All FreePWING-, EB Library-, and `ebzip`-specific behavior belongs under:
+FreePWING、EB Library、`ebzip`固有処理は、次の配下から外へ漏らしてはいけません。
 
 ```text
 src/wikiepwing/epwing/
+docker/toolchain/
+patches/freepwing/
+patches/eb/
 ```
 
-Do not leak FreePWING-specific tags, path assumptions, encoding workarounds, or catalog rules throughout the parser.
+記事パーサーや検索語抽出器がFreePWING用タグを直接生成してはいけません。必ず中間モデルを通します。
 
-### 7.6 Verification
+### 3.4 データベース境界
 
-Verification must inspect generated artifacts independently.
+- SQLiteを使用します。
+- SQLAlchemyなどのORMは導入しません。
+- スキーマは明示SQLで管理します。
+- マイグレーションは番号付きSQLで管理します。
+- ステージごとのDBを原則として不変成果物にします。
+- 大量BLOBはzstd圧縮して保存します。
 
-Do not consider generation success proof that the result is valid.
+### 3.5 Dockerボリューム
 
----
+大量I/Oを伴う中間データをmacOS bind mountへ置いてはいけません。
 
-## 8. Pipeline stage rules
-
-Every significant build stage must:
-
-* Have a stable name
-* Have a version
-* Declare its inputs
-* Declare its outputs
-* Record input hashes
-* Record relevant configuration hashes
-* Write a completion manifest
-* Support safe reruns
-* Avoid treating partially written output as complete
-* Emit structured progress information
-* Emit structured diagnostics
-
-A stage may be skipped only when its cache manifest proves that its outputs are valid.
-
-File modification times alone are not sufficient cache validation.
+- ダンプ: named volume
+- 作業DB: named volume
+- 画像・数式キャッシュ: named volume
+- 最終ZIP、レポート、ログ: bind mount可能
+- 小規模fixture: リポジトリ内でよい
 
 ---
 
-## 9. Resumability requirements
+## 4. コーディング規約
 
-Long-running operations must be resumable where practical.
+### 4.1 Python
 
-Use these patterns:
+- Python 3.12系を固定します。
+- パッケージ管理は`uv`を使用します。
+- `uv.lock`をコミットします。
+- public関数・クラスには型注釈を付けます。
+- `mypy`または`pyright`の設定に従います。
+- `ruff`をformatter/linterとして使用します。
+- `pathlib.Path`を使用します。
+- subprocessは引数配列で呼び、`shell=True`を使いません。
+- 時刻はUTCのtimezone-aware datetimeで保存します。
+- JSONは安定したキー順を必要とする場面では明示的にソートします。
 
-* Atomic rename after successful file generation
-* Transaction boundaries for database writes
-* Batch checkpoints
-* Stage completion manifests
-* Content-addressed caches
-* Explicit incomplete status
-* Bounded retry state
+### 4.2 SQL
 
-Do not:
+- `SELECT *`を永続コードで使いません。
+- 大量挿入はtransactionとbatchを使います。
+- 外部キー制約を有効にします。
+- `busy_timeout`を設定します。
+- DBスキーマの変更にはmigrationとschema testを追加します。
+- 大規模な`ALTER TABLE`を安易に実施せず、新DB生成ステージを優先します。
 
-* Mark a stage complete before verification
-* Reuse partially generated databases without checking status
-* Delete valid previous output before replacement succeeds
-* Depend on an in-memory-only progress state for long builds
+### 4.3 ログ
 
----
+ログは人間可読形式とJSON Lines形式の両方を生成できるようにします。
 
-## 10. Determinism requirements
-
-Given identical inputs, configuration, code, and toolchain, logical output must be stable.
-
-Always define deterministic ordering for:
-
-* Articles
-* Titles
-* Redirect aliases
-* Sections
-* Diagnostic reports
-* Images
-* Index keys
-* Archive file lists
-* Generated metadata
-
-Do not rely on:
-
-* Dictionary iteration order without an explicit guarantee
-* Filesystem enumeration order
-* Process completion order
-* Unordered SQL queries
-* Current wall-clock time in logical content
-* Random sampling without a fixed seed
-
-When concurrency is used, reorder output deterministically before committing final artifacts.
-
----
-
-## 11. No silent data loss
-
-Unsupported or malformed content must never disappear silently.
-
-When content cannot be represented:
-
-1. Preserve readable text where possible.
-2. Emit a structured diagnostic.
-3. Continue processing if the failure is recoverable.
-4. Count the occurrence in the final report.
-5. Retain representative examples.
-
-Examples of diagnostic conditions:
+必須フィールド:
 
 ```text
-TEMPLATE_UNSUPPORTED
-TEMPLATE_ARGUMENT_DROPPED
-TABLE_PARSE_FAILED
-TABLE_TRUNCATED
-IMAGE_METADATA_MISSING
-IMAGE_DOWNLOAD_FAILED
-MATH_RENDER_FAILED
-INVALID_INTERNAL_LINK
-REDIRECT_CYCLE
-UNSUPPORTED_UNICODE
-ENTRY_SIZE_EXCEEDED
-ARTICLE_SKIPPED
+timestamp
+level
+stage
+run_id
+event
+page_id     # 記事に関係する場合
+title       # 記事に関係する場合
+diagnostic_code
+message
 ```
 
-Diagnostic identifiers are an API.
+トークン、パスワード、Authorizationヘッダーをログに出してはいけません。
 
-Do not rename or remove them casually.
+### 4.4 コメント
 
----
-
-## 12. Error classification
-
-Classify failures as one of the following.
-
-### Fatal
-
-The stage cannot safely continue.
-
-Examples:
-
-* Dump checksum mismatch
-* SQLite corruption
-* Required executable missing
-* Output filesystem full
-* FreePWING generation failure
-* Invalid build configuration
-* Catalog verification failure
-
-Fatal errors must stop the affected stage.
-
-### Recoverable
-
-One item failed, but the larger build can continue.
-
-Examples:
-
-* Unsupported template
-* Invalid article markup
-* Missing image
-* Invalid formula
-* Broken internal link
-
-Recoverable failures must produce diagnostics.
-
-### Retryable
-
-The operation may succeed later.
-
-Examples:
-
-* Network timeout
-* Temporary DNS failure
-* Wikimedia HTTP 5xx response
-* Rate limiting
-
-Retryable operations must use:
-
-* Bounded retries
-* Exponential backoff
-* Timeouts
-* Final explicit failure reporting
-
-Never retry indefinitely.
+コメントには「何をしているか」より「なぜその制約が必要か」を書きます。ドキュメントで説明済みの内容を大量にコードへ複製しません。
 
 ---
 
-## 13. Docker requirements
+## 5. テスト規約
 
-The host must require only:
+### 5.1 変更には必ずテストを付ける
 
-* Docker
-* Docker Compose
-* Sufficient disk space
+次のいずれかを必須とします。
 
-Do not require host installation of:
+- unit test
+- snapshot test
+- integration test
+- end-to-end fixture test
+- toolchain smoke test
 
-* Python
-* Perl
-* FreePWING
-* EB Library
-* ImageMagick
-* TeX
-* Wikimedia tools
+テストなしで許可される変更は、誤字修正とコメント修正だけです。
 
-The container must:
+### 5.2 ネットワークに依存しない
 
-* Run as a non-root user
-* Use pinned base images where practical
-* Use pinned dependencies
-* Verify downloaded source archive checksums
-* Store high-I/O working data in named volumes
-* Write final artifacts to the designated output mount
-* Avoid modifying the source tree during normal builds
-* Use read-only configuration mounts where practical
+通常のテストスイートはネットワークへ接続しません。ネットワークを使うテストは`network` markerを付け、明示的に実行します。
 
-Do not place large intermediate databases or millions of small files in macOS bind mounts.
+### 5.3 ゴールデンデータ
 
-Use named volumes for:
+ゴールデンデータ更新時は、差分を確認せず一括更新してはいけません。
 
-* Dumps
-* Intermediate databases
-* Media cache
-* Formula cache
-* Temporary FreePWING source
-* Uncompressed EPWING output
+更新手順:
 
-Use bind mounts for:
+1. 変更前テストを実行
+2. 期待差分を説明
+3. 対象fixtureだけ更新
+4. 更新後差分を確認
+5. `LOG.md`へ理由を記録
 
-* Source code during development
-* Configuration
-* Final archives
-* Reports
-* Explicitly requested logs
+### 5.4 手動確認は自動テストの代替ではない
+
+EBWin、EBPocket、Emacs Lookupなどでの確認は重要ですが、完了判定には自動検証も必要です。
 
 ---
 
-## 14. Toolchain rules
+## 6. 1タスクの標準作業フロー
 
-Legacy native tools must be isolated and reproducible.
-
-For every external source archive:
-
-* Pin the version
-* Pin the URL
-* Record the SHA-256 checksum
-* Verify the checksum before extraction
-* Record applied patches
-* Record the resulting tool version
-
-Do not download and execute unversioned install scripts.
-
-Do not depend on mutable branches such as:
-
-```text
-main
-master
-latest
-HEAD
-```
-
-unless the exact commit is recorded and checked out.
-
-Patches must live under:
-
-```text
-patches/
-```
-
-Each patch must have:
-
-* A descriptive filename
-* A comment or adjacent documentation explaining why it exists
-* A test or build step that proves it is still necessary
-
----
-
-## 15. Dependency policy
-
-All runtime and development dependencies must be pinned.
-
-For Python:
-
-* Use `uv`
-* Commit `uv.lock`
-* Add type annotations
-* Avoid unnecessary dependencies
-* Prefer maintained libraries
-* Document why a substantial new dependency is needed
-
-Before adding a dependency, determine whether the standard library or an existing dependency is sufficient.
-
-Do not add multiple libraries that solve the same problem without justification.
-
-Do not upgrade unrelated dependencies during a feature change.
-
----
-
-## 16. Python coding rules
-
-Use modern typed Python.
-
-Required:
-
-* Python 3.12 or the project-pinned version
-* Type annotations for public functions
-* Dataclasses or validated models for domain data
-* `pathlib.Path` for filesystem paths
-* Context managers for resources
-* Explicit exceptions
-* Structured logging
-* Small modules with clear responsibilities
-
-Avoid:
-
-* Global mutable state
-* Hidden singleton configuration
-* Broad `except Exception` without rethrow or diagnostic
-* Shell command strings assembled by concatenation
-* Passing unstructured dictionaries throughout the domain layer
-* Mixing parsing, database writes, and rendering in one function
-* Functions with unclear side effects
-
-Prefer immutable domain models where practical.
-
----
-
-## 17. Database rules
-
-SQLite is the initial intermediate store.
-
-All schema changes must be explicit.
-
-Required:
-
-* Schema file or migration
-* Primary keys
-* Appropriate indexes
-* Foreign-key policy documented
-* Batched inserts
-* Explicit transaction boundaries
-* Deterministic queries
-* Versioned schema metadata
-
-Every query whose order matters must use `ORDER BY`.
-
-Do not load the entire article database into memory.
-
-Do not use an ORM unless the architecture is explicitly changed.
-
-Prefer direct, parameterized SQL.
-
-Never interpolate article content into SQL strings.
-
----
-
-## 18. XML ingestion rules
-
-Wikimedia dumps are large and untrusted.
-
-The XML parser must:
-
-* Stream records
-* Keep bounded memory
-* Reject unsafe entity expansion
-* Avoid expanding the entire dump to disk by default
-* Extract only required fields
-* Release processed XML nodes
-* Record malformed records
-* Preserve page and revision identifiers
-
-Do not parse the complete dump using an API that constructs the full XML tree.
-
-Tests must include:
-
-* Normal page
-* Redirect
-* Empty revision
-* Non-main namespace
-* Malformed or incomplete record
-* Unicode title
-* Large text field
-
----
-
-## 19. Wikitext parsing rules
-
-The parser produces the semantic intermediate model.
-
-The parser must not attempt pixel-perfect Wikipedia rendering.
-
-Prioritize:
-
-1. Correct article text
-2. Correct section structure
-3. Correct internal links
-4. Readable lists
-5. Readable tables
-6. Useful infobox fields
-7. Selected images
-8. Decorative formatting
-
-Never execute:
-
-* Lua modules
-* Template code
-* Arbitrary HTML scripts
-* External commands derived from article content
-
-Unknown templates must use a documented fallback.
-
-Do not remove all unknown template content automatically.
-
-Prefer preserving useful positional and named arguments as readable text.
-
----
-
-## 20. Template support policy
-
-Implement templates based on measured frequency and user value.
-
-Before adding many template handlers:
-
-1. Run the parser against a representative sample.
-2. Produce the unknown-template frequency report.
-3. Rank by occurrence count.
-4. Implement the highest-impact templates first.
-5. Add fixtures and tests.
-
-Template behavior should normally be configuration-driven.
-
-Use custom Python handlers only when declarative rules are insufficient.
-
-A custom handler must:
-
-* Be narrowly scoped
-* Have tests
-* Have fallback behavior
-* Avoid network access
-* Avoid global side effects
-
----
-
-## 21. Rendering rules
-
-EPWING output must prioritize readability on constrained viewers.
-
-Preferred article layout:
-
-```text
-Title
-Aliases or pronunciation
-Compact metadata
-
-Lead section
-
-1. Heading
-   Body
-
-2. Heading
-   Body
-
-Categories
-Related articles
-Source metadata
-```
-
-Rendering must:
-
-* Preserve source section order
-* Limit excessive blank lines
-* Avoid overly wide layouts
-* Degrade tables to row-oriented text when necessary
-* Keep link labels readable when targets are missing
-* Avoid exposing raw parser internals
-* Avoid dropping content solely because formatting is unsupported
-
-Do not assume all readers support identical graphic or link behavior.
-
----
-
-## 22. Search index rules
-
-Implement search in this priority order:
-
-1. Exact titles
-2. Normalized titles
-3. Redirect titles
-4. Explicit aliases
-5. Kana variants
-6. Selected metadata
-7. Optional keyword indexes
-
-Do not implement an unbounded all-word index in the first version.
-
-Index generation must:
-
-* Be deterministic
-* Report collisions
-* Record entry counts
-* Enforce configured limits
-* Preserve the canonical article
-* Handle aliases pointing to the same target
-* Avoid silently overwriting duplicate keys
-
-Japanese normalization rules must be independently tested.
-
----
-
-## 23. Image pipeline rules
-
-Images are optional.
-
-The complete text-only build must work with all media functionality disabled.
-
-Treat all image input as untrusted.
-
-Required protections:
-
-* Download timeout
-* Maximum download size
-* Maximum decoded dimensions
-* MIME verification
-* Filename sanitization
-* Path traversal protection
-* ImageMagick delegate restrictions
-* SVG rasterization in a constrained environment
-* Content-hash cache
-* Duplicate suppression
-
-Default selection should favor:
-
-* Lead image
-* Infobox image
-* First meaningful content image
-
-Default selection should reject or deprioritize:
-
-* Decorative icons
-* Maintenance graphics
-* Tiny images
-* Flags used only as icons
-* Navigation images
-* Duplicate images
-
-Every distributed image should have traceable source metadata where practical.
-
----
-
-## 24. Math pipeline rules
-
-Formula rendering must be deterministic and cached.
-
-Preferred process:
-
-```text
-TeX
-→ pinned renderer
-→ SVG
-→ constrained raster image
-→ EPWING graphic
-```
-
-If rendering fails:
-
-* Preserve the TeX source as readable text
-* Emit `MATH_RENDER_FAILED`
-* Continue processing
-
-Never execute shell commands constructed from formula content.
-
-Formula cache keys must include:
-
-* Formula source
-* Renderer version
-* Rendering configuration
-* Font or style configuration when relevant
-
----
-
-## 25. Security requirements
-
-Wikimedia dumps, templates, links, filenames, and media files are untrusted.
-
-Mandatory rules:
-
-* Never execute content from the dump
-* Never use `eval`
-* Never invoke a shell with unescaped article content
-* Prefer subprocess argument arrays
-* Disable unsafe image delegates
-* Prevent path traversal
-* Limit decompression
-* Limit file sizes
-* Limit image dimensions
-* Use network timeouts
-* Validate redirect destinations
-* Validate archive extraction paths
-* Run as non-root
-* Keep secrets out of images and logs
-* Do not require credentials for normal public dump builds
-
-Any security-relevant compromise must be documented explicitly.
-
----
-
-## 26. Testing requirements
-
-Every feature must have the smallest effective test.
-
-### Unit tests
-
-Required for:
-
-* Title normalization
-* Redirect resolution
-* Template rules
-* Internal link handling
-* Table parsing
-* Character sanitization
-* Index generation
-* Cache validation
-* Manifest hashing
-
-### Snapshot tests
-
-Use for:
-
-* Parsed article models
-* Rendered article text
-* Table fallback formatting
-* Infobox formatting
-* Diagnostics
-* FreePWING source generation
-
-Snapshot updates must be reviewed intentionally.
-
-Do not update snapshots blindly to make tests pass.
-
-### Integration tests
-
-Must cover:
-
-```text
-fixture XML
-→ ingestion
-→ parsing
-→ normalization
-→ rendering
-→ EPWING source
-→ EPWING generation
-→ verification
-```
-
-### Regression fixtures
-
-Maintain representative fixtures for:
-
-* Japanese prose
-* Redirect chains
-* Redirect cycles
-* Disambiguation
-* Infobox
-* Wide table
-* Nested template
-* Math
-* Images
-* Unusual Unicode
-* Malformed Wikitext
-* Oversized entry
-* Missing link
-
----
-
-## 27. Test commands
-
-Use repository-provided commands when available.
-
-Expected commands include:
-
-```bash
-make test
-make lint
-make typecheck
-make format-check
-make integration-test
-make smoke-test
-```
-
-Or their direct equivalents inside Docker:
-
-```bash
-docker compose run --rm builder pytest
-docker compose run --rm builder ruff check .
-docker compose run --rm builder mypy src
-```
-
-Do not claim tests passed unless they were actually run.
-
-When a required test cannot run, report:
-
-* The exact command
-* The exact reason
-* What was tested instead
-* Remaining uncertainty
-
----
-
-## 28. Full dump build restrictions
-
-Do not run a complete Japanese or English Wikipedia build unless:
-
-* The user explicitly requests it, or
-* The current milestone requires it and all prerequisite acceptance criteria pass
-
-Before a full build:
-
-* Run `doctor`
-* Confirm free disk space
-* Confirm output paths
-* Confirm toolchain versions
-* Confirm dump checksum
-* Run the small fixture build
-* Run the limited real-sample build
-* Persist logs
-* Use resumable stages
-* Use conservative parallelism
-
-The first full Japanese build must use a reduced profile:
-
-* Text
-* Titles
-* Redirects
-* Basic tables
-* Basic infoboxes
-* No images
-* Math fallback as text
-* No full-text keyword index
-
-Do not enable every optional feature during the first complete build.
-
----
-
-## 29. Performance rules
-
-Correctness comes before optimization.
-
-Before optimizing:
-
-1. Measure
-2. Identify the bottleneck
-3. Record baseline performance
-4. Make one focused change
-5. Re-run correctness tests
-6. Compare performance
-
-Do not introduce concurrency solely because a stage appears slow.
-
-Concurrency must preserve:
-
-* Deterministic output
-* Bounded memory
-* Safe database access
-* Clear error reporting
-* Resumability
-
-Do not default to all CPU cores.
-
-Resource usage must be configurable.
-
----
-
-## 30. Logging and progress rules
-
-Long-running stages must provide useful progress.
-
-Progress reporting should include, where available:
-
-* Stage name
-* Processed record count
-* Total record estimate
-* Records per second
-* Current partition
-* Warning count
-* Error count
-* Cache hit count
-* Output size
-
-Do not log every successful article at normal verbosity.
-
-Use structured JSON logs for machine analysis and concise console logs for humans.
-
-Article-specific logs should include:
-
-* Page ID
-* Title
-* Diagnostic code
-* Severity
-* Stage
-
-Do not log full article contents by default.
-
----
-
-## 31. Build report requirements
-
-Every complete build must produce a machine-readable report.
-
-The report must include:
-
-* Wikimedia project
-* Dump date
-* Dump URL
-* Dump checksum
-* Git commit
-* Container image digest
-* Tool versions
-* Configuration hash
-* Stage durations
-* Article count
-* Redirect count
-* Skipped-page count
-* Image count
-* Table count
-* Formula count
-* Diagnostic counts
-* Top unknown templates
-* Broken link count
-* Output size
-* Verification results
-
-Human-readable HTML or Markdown reports may be generated from the machine-readable report.
-
-Do not maintain separate manually calculated statistics.
-
----
-
-## 32. Documentation requirements
-
-Update documentation when changing:
-
-* CLI behavior
-* Configuration schema
-* Stage names
-* Intermediate model
-* Database schema
-* Diagnostics
-* Output layout
-* Docker volumes
-* Toolchain versions
-* Build prerequisites
-* Verification procedure
-
-Use examples that can be executed.
-
-Do not document commands that have not been implemented.
-
-Do not leave stale examples after renaming commands.
-
----
-
-## 33. Configuration policy
-
-Behavioral differences between projects and profiles should normally be configuration-driven.
-
-Configuration must:
-
-* Be validated at startup
-* Have documented defaults
-* Reject unknown critical keys
-* Support stable profile composition
-* Be included in the build manifest
-* Be hashable for cache invalidation
-
-Avoid hidden environment-variable behavior.
-
-Environment variables may override operational settings such as:
-
-* Paths
-* Worker count
-* Memory limits
-* Network proxy
-
-Semantic dictionary behavior should normally live in TOML or YAML configuration.
-
----
-
-## 34. Repository hygiene
-
-Never commit:
-
-* Wikimedia dumps
-* Generated SQLite databases
-* Generated EPWING dictionaries
-* Downloaded images
-* Formula caches
-* Docker named-volume contents
-* Build logs
-* Temporary files
-* Secrets
-* Large binary test artifacts without justification
-
-Small deterministic fixtures may be committed.
-
-Before finishing a task, inspect:
+### Step 1: 状態確認
 
 ```bash
 git status --short
-git diff --stat
-git diff
+git branch --show-current
 ```
 
-Ensure there are no unrelated changes.
+未コミット変更がある場合は、対象タスクと関係するか確認します。無関係な変更を勝手に戻してはいけません。
 
----
+### Step 2: 対象タスク確認
 
-## 35. Git change discipline
+`CURRENT_TASK.md`に次を記入します。
 
-Make focused changes.
+- Task ID
+- 目的
+- 変更予定ファイル
+- 実行予定コマンド
+- 完了条件
+- 非対象
 
-A single task should not combine:
+### Step 3: 失敗するテストを先に作る
 
-* Dependency upgrades
-* Formatting the entire repository
-* Architectural refactoring
-* New features
-* Unrelated bug fixes
+可能な限り、要求を表す失敗テストまたはfixtureを先に追加します。
 
-Avoid large mechanical rewrites unless explicitly requested.
+### Step 4: 最小実装
 
-Preserve user changes.
+- 対象タスクだけを実装します。
+- 将来のための抽象化を過剰に追加しません。
+- ただし`ARCHITECTURE.md`で明示された境界は守ります。
 
-Do not revert or overwrite code you did not create unless it is necessary for the requested task.
+### Step 5: 局所テスト
 
-When modifying an existing file, understand its current behavior first.
+変更箇所に近いテストから実行します。
 
----
+### Step 6: 標準検証
 
-## 36. Refactoring policy
-
-Refactor only when it directly improves the current task or removes a demonstrated obstacle.
-
-A refactor must preserve externally observable behavior unless the change is intentional and documented.
-
-Before a substantial refactor:
-
-* Identify the invariant behavior
-* Add or confirm tests
-* Make the smallest structural change
-* Re-run tests
-* Avoid combining the refactor with unrelated features
-
-Do not rewrite working pipeline stages because another design appears cleaner.
-
----
-
-## 37. Backward compatibility
-
-The project is initially pre-1.0, but build artifacts and manifests still require care.
-
-Treat these as versioned interfaces:
-
-* CLI commands
-* Configuration keys
-* Stage names
-* Manifest schema
-* Diagnostic codes
-* Intermediate database schema
-* Output naming rules
-
-When changing an interface:
-
-* Increment the relevant version
-* Invalidate incompatible caches
-* Document migration behavior
-* Add compatibility handling where practical
-
-Never reuse an old stage version for incompatible output.
-
----
-
-## 38. Licensing rules
-
-Project source licensing and generated Wikipedia content licensing are separate.
-
-Do not remove:
-
-* Wikipedia attribution
-* Wikimedia project identification
-* Dump date
-* License notices
-* Image source metadata
-* Build-tool attribution
-
-Do not claim ownership of Wikipedia content.
-
-Image-enabled public releases require additional care.
-
-Do not assume that all Wikimedia Commons images have identical licenses.
-
-The image pipeline must retain enough metadata to audit included media.
-
----
-
-## 39. Agent decision policy
-
-When several implementations are possible, prefer the option that is:
-
-1. Easier to verify
-2. Easier to resume
-3. More deterministic
-4. Less coupled to FreePWING
-5. Safer with untrusted input
-6. Simpler to maintain
-7. Adequately performant
-
-Do not choose a complex distributed architecture for a local single-machine build without measured need.
-
-Do not introduce:
-
-* Redis
-* PostgreSQL
-* Message brokers
-* Kubernetes
-* Microservices
-* Remote worker systems
-
-unless the architecture is explicitly revised and the need is demonstrated.
-
-SQLite, local files, Docker, and explicit stages are the default.
-
----
-
-## 40. Uncertainty policy
-
-Do not guess about:
-
-* FreePWING syntax
-* EB Library behavior
-* EPWING reader compatibility
-* Wikimedia dump structure
-* Licensing requirements
-* Image conversion safety
-* Encoding limits
-
-When uncertain:
-
-1. Inspect existing source or documentation.
-2. Create a minimal reproducible experiment.
-3. Record the observed result.
-4. Add a regression test where practical.
-5. Document remaining uncertainty.
-
-A small verified prototype is preferred over a confident speculative implementation.
-
----
-
-## 41. When blocked
-
-If blocked by one subsystem, continue only with work that remains valid independently.
-
-Examples:
-
-* If FreePWING compilation fails, improve the isolated toolchain proof rather than implementing the entire parser.
-* If image metadata resolution is unclear, keep the text-only build working.
-* If full template handling is incomplete, implement explicit fallback and diagnostics.
-* If a complete dump is too expensive to test, use representative fixtures and sampled records.
-
-Do not bypass a failing verification step merely to proceed to later milestones.
-
----
-
-## 42. Completion report format
-
-At the end of a coding task, report:
-
-### Implemented
-
-List concrete changes.
-
-### Verification
-
-List commands actually run and their results.
-
-### Remaining limitations
-
-List known gaps and risks.
-
-### Suggested next milestone
-
-Name one appropriate next task from `PLAN.md`.
-
-Do not say that work is complete when required verification failed.
-
----
-
-## 43. Prohibited actions
-
-Agents must not:
-
-* Start with a full Wikipedia build
-* Install dependencies directly on the host
-* Run the container as root without documented necessity
-* Execute Wikitext or Lua
-* Hide unsupported markup
-* Ignore dump checksums
-* Use mutable dependency versions without recording commits
-* Place FreePWING details throughout the parser
-* Parse the full XML dump into memory
-* Add an ORM without architectural approval
-* Use shell interpolation with article content
-* Retry network operations forever
-* Mark partial output as complete
-* Delete previous valid output before new output succeeds
-* Change tests solely to conceal a regression
-* Commit generated dumps or dictionaries
-* Add images before the text-only vertical slice works
-* Claim compatibility without opening or inspecting the generated dictionary
-* Claim reproducibility after only one build
-* Optimize without measuring
-* Rewrite unrelated code during a focused task
-
----
-
-## 44. Immediate implementation priority
-
-Unless the repository has already progressed beyond these tasks, begin with:
-
-1. Dockerized CLI skeleton
-2. `wikiepwing doctor`
-3. Pinned FreePWING and EB Library toolchain
-4. Handcrafted three-entry dictionary
-5. `ebzip` packaging
-6. Automated structural verification
-7. Small end-to-end fixture
-
-Do not implement current Wikipedia download parsing until the minimal handcrafted EPWING artifact has been generated and opened successfully.
-
----
-
-## 45. Project success criteria
-
-The project succeeds when this command:
+最低限、次を実行します。
 
 ```bash
-docker compose run --rm builder \
-  wikiepwing build \
-  --project jawiki \
-  --date latest \
-  --profile standard
+make format-check
+make lint
+make typecheck
+make test
 ```
 
-produces a verified archive such as:
+Docker/ツールチェーンに関係するタスクでは、対応するsmoke testも実行します。
 
-```text
-output/jawiki-YYYYMMDD-epwing-standard.zip
-```
+### Step 7: 文書更新
 
-without requiring host installation of the legacy toolchain.
+- `TASKS.md`の状態を更新
+- `LOG.md`へ実施内容とコマンド結果を追記
+- 長期的判断なら`MEMORY.md`へ追記
+- 設計変更なら`DECISIONS.md`と`ARCHITECTURE.md`を更新
 
-The resulting dictionary must:
+### Step 8: 完了報告
 
-* Open in common EPWING readers
-* Search canonical Japanese titles
-* Search redirect titles
-* Navigate internal references
-* Preserve readable article structure
-* Render common tables and infoboxes
-* Optionally include selected images
-* Report unsupported content
-* Identify the exact source dump
-* Identify the exact build toolchain
-* Be rebuildable from the repository and Docker configuration
+完了報告には次だけを簡潔に書きます。
+
+- 何を変更したか
+- 主要ファイル
+- 実行したテストと結果
+- 残課題
+- 次に実行すべきTask ID
+
+「完了」と書く前に、`CURRENT_TASK.md`の完了条件を1項目ずつ確認します。
+
+---
+
+## 7. 禁止事項
+
+以下は禁止です。
+
+- 一気に全機能を実装する
+- 全ファイルを大規模に書き換える
+- 既存テストを削除して通す
+- failureをwarningへ落として通す
+- 型エラーを大量の`Any`で隠す
+- `# type: ignore`を理由なしに追加する
+- 任意コード実行を伴うWikitext/Lua処理
+- HTML中のJavaScript実行
+- SVGをブラウザやImageMagickへ無検証で渡す
+- URLから生成した文字列を保存パスへ直接使う
+- 記事タイトルをシェルコマンドへ埋め込む
+- 生成物や巨大ダンプをGitへ追加する
+- Boookendsの名称・ロゴ・作者性を自作成果物へ流用する
+- 出典・ライセンス記録を削除する
+- フルビルド成功だけで品質合格とする
+
+---
+
+## 8. 迷ったときの判断規則
+
+1. データを失わない方を選ぶ
+2. 後から再実行できる方を選ぶ
+3. ステージ境界を守る方を選ぶ
+4. テスト可能な方を選ぶ
+5. 読みやすい辞書出力を優先する
+6. 見た目の完全再現より意味保存を優先する
+7. 互換性を推測せず測定する
+8. 小さいfixtureで確認してから大きくする
+
+---
+
+## 9. 完了定義
+
+タスクは次をすべて満たすまで完了ではありません。
+
+- コードまたは文書が要求を満たす
+- 対応テストがある
+- 標準検証が成功する
+- 失敗・スキップが可視化される
+- ドキュメントが現状と一致する
+- `LOG.md`が更新される
+- 次タスクが明確である
+
+プロジェクト全体の完了条件は`PLAN.md`と`COMPATIBILITY.md`に従います。

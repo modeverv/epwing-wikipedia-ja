@@ -1,0 +1,5 @@
+[profile]
+name = "minimal"
+images_enabled = false
+math_enabled = false
+full_text_index_enabled = false

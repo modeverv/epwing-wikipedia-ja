@@ -1,0 +1,4 @@
+[project]
+id = "jawiki"
+language = "ja"
+namespace_ids = [0]
