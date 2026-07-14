@@ -483,7 +483,7 @@
 
 **依存:** I001
 
-### TASK-I003 [ ] Stage lock
+### TASK-I003 [x] Stage lock
 
 **依存:** I001
 

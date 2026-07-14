@@ -3182,3 +3182,36 @@ git diff --check
 **次タスク**
 
 - TASK-I003 Stage lock(依存: I001)
+
+### 2026-07-14 20:50 UTC — TASK-I003
+
+**目的**
+
+- `ARCHITECTURE.md` 7.2(Orchestratorの責務"lock取得")を実装する。manifestの`status`確認だけでは真の同時実行を防げないため、`fcntl.flock`によるOS-level advisory lockを実装する。
+
+**変更**
+
+- `src/wikiepwing/pipeline/stage_lock.py`に`acquire_stage_lock`(context manager)/`StageLockError`を実装した。`fcntl.flock`で排他ロックを取得し、lock fileへ取得プロセスのPIDを記録する。例外発生時も確実にロックを解放する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_pipeline_stage_lock.py
+make check
+git diff --check
+```
+
+**結果**
+
+- lock取得成功、PID記録、同一lock pathへの2回目取得の拒否、context終了後の解放と再取得成功、例外発生時の解放、親ディレクトリ自動作成を6件のテストで確認した。
+- 標準スイート749件(新規6件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 本プロジェクトはDocker/Linuxコンテナ上でのみ実行される前提(既存toolchain運用と整合)のため、POSIX専用の`fcntl`を採用した。
+- 既存のingest/normalize/generate orchestrateモジュールへのlock統合は将来のtaskに委ねた(本タスクはlock機構自体の実装のみ)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-I004 Atomic stage output(依存: I001)
