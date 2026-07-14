@@ -265,6 +265,19 @@ class CliTest(unittest.TestCase):
             self.assertEqual(manifest["metrics"]["records_written"], 1)
             self.assertTrue((work / "raw.sqlite3").is_file())
 
+            verify_result = self.run_cli("verify-raw", "--raw-database", str(work / "raw.sqlite3"))
+            self.assertEqual(verify_result.returncode, 0, verify_result.stderr)
+            verification = json.loads(verify_result.stdout)
+            self.assertTrue(verification["ok"])
+            self.assertEqual(verification["counts"]["accepted_articles"], 1)
+
+    def test_verify_raw_help(self) -> None:
+        result = self.run_cli("verify-raw", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--raw-database", result.stdout)
+        self.assertIn("--sample-size", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

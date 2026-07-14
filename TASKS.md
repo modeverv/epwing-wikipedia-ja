@@ -307,7 +307,7 @@
 
 **実装:** progress、diagnostics、manifest。
 
-### TASK-E009 [ ] Raw verifier
+### TASK-E009 [x] Raw verifier
 
 **依存:** E008
 

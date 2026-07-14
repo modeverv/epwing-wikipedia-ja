@@ -1903,3 +1903,36 @@ git diff --check
 **次タスク**
 
 - TASK-E009 Raw verifier
+
+### 2026-07-14 06:25 UTC — TASK-E009
+
+**目的**
+
+- 取込済み`raw.sqlite3`の整合性を検証するverifierを実装する。
+
+**変更**
+
+- `src/wikiepwing/ingest/verify.py`に`RawVerificationCounts`、`RawVerificationResult`、`verify_raw_database`を実装した。integrity_check/foreign_key_check、全table件数、`ROW_NUMBER() OVER`による決定的な等間隔sample抽出とhtml/wikitext blobの`decompress`検証を行う。
+- `wikiepwing verify-raw --raw-database --sample-size`コマンドを追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_ingest_verify.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- TASK-D010をTASK-E008で取り込んだDBに対し実際に検証し、`ok=True`・件数一致・sample展開成功を確認した。html_zstdを意図的に壊した行でも破損検出を確認した。
+- 標準スイート362件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- sampleは決定的な等間隔抽出とした(再現性優先、真の乱数は使わない)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E010 Interrupted ingest recovery

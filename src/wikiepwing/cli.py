@@ -16,8 +16,10 @@ from typing import cast
 from wikiepwing import __version__
 from wikiepwing.config import load_config
 from wikiepwing.doctor import render_doctor_text, run_doctor
+from wikiepwing.ingest.database import connect_raw_database
 from wikiepwing.ingest.orchestrate import run_ingest
 from wikiepwing.ingest.validate import ValidationLimits
+from wikiepwing.ingest.verify import verify_raw_database
 from wikiepwing.reference.entries import EbEntryAdapter, sample_reference_entries
 from wikiepwing.reference.inventory import (
     build_reference_inventory,
@@ -295,6 +297,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="git commit recorded in the manifest (default: `git rev-parse HEAD`)",
     )
+    verify_raw = subparsers.add_parser(
+        "verify-raw", help="verify a raw.sqlite3: integrity, foreign keys, counts, samples"
+    )
+    verify_raw.add_argument(
+        "--raw-database",
+        type=Path,
+        required=True,
+        help="path to the raw.sqlite3 to verify",
+    )
+    verify_raw.add_argument(
+        "--sample-size",
+        type=int,
+        default=20,
+        help="number of accepted articles to sample-decompress (default: 20)",
+    )
     return parser
 
 
@@ -506,6 +523,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(ingest_result.manifest_path)
         return 0 if ingest_result.manifest.status == "complete" else 1
+    if command == "verify-raw":
+        connection = connect_raw_database(cast(Path, arguments.raw_database).resolve())
+        try:
+            verification = verify_raw_database(
+                connection, sample_size=cast(int, arguments.sample_size)
+            )
+        finally:
+            connection.close()
+        print(json.dumps(verification.payload(), ensure_ascii=False, indent=2, sort_keys=True))
+        return 0 if verification.ok else 1
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0
