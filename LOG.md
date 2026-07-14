@@ -3672,3 +3672,36 @@ git diff --check
 **次タスク**
 
 - TASK-K003 Table complexity classifier(依存: K002)
+
+### 2026-07-15 03:30 UTC — TASK-K003
+
+**目的**
+
+- `ARCHITECTURE.md` 11.5の`TableBlock.complexity`を決定する分類器を実装する。16.3(Table render policy)は各tierの方針(simple/wide/complex)を述べるのみで具体的な閾値を規定していないため、本タスクで判断基準を定めdocstringに明記した。
+
+**変更**
+
+- `src/wikiepwing/normalize/table_complexity.py`に`classify_table_complexity()`を実装した。判定順序: 行が無ければ`unsupported`→結合セル(rowspan/colspan>1)が1つでもあれば`complex`(列数に関わらず優先)→列数が閾値(デフォルト6)を超えれば`wide`→それ以外は`simple`。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_table_complexity.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 空テーブル・結合無し小規模テーブル・閾値ちょうど/超過・カスタム閾値・rowspan/colspan単独での複雑判定・complexがwideより優先されることを8件のテストで確認した。
+- 標準スイート866件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ARCHITECTURE.md`が閾値を規定していないため、Mini-profileのプレーンテキストグリッド表示が読みやすく収まる列数として6をデフォルトに採用した(呼び出し側で`max_simple_columns`により変更可能)。
+- 結合セルの有無を列数より優先して判定する設計にした(16.3の"complex"が「row/sectionごとのkey-value化」という構造的複雑さを指しており、列数の多寡とは独立した軸であるため)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-K004 Simple table renderer(依存: K003,H007)

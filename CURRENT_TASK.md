@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-K002
+TASK-K003
 
 ## 目的
 
-`ARCHITECTURE.md` 11.5(TableBlock/TableCellがrow_span/col_spanをそのまま保持する設計)を踏まえ、TASK-K001の`RawTable`(DOM順のセル列、rowspan/colspan未解決)を、各セルの実際のグリッド上の行・列位置("HTML table grid formation algorithm"相当)へ正規化する。TableBlock自体はspan値を保持したまま(グリッド展開済みの値は保存しない)ため、本タスクは複雑度分類(TASK-K003)やレンダラ(TASK-K004-K005)が必要とする「各セルが実際にどの行・列に位置するか」「テーブル全体の列数」を計算する中間ステップとして実装する。
+`ARCHITECTURE.md` 11.5の`TableBlock.complexity`(`Literal["simple", "wide", "complex", "unsupported"]`)を決定する分類器を実装する。16.3(Table render policy)はsimple="小列数・短いcell・grid-like text"、wide="1行をrecordとして縦表示"、complex="row/sectionごとのkey-value化"と方針だけを述べ、具体的な閾値は規定していない。TASK-K002の`NormalizedTable`(グリッド位置・列数)を入力に、次の判断基準を採用する: (1) 行が無い(空テーブル)場合は`unsupported`、(2) いずれかのセルがrowspan/colspanで結合されている場合は`complex`(16.3の「row/sectionごとのkey-value化」に対応する構造的複雑さ)、(3) 結合が無く列数が閾値を超える場合は`wide`、(4) それ以外は`simple`。
 
 ## 事前条件
 
@@ -14,14 +14,14 @@ TASK-K002
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-K002(依存: K001)を読んだ
-- [x] `ARCHITECTURE.md` 11.5の`TableCell`/`TableBlock`がspan値をそのまま保持する設計であることを再確認した(グリッド展開結果はモデルに保存せず、後続タスクが必要とする中間計算として位置づける)
-- [x] TASK-K001の`RawTable`/`RawTableRow`/`RawTableCell`を確認した
+- [x] `TASKS.md`のTASK-K003(依存: K002)を読んだ
+- [x] `ARCHITECTURE.md` 16.3(Table render policy)を再確認した(具体的な閾値は規定されていないため、本タスクでの判断根拠をdocstringに明記する)
+- [x] TASK-K002の`NormalizedTable`/`PositionedCell`を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/normalize/table_grid.py`(新規: `PositionedCell`, `NormalizedTable`, `normalize_table_spans()`)
-- `tests/test_normalize_table_grid.py`(新規)
+- `src/wikiepwing/normalize/table_complexity.py`(新規: `classify_table_complexity()`)
+- `tests/test_normalize_table_complexity.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -29,29 +29,26 @@ TASK-K002
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_normalize_table_grid.py
+uv run pytest tests/test_normalize_table_complexity.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `normalize_table_spans(table)`が、各セルの開始行・開始列(`row_index`/`col_index`)を、前の行からのrowspanが占有する列をスキップして正しく計算する
-- [x] colspanが同一行内の後続セルの列位置を正しくずらす
-- [x] rowspan+colspanを組み合わせたセルが正しい矩形領域を占有する(後続行がその領域をスキップする)
-- [x] テーブル全体の列数(`column_count`)を計算する(全行の最大到達列)
+- [x] 空テーブル(行数0)は`unsupported`
+- [x] rowspan/colspanで結合されたセルが1つでもあれば`complex`
+- [x] 結合が無く列数が閾値(デフォルト6)を超える場合は`wide`
+- [x] それ以外(結合無し・列数が閾値以下)は`simple`
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 複雑度分類(TASK-K003)
-- 実際のレンダラ(TASK-K004 simple/K005 wide)
-- 不正な重複span(仕様上のedge case)の完全な仕様準拠処理(現実のWikipediaテーブルを想定した素直な実装に留める)
+- 実際のレンダラ(TASK-K004 simple/K005 wide、複雑度に応じた具体的なテキスト整形)
+- oversized(行上限による分割、TASK-K006)
 
 ## 実施結果
 
-- `src/wikiepwing/normalize/table_grid.py`に`PositionedCell`・`NormalizedTable`・`normalize_table_spans()`を実装した。HTML仕様の"table grid formation algorithm"相当のアルゴリズムで、各セルの開始行・開始列を、前の行からのrowspanが占有する列をスキップしながら計算する。
-- rowspan/colspanを組み合わせたセルが正しく矩形領域を占有し、その領域の有効期限(残り行数)が切れると後続行がその列を再利用できるようにした。
-- テーブル全体の列数は、全セルの`col_index + col_span`の最大値として計算した(トレイリングのスパン追跡ではなく、セル単位の最大値を取ることでシンプルかつ正確にした)。
-- `tests/test_normalize_table_grid.py`(新規8件)で、単純グリッド・colspanによる列ずれ・rowspanによる次行の列スキップ・rowspan+colspan組み合わせ・rowspanの期限切れ・最大幅による列数計算・空テーブル・caption/class名の保持を確認した。
-- `make check`(format-check/lint/mypy/pytest 858件)と`git diff --check`が成功した。
+- `src/wikiepwing/normalize/table_complexity.py`に`classify_table_complexity()`を実装した。判定順序: 行が無ければ`unsupported`→結合セル(rowspan/colspan>1)が1つでもあれば`complex`→列数が閾値(デフォルト6、`max_simple_columns`で変更可能)を超えれば`wide`→それ以外は`simple`。
+- `tests/test_normalize_table_complexity.py`(新規8件)で、空テーブル・結合無し小規模テーブル・閾値ちょうど・閾値超過・カスタム閾値・rowspan単独での複雑判定・colspan単独での複雑判定・complexがwideより優先されることを確認した。
+- `make check`(format-check/lint/mypy/pytest 866件)と`git diff --check`が成功した。

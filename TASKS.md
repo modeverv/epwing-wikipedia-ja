@@ -547,7 +547,7 @@
 
 **依存:** K001
 
-### TASK-K003 [ ] Table complexity classifier
+### TASK-K003 [x] Table complexity classifier
 
 **依存:** K002
 
