@@ -2272,3 +2272,36 @@ git diff --check
 **次タスク**
 
 - TASK-G002 Root content selection(依存: G001)
+
+### 2026-07-14 10:45 UTC — TASK-G002
+
+**目的**
+
+- `ARCHITECTURE.md` 12.2のpass `N10 Root selection`を実装する。HTML parse後・unsafe node除去前に、記事本文のcontent rootとなるcontainerを選択する。
+
+**変更**
+
+- `src/wikiepwing/normalize/root_selection.py`に`select_root_content(document) -> tuple[Node, ...]`を実装した。`class`属性に`mw-parser-output`トークンを含む最初の`div`を優先し、無ければ`<body>`、それも無ければdocument直下の子要素を返す。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_root_selection.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `mw-parser-output`優先選択(bodyにネストしている場合を含む)、fallback(body/document直下)、class token完全一致(部分文字列誤検知の回避)を5件のテストで確認した。
+- 標準スイート507件(新規5件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ARCHITECTURE.md`/`DATA_CONTRACTS.md`/`PLAN.md`のいずれにも具体的なselector名は明文化されていなかった。`mw-parser-output`はMediaWiki/Wikimedia Enterpriseのレンダリング済みHTMLで本文をラップする一般的な規約であるため、これをdocumented assumptionとして採用した。実データでの検証は将来、実際のWikimedia Enterprise HTMLサンプルが入手できた時点で行う。
+- Unsafe/UI node除去(G003)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G003 Unsafe/UI node removal(依存: G002)

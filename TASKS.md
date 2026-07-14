@@ -367,7 +367,7 @@
 
 **実装:** no network/entities、malformed recovery policy。
 
-### TASK-G002 [ ] Root content selection
+### TASK-G002 [x] Root content selection
 
 **依存:** G001
 
