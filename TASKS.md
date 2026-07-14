@@ -515,7 +515,7 @@
 
 **依存:** J001
 
-### TASK-J003 [ ] Kana variants
+### TASK-J003 [x] Kana variants
 
 **依存:** J001
 

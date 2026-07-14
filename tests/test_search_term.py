@@ -128,3 +128,32 @@ def test_multi_word_redirect_alias_also_gets_a_space_removed_variant() -> None:
     variants = [term for term in terms if term.source == "nfkc_case_space_variant"]
     assert len(variants) == 1
     assert variants[0].normalized_key == "emacseditor"
+
+
+def test_kana_title_gets_a_kana_swapped_variant() -> None:
+    article = _make_article(title="ひらがな", normalized_title="ひらがな")
+
+    terms = title_terms_for_article(article)
+
+    variants = [term for term in terms if term.source == "kana_variant"]
+    assert len(variants) == 1
+    assert variants[0].normalized_key == "ヒラガナ"
+    assert variants[0].kind == "alias"
+
+
+def test_non_kana_title_gets_no_kana_variant() -> None:
+    article = _make_article()
+
+    terms = title_terms_for_article(article)
+
+    assert not any(term.source == "kana_variant" for term in terms)
+
+
+def test_kana_redirect_alias_also_gets_a_kana_swapped_variant() -> None:
+    article = _make_article(aliases=(Alias(title="カタカナ", source="redirect", confidence=1.0),))
+
+    terms = title_terms_for_article(article)
+
+    variants = [term for term in terms if term.source == "kana_variant"]
+    assert len(variants) == 1
+    assert variants[0].normalized_key == "かたかな"

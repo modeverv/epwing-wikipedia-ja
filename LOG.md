@@ -3431,3 +3431,38 @@ git diff --check
 **次タスク**
 
 - TASK-J003 Kana variants(依存: J001)
+
+### 2026-07-15 00:45 UTC — TASK-J003
+
+**目的**
+
+- `ARCHITECTURE.md` 14.3(Lite profileの"kana variant")と`DATA_CONTRACTS.md` 8のpriority proposal("600 kana variant")を実装する。ひらがな/カタカナのどちらで書かれたタイトル・エイリアスでも、もう一方の表記での検索でヒットするようにする。
+
+**変更**
+
+- `src/wikiepwing/search/kana_variant.py`に`kana_variant()`を実装した。ひらがな(U+3041-3096)⇔カタカナ(U+30A1-30F6)を1文字ずつコードポイントオフセット(0x60)で機械的に入れ替え、対象外の文字(漢字・ASCII・長音記号ーなど)はそのまま保持する。
+- `search_term.py`の変種生成ロジックを`_variant_terms`に統合し、space variant(TASK-J002)とkana variantの両方を生成するよう拡張した(`_KANA_VARIANT_PRIORITY = 30`)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_kana_variant.py tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- ひらがな→カタカナ・カタカナ→ひらがな・混在文字列・漢字/ASCII不変・漢字とかなの混在・長音記号(かな変換対象外)を6件のテストで確認した。
+- `title_terms_for_article`でのkana variant生成(title/redirectエイリアス双方)を3件のテストで確認した。
+- 標準スイート812件(新規9件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 半角カタカナはTASK-J001の`normalize_index_key`のNFKC正規化で全角へ既に畳み込まれているため、本タスクでは全角カタカナ⇔ひらがなの単純往復変換のみを実装すれば十分と判断した。
+- kana variantとspace variantを組み合わせた複合バリアント(例: 空白除去+かな入れ替え両方を適用したキー)は生成していない。必要性が生じた場合の将来課題とする。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-J004 Punctuation variants(依存: J001)
