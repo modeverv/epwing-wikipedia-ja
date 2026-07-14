@@ -431,7 +431,7 @@
 
 **依存:** H001
 
-### TASK-H004 [ ] Redirect alias extraction
+### TASK-H004 [x] Redirect alias extraction
 
 **依存:** E008
 

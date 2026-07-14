@@ -17,7 +17,8 @@ from pathlib import Path
 
 from wikiepwing.ingest.database import connect_raw_database
 from wikiepwing.ingest.zstd_codec import decompress
-from wikiepwing.model.article import Alias, Article, MediaReference
+from wikiepwing.links.redirect_aliases import extract_redirect_aliases
+from wikiepwing.model.article import Article, MediaReference
 from wikiepwing.model.blocks import (
     Block,
     InfoboxBlock,
@@ -313,7 +314,7 @@ def _normalize_one(
         source_date_modified=datetime.fromisoformat(row["date_modified"]),
         abstract=_extract_abstract(blocks),
         blocks=blocks,
-        aliases=_read_aliases(raw_connection, page_id),
+        aliases=extract_redirect_aliases(raw_connection, page_id),
         categories=_read_categories(raw_connection, page_id),
         media=_read_media(raw_connection, page_id),
         diagnostics=stamped_pipeline_diagnostics,
@@ -408,16 +409,6 @@ def _child_blocks(block: Block) -> tuple[Block, ...]:
         for field in block.fields:
             children.extend(field.value)
     return tuple(children)
-
-
-def _read_aliases(connection: sqlite3.Connection, page_id: int) -> tuple[Alias, ...]:
-    rows = connection.execute(
-        "SELECT redirect_title FROM redirects WHERE target_page_id = ? ORDER BY ordinal",
-        (page_id,),
-    ).fetchall()
-    return tuple(
-        Alias(title=row["redirect_title"], source="redirect", confidence=1.0) for row in rows
-    )
 
 
 def _read_categories(connection: sqlite3.Connection, page_id: int) -> tuple[str, ...]:

@@ -2773,3 +2773,36 @@ git diff --check
 **次タスク**
 
 - TASK-H004 Redirect alias extraction(依存: E008)
+
+### 2026-07-14 16:05 UTC — TASK-H004
+
+**目的**
+
+- `ARCHITECTURE.md` 13.3(alias source: redirects)を独立した公開関数として実装する。TASK-G012実装時に`normalize/orchestrate.py`へprivateに埋め込んでいた同等ロジックを`links`パッケージへ移設する。
+
+**変更**
+
+- `src/wikiepwing/links/redirect_aliases.py`に`extract_redirect_aliases(connection, page_id) -> tuple[Alias, ...]`を実装した(`source="redirect"`, `confidence=1.0`固定)。
+- `src/wikiepwing/normalize/orchestrate.py`の`_read_aliases`を削除し、この関数を利用するようリファクタした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_links_redirect_aliases.py tests/test_normalize_orchestrate.py
+make check
+git diff --check
+```
+
+**結果**
+
+- ordinal順でのalias抽出、該当redirectが無い場合の空tuple、既存のnormalize orchestrationのend-to-endテストが引き続き成功することを7件のテストで確認した。
+- 標準スイート648件(新規2件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- redirect以外のalias source(title/normalized title variant/HTML display title/lead bold/Wikidata)は本タスクの対象外、将来のtaskで対応する。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H005 Stable entry IDs(依存: F004)
