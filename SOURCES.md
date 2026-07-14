@@ -61,6 +61,30 @@ Snapshot documentationの2026-07-13表示では、Structured Contents Betaの対
 
 したがって、v2はStructured Contentsをjawiki必須経路にしない。
 
+### 実アカウントでの疎通確認(2026-07-14)
+
+ユーザーが作成したWikimedia Enterpriseアカウントのusername/passwordで、TASK-D002/D003の実装コードから実APIへ疎通確認した。credentials自体はログや本文書へ一切記録していない。
+
+**認証API(`https://auth.enterprise.wikimedia.com/v1`)**
+
+- `POST /login` に`{"username": "...", "password": "..."}`(JSON body)で、成功時`access_token`を含むJSONを返す。実測でtoken長は1067文字。
+- credentials不足時は`{"status":400,"message":"missing username or password"}`、不正credentials時は`{"status":401,"message":"Incorrect username or password."}`(いずれもcredentials自体は含まない)。
+- `src/wikiepwing/source/auth.py`の`/login`エンドポイントとフィールド名(`username`/`password`/`access_token`)の仮定は実データと一致した。
+
+**Snapshot metadata API(`https://api.enterprise.wikimedia.com/v2`)**
+
+- `GET /snapshots` に`Authorization: Bearer <access_token>`で、全project×namespaceのSnapshot metadataをJSON配列で返す(2026-07-14実測で3,262件、応答約1.16 MB)。project/namespaceによるserver側絞り込みは無く、client側filterが必要。
+- 各entryの実フィールド構成(`src/wikiepwing/source/enterprise.py`実装時の当初仮定と異なった点を含む):
+  - `identifier`: 例 `"jawiki_namespace_0"`
+  - `is_part_of.identifier`: project識別子(**`project`ではなく`is_part_of`**)
+  - `namespace.identifier`: namespace番号
+  - `in_language.identifier`: 言語コード(未使用、今後の参考として記録)
+  - `version`: revision内容hash文字列(日付ではない)。例 `"35061ecbd3bc55c31cffd4b46838673d"`
+  - `date_modified`: RFC3339、ナノ秒精度の小数点以下桁を持つ場合がある(例 `"2026-07-01T00:50:43.412259882Z"`)。Python 3.12の`datetime.fromisoformat`はマイクロ秒精度へ丸めて解析可能。
+  - `size`: `{"value": <float>, "unit_text": <string>}`のオブジェクト(**単純なbyte数の整数ではない**)。近似値であり、正確なbyte数はダウンロード時に別途確認が必要。
+  - `chunks`: 文字列配列。**jawiki namespace 0は2026-07-14時点で81個のchunk(`jawiki_namespace_0_chunk_0`〜`_80`)に分割**されている。単一tar.gzという当初の`ARCHITECTURE.md`例示は簡略化であり、実際のdownloaderはchunk単位の取得を前提に設計する必要がある(TASK-D005への申し送り)。
+- jawiki namespace 0のSnapshotは実際に列挙され、`is_part_of.identifier == "jawiki"`かつ`namespace.identifier == 0`のentryが1件存在することを確認した(2026-07-14時点でサイズ約30,896 MB)。
+
 ---
 
 ## 3. Wikimedia official dumps

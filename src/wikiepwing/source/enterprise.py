@@ -22,6 +22,14 @@ class SnapshotMetadataError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class SnapshotSizeEstimate:
+    """The Enterprise API's approximate, non-authoritative Snapshot size."""
+
+    value: float
+    unit_text: str
+
+
+@dataclass(frozen=True, slots=True)
 class SnapshotCandidate:
     """One Snapshot metadata entry as enumerated by the Enterprise API."""
 
@@ -30,7 +38,8 @@ class SnapshotCandidate:
     namespace: int
     version_identifier: str
     date_modified: datetime
-    size_bytes: int | None
+    size_estimate: SnapshotSizeEstimate | None
+    chunk_identifiers: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +51,8 @@ class ResolvedSnapshot:
     snapshot_identifier: str
     version_identifier: str
     date_modified: datetime
-    size_bytes: int | None
+    size_estimate: SnapshotSizeEstimate | None
+    chunk_identifiers: tuple[str, ...]
     metadata_response_sha256: str
 
 
@@ -97,7 +107,8 @@ class SnapshotMetadataClient:
             snapshot_identifier=chosen.identifier,
             version_identifier=chosen.version_identifier,
             date_modified=chosen.date_modified,
-            size_bytes=chosen.size_bytes,
+            size_estimate=chosen.size_estimate,
+            chunk_identifiers=chosen.chunk_identifiers,
             metadata_response_sha256=hashlib.sha256(raw).hexdigest(),
         )
 
@@ -146,7 +157,7 @@ def _parse_snapshot_entry(entry: object, index: int) -> SnapshotCandidate:
     fields = cast(dict[str, object], entry)
     identifier = _require_string(fields, "identifier", index)
     project = _require_string(
-        _require_object(fields, "project", index), "identifier", index, "project.identifier"
+        _require_object(fields, "is_part_of", index), "identifier", index, "is_part_of.identifier"
     )
     namespace = _require_int(
         _require_object(fields, "namespace", index), "identifier", index, "namespace.identifier"
@@ -157,19 +168,46 @@ def _parse_snapshot_entry(entry: object, index: int) -> SnapshotCandidate:
             f"Snapshot metadata entry {index} has non-concrete version: {LATEST!r}"
         )
     date_modified = _require_datetime(fields, "date_modified", index)
-    size_bytes = fields.get("size")
-    if size_bytes is not None and (
-        isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or size_bytes < 0
-    ):
-        raise SnapshotMetadataError(f"Snapshot metadata entry {index} has an invalid size")
+    size_estimate = _parse_size_estimate(fields, index)
+    chunk_identifiers = _parse_chunks(fields, index)
     return SnapshotCandidate(
         identifier=identifier,
         project=project,
         namespace=namespace,
         version_identifier=version_identifier,
         date_modified=date_modified,
-        size_bytes=size_bytes,
+        size_estimate=size_estimate,
+        chunk_identifiers=chunk_identifiers,
     )
+
+
+def _parse_size_estimate(fields: dict[str, object], index: int) -> SnapshotSizeEstimate | None:
+    size = fields.get("size")
+    if size is None:
+        return None
+    if not isinstance(size, dict):
+        raise SnapshotMetadataError(f"Snapshot metadata entry {index} has an invalid size")
+    size_fields = cast(dict[str, object], size)
+    value = size_fields.get("value")
+    if not isinstance(value, int | float) or isinstance(value, bool) or value < 0:
+        raise SnapshotMetadataError(f"Snapshot metadata entry {index} has an invalid size.value")
+    unit_text = size_fields.get("unit_text")
+    if not isinstance(unit_text, str) or not unit_text:
+        raise SnapshotMetadataError(
+            f"Snapshot metadata entry {index} has an invalid size.unit_text"
+        )
+    return SnapshotSizeEstimate(value=float(value), unit_text=unit_text)
+
+
+def _parse_chunks(fields: dict[str, object], index: int) -> tuple[str, ...]:
+    chunks = fields.get("chunks")
+    if not isinstance(chunks, list) or not chunks:
+        raise SnapshotMetadataError(
+            f"Snapshot metadata entry {index} is missing a non-empty chunks list"
+        )
+    if not all(isinstance(chunk, str) and chunk for chunk in cast(list[object], chunks)):
+        raise SnapshotMetadataError(f"Snapshot metadata entry {index} has an invalid chunk entry")
+    return tuple(cast(list[str], chunks))
 
 
 def _require_object(fields: dict[str, object], key: str, index: int) -> dict[str, object]:

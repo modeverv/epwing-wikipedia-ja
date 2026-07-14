@@ -1278,3 +1278,52 @@ git diff --check
 **次タスク**
 
 - TASK-D004 Source lock schema、または実アカウントでの疎通確認(D002/D003)
+
+### 2026-07-14 01:20 UTC — TASK-D002/D003 実アカウント疎通確認
+
+**目的**
+
+- ユーザーが`.env`へ設定した実Wikimedia Enterpriseアカウントで、TASK-D002(auth)/TASK-D003(Snapshot metadata)のコードを実際のAPIに対して疎通確認する。credentialsをログや文書へ出力しない。
+
+**手順**
+
+- スクラッチパッド上の一時スクリプト(リポジトリ外)から`.env`を読み、`EnterpriseAuthClient`→`SnapshotMetadataClient`の順で実行した。出力はtoken長・成功可否・snapshotのnon-secretフィールドのみに限定した。
+
+**発見事項**
+
+- `POST https://auth.enterprise.wikimedia.com/v1/login`は`username`/`password`フィールドで成功し、`access_token`(1067文字)を含むJSONを返した。TASK-D002の仮定は正しかった。
+- `GET https://api.enterprise.wikimedia.com/v2/snapshots`は3,262件のproject×namespace entryを返した(応答約1.16 MB)。project/namespaceの絞り込みはserver側で行われず、client側filterが必須だった(設計通り)。
+- 実レスポンス形状がTASK-D003の当初仮定と3点異なっていた。
+  1. project識別子は`project.identifier`ではなく`is_part_of.identifier`。
+  2. `size`はbyte数の整数ではなく`{"value": <float>, "unit_text": <string>}`という近似値オブジェクト。
+  3. `chunks`という文字列配列が必須フィールドとして存在し、jawiki namespace 0は81個のchunk(`jawiki_namespace_0_chunk_0`〜`_80`)に分割されている。単一tar.gzという`ARCHITECTURE.md` 9.2の例示は簡略化だった。
+- jawiki namespace 0のSnapshotは実際に1件だけ列挙され、2026-07-14時点でサイズ約30,896 MBだった。
+
+**変更**
+
+- `src/wikiepwing/source/enterprise.py`を実データに合わせて修正した: `is_part_of`フィールドの読取、`size_bytes: int`を`size_estimate: SnapshotSizeEstimate`(value/unit_text)へ変更、`chunk_identifiers: tuple[str, ...]`(非空必須)を追加した。
+- `tests/test_enterprise_metadata.py`のfixtureとassertionを実データ形状に更新し、size/chunksの欠落・不正値を拒否するテストを追加した(23件→28件)。
+- `SOURCES.md`に2026-07-14の実疎通確認内容(認証・Snapshot metadata APIの実フィールド)を記録した。
+- `DECISIONS.md`にADR-016(Snapshotはchunk単位でdownloadする)を追加し、TASK-D005の設計方針とTASK-D004でのsource lock schema更新の必要性を明記した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_enterprise_metadata.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート158件(新規28件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- credentials(username/password/access_token)は一度もファイル・ログ・本記録へ出力していない。一時検証スクリプトはリポジトリ外のスクラッチパッドに置き、コミットしていない。
+- `ARCHITECTURE.md` 9.2のsource lock単一ファイル例は、TASK-D004(source lock schema)実装時に複数chunk対応へ更新する必要がある。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D004 Source lock schema(chunk単位の`files`配列を前提に設計する)

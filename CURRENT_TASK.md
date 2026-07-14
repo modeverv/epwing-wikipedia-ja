@@ -63,11 +63,18 @@ git diff --check
 - メタデータ応答は4 MiB上限で読み、上限超過・不正JSON・非配列・空配列・必須フィールド欠落・timezone欠落の`date_modified`を`SnapshotMetadataError`として拒否した。
 - `metadata_response_sha256`として生レスポンスのSHA-256を返し、`DATA_CONTRACTS.md`のsource lock契約と整合させた。
 - `HttpSnapshotMetadataTransport`はhttps以外のbase URLと空`access_token`を拒否し、401/403/5xx/timeout/URLErrorを即座に失敗させた(リトライなし)。
-- `tests/test_enterprise_metadata.py`に23件のオフラインテストを追加した。
-- format-check、ruff lint、mypy strict、標準スイート153件、`git diff --check`が成功した。
+- `tests/test_enterprise_metadata.py`に28件のオフラインテストを追加した。
+- format-check、ruff lint、mypy strict、標準スイート158件、`git diff --check`が成功した。
+- ユーザーが作成した実Wikimedia Enterpriseアカウント(`.env`のusername/password)で、TASK-D002/D003のコードから実APIへ疎通確認した。credentialsは一切ログ・文書へ出力していない。
+  - `POST /login`は実データで成功し、`username`/`password`/`access_token`のフィールド仮定は正しかった。
+  - `GET /snapshots`のレスポンス形状は当初仮定と異なっていたため、実データに合わせて修正した: `project` → `is_part_of.identifier`、`size`はbyte数の整数ではなく`{"value": <float>, "unit_text": <string>}`の近似値オブジェクト、さらに`chunks`(文字列配列)が必須フィールドとして存在する。
+  - jawiki namespace 0は2026-07-14時点で実際に列挙され、1件のみ一致し、81個のchunkへ分割されていることを確認した(単一tar.gzではない)。
+  - `SnapshotCandidate`/`ResolvedSnapshot`を`size_bytes: int`から`size_estimate: SnapshotSizeEstimate`(value/unit_text)と`chunk_identifiers: tuple[str, ...]`へ修正し、対応するテストを追加・更新した。
+- `SOURCES.md`に実疎通確認で得たAPI仕様(2026-07-14付)を記録した。
+- `DECISIONS.md`にADR-016(Snapshotはchunk単位でdownloadする)を追加し、TASK-D005の設計方針とTASK-D004でのsource lock schema更新の必要性を明記した。
 
 **判断・注意点**
 
-- Snapshot metadata一覧APIの実endpoint(`GET {api_base}/snapshots`)とレスポンス形状(`identifier`/`project.identifier`/`namespace.identifier`/`version`/`date_modified`/`size`)は、`ARCHITECTURE.md`が言及する`namespace.identifier`/`version.identifier`のnestedオブジェクト形式から類推した仮定であり、一次資料での確認記録が`SOURCES.md`にない。実アカウントでの疎通確認まで暫定とする。
-- ユーザーはWikimedia Enterpriseアカウントを作成しusername/passwordを`.env`へ設定済みだが、本タスクは引き続きモック/テストダブルのみで実装し、実API呼び出しの疎通確認は行っていない。
 - 5xx/timeoutのbounded retryはこのクライアントの責務外とし、将来のacquireコマンド(TASK-D007)に委ねた。
+- `ARCHITECTURE.md` 9.2のsource lock例(単一ファイル)は簡略化であり、実際は複数chunkになる。この更新はTASK-D004で行う。
+- 実データ疎通確認は本タスクの完了条件外だったが、コードの正しさを検証しスキーマの誤りを早期に発見できたため、実施して修正を反映した。
