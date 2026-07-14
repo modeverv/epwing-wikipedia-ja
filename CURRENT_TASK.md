@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-K005
+TASK-K006
 
 ## 目的
 
-`PLAN.md` Phase 11("wide renderer"、出口条件"wide table readable vertical layout")と`ARCHITECTURE.md` 16.3("wide": 1行をrecordとして縦表示)を実装する。TASK-K004で`complexity=="wide"`/`"complex"`は暫定的にcaption+行数プレースホルダで劣化表示していたが、本タスクで実際の縦record表示に置き換える。先頭行が全てヘッダーセルの場合はそれをフィールドラベルとして使い、各データ行を「ラベル: 値」の並びとして出力する。"complex"(結合セルあり)専用のレンダラtaskがTASKS.mdに存在しないため、16.3の"complex"("row/sectionごとのkey-value化")が"wide"の縦record表示と同じ方針であることを根拠に、本タスクのレンダラを両方のcomplexityに適用する(結合セルはDOM順にそのまま各フィールドとして展開し、グリッド上の正確な位置合わせは行わない)。
+`ARCHITECTURE.md` 16.3(oversized: "configured row上限で分割"、"続きentryを作るか、要約とtruncate diagnostic")を実装する。続きentry(continuation entry)を作る仕組みは`RenderedEntry`にまだ存在しない(TASK-H006/H007の範囲外、複数entry分割の基盤が無い)ため、本タスクでは後者の選択肢――行数上限を超えるテーブルを切り詰め、truncateしたことをDiagnosticとして記録する――を採用する。`build_table_block`(TASK-K004)に行数上限を追加し、超過分を切り詰めた上で`TABLE_OVERSIZED_ROWS` Diagnosticを記録する。
 
 ## 事前条件
 
@@ -14,15 +14,15 @@ TASK-K005
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-K005(依存: K003,H007)を読んだ
-- [x] `PLAN.md` Phase 11の出口条件("wide table readable vertical layout")・`ARCHITECTURE.md` 16.3を再確認した
-- [x] TASK-K004で追加した`_render_table`の暫定プレースホルダ(wide/complex)を確認した
-- [x] "complex"専用のレンダラtaskがTASKS.mdに存在しないことを再確認した(TASK-K004のLOGで気づき、本タスクで対応方針を決定する)
+- [x] `TASKS.md`のTASK-K006(依存: K004-K005)を読んだ
+- [x] `ARCHITECTURE.md` 16.3(oversized policy)・16.4(Entry size budget)を再確認した
+- [x] `RenderedEntry`/`render/generate.py`に複数entry分割(続きentry)の基盤が存在しないことを確認した(本タスクでは非対応と判断する根拠)
+- [x] `DECISIONS.md`にoversized関連の既存ADRが無いことを確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/render/mini_layout.py`(`_render_table`を拡張し、wide/complexを縦record表示にする)
-- `tests/test_render_mini_layout.py`(wide/complexの縦record表示テストを追加)
+- `src/wikiepwing/normalize/table_block.py`(`build_table_block`に`max_rows`引数を追加し、超過時に切り詰め+Diagnostic)
+- `tests/test_normalize_table_block.py`(oversized切り詰めの回帰テスト追加)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,27 +30,27 @@ TASK-K005
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_render_mini_layout.py
+uv run pytest tests/test_normalize_table_block.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `complexity`が`wide`または`complex`の`TableBlock`が、各データ行を「ラベル: 値」の並びとして縦に表示する
-- [x] 先頭行が全てヘッダーセルの場合、そのセルの文字列をフィールドラベルとして使う
-- [x] ヘッダー行が無い場合は「列N」という汎用ラベルにフォールバックする
-- [x] レコード間に空行を入れて視覚的に区切る
+- [x] `build_table_block(table_element, max_rows=...)`が、`RawTable`の行数が`max_rows`を超える場合、先頭`max_rows`行のみを`TableBlock.rows`へ含める
+- [x] 切り詰めが発生した場合、`TABLE_OVERSIZED_ROWS`のDiagnosticを記録する(実際の行数と保持した行数を`details`に含める)
+- [x] 切り詰めが発生しない場合は`TABLE_OVERSIZED_ROWS`を記録しない
+- [x] `max_rows`のデフォルト値を明記する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- oversized(行上限による分割、TASK-K006)
-- 結合セルの正確なグリッド位置に基づくラベル対応付け(現実装はDOM順の素朴な展開に留める)
+- 続きentry(continuation entry)の生成(RenderedEntry分割の基盤自体が無いため対象外)
+- Entry size budget全体(16.4、nav/reference重複削除・sectionの続きentry分割等、TASK-K006の対象は表の行数上限のみ)
 
 ## 実施結果
 
-- `render/mini_layout.py`に`_render_table_as_records()`を実装し、`_render_table`の`complexity in ("wide", "complex")`分岐から呼び出すようにした。先頭行が全てヘッダーセルなら、その文字列を以降の各行のフィールドラベルとして使い、「ラベル: 値」を1行ずつ、レコード間に空行を挟んで出力する。ヘッダー行が無い場合は「列N」にフォールバックする。
-- "complex"専用のレンダラtaskがTASKS.mdに存在しないため、16.3の"complex"("row/sectionごとのkey-value化")が"wide"の縦record表示と同じ方針であるという判断で、本タスクのレンダラを両方のcomplexityに適用した。結合セルはDOM順にそのまま展開し、グリッド上の正確な位置合わせは行わない(将来必要になれば別途対応)。
-- `tests/test_render_mini_layout.py`の既存プレースホルダテストを、ヘッダー行有り/無しの縦record表示テストと"complex"の縦record表示テストに置き換えた(新規3件)。
-- `make check`(format-check/lint/mypy/pytest 880件)と`git diff --check`が成功した。
+- `build_table_block`に`max_rows: int = DEFAULT_MAX_ROWS`(100)引数を追加した。行数が`max_rows`を超える場合、先頭`max_rows`行のみをセル変換・`TableBlock.rows`へ含め、`TABLE_OVERSIZED_ROWS`のDiagnostic(details: `total_rows`/`kept_rows`)を記録する。複雑度分類は切り詰め前の完全なテーブルに対して行う(行数だけで表示方針が変わるべきではないため)。
+- `RenderedEntry`に複数entry分割(続きentry)の基盤が無いことを確認し、16.3の選択肢のうち「要約とtruncate diagnostic」を採用する判断をdocstringに明記した。
+- `tests/test_normalize_table_block.py`への追加3件(閾値以内で切り詰め無し・閾値超過で切り詰め+Diagnostic・デフォルト値での小規模テーブル)を実装した。
+- `make check`(format-check/lint/mypy/pytest 883件)と`git diff --check`が成功した。

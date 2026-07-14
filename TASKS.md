@@ -559,7 +559,7 @@
 
 **依存:** K003,H007
 
-### TASK-K006 [ ] Oversized table policy
+### TASK-K006 [x] Oversized table policy
 
 **依存:** K004-K005
 

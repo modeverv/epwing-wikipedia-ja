@@ -3773,3 +3773,36 @@ git diff --check
 **次タスク**
 
 - TASK-K006 Oversized table policy(依存: K004-K005)
+
+### 2026-07-15 04:35 UTC — TASK-K006
+
+**目的**
+
+- `ARCHITECTURE.md` 16.3(oversized: "configured row上限で分割"、"続きentryを作るか、要約とtruncate diagnostic")を実装する。`RenderedEntry`に複数entry分割の基盤が無いため、後者(truncate+diagnostic)を採用する。
+
+**変更**
+
+- `build_table_block`に`max_rows: int = 100`引数を追加した。行数が超過する場合、先頭`max_rows`行のみを保持し、`TABLE_OVERSIZED_ROWS`のDiagnostic(`total_rows`/`kept_rows`)を記録する。複雑度分類は切り詰め前の完全なテーブルに対して行うようにした(行数だけで表示方針が変わらないようにするため)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_table_block.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 閾値以内で切り詰めが発生しないこと・閾値超過で切り詰め+Diagnostic記録・デフォルト値での小規模テーブルの非切り詰めを3件のテストで確認した。
+- 標準スイート883件(新規3件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 続きentry(continuation entry)を作る仕組みは`RenderedEntry`に存在しないため対象外とし、この判断根拠をモジュールdocstringに明記した。
+- Entry size budget全体(16.4、nav/reference重複削除等)は対象外とし、表の行数上限のみを扱った。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-K007 Infobox detector(依存: K001)

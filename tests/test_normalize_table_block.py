@@ -114,3 +114,34 @@ def test_invalid_span_diagnostic_is_propagated() -> None:
     _, diagnostics = build_table_block(table)
 
     assert any(diagnostic.code == "TABLE_INVALID_SPAN" for diagnostic in diagnostics)
+
+
+def test_table_within_max_rows_is_not_truncated() -> None:
+    rows_html = "".join("<tr><td>x</td></tr>" for _ in range(5))
+    table = _parse_table(f"<table>{rows_html}</table>")
+
+    block, diagnostics = build_table_block(table, max_rows=5)
+
+    assert len(block.rows) == 5
+    assert not any(diagnostic.code == "TABLE_OVERSIZED_ROWS" for diagnostic in diagnostics)
+
+
+def test_table_beyond_max_rows_is_truncated_with_diagnostic() -> None:
+    rows_html = "".join("<tr><td>x</td></tr>" for _ in range(10))
+    table = _parse_table(f"<table>{rows_html}</table>")
+
+    block, diagnostics = build_table_block(table, max_rows=5)
+
+    assert len(block.rows) == 5
+    oversized = [d for d in diagnostics if d.code == "TABLE_OVERSIZED_ROWS"]
+    assert len(oversized) == 1
+    assert oversized[0].details == {"total_rows": 10, "kept_rows": 5}
+
+
+def test_default_max_rows_does_not_truncate_a_small_table() -> None:
+    table = _parse_table("<table><tr><td>x</td></tr></table>")
+
+    block, diagnostics = build_table_block(table)
+
+    assert len(block.rows) == 1
+    assert diagnostics == ()
