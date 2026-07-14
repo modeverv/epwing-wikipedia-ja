@@ -2571,3 +2571,36 @@ git diff --check
 **次タスク**
 
 - TASK-G011 Whitespace normalization(依存: G010)
+
+### 2026-07-14 13:55 UTC — TASK-G011
+
+**目的**
+
+- `ARCHITECTURE.md` 13.1(保存用本文の処理)を実装するpass `N120 Normalize whitespace`を実装する。
+
+**変更**
+
+- `src/wikiepwing/normalize/whitespace.py`に`normalize_text`(CRLF→LF、C0/C1制御文字除去、ゼロ幅文字除去、連続空白の単一スペース圧縮)と`normalize_block_whitespace`(Block/Inlineの全variantを再帰的に処理)を実装した。`PreformattedBlock.text`/`CodeInline.value`/`CodeBlock.text`/`MathBlock.source`はverbatim保持のため変更しない。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_whitespace.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `normalize_text`の各変換(CRLF/CR→LF、制御文字除去、ゼロ幅文字除去、連続空白圧縮、冪等性)、Block木全体の再帰的正規化(paragraph/heading/nested strong/list/quote/unsupported fallback_text)、preformatted/code系のverbatim保持を14件のテストで確認した。
+- 標準スイート593件(新規14件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- ゼロ幅文字の対象はZWSP(U+200B)/ZWNJ(U+200C)/ZWJ(U+200D)/BOM(U+FEFF)とした(明文化された一覧が無いためdocumented assumption)。
+- 索引用文字列の正規化(13.2、NFKC/全角半角統一等)は別の関数・別タスクの範囲であり、本タスクでは実装していない。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G012 Normalize command and model DB write(依存: F007-F008,G011)

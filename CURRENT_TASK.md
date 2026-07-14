@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-G010
+TASK-G011
 
 ## 目的
 
-`TASKS.md` TASK-G010(依存: G004-G009)を実装する。これまでのG004-G009各変換関数(heading/paragraph/list/definition list/quote/preformatted)を1つにまとめる`convert_block`ディスパッチャと、文書レベルで隣接する非ブロック要素(素のテキスト/inline要素の並び)をひとつの`ParagraphBlock`にまとめる`convert_document`を実装する。認識できない要素(`<table>`/`<div>`ラッパー等、Table/Infobox/Image/Math/Referencesの実変換はEpic K/L/N/O以降)は`UnsupportedBlock`+`DOM_UNKNOWN_ELEMENT`診断で確実に情報を残す(`ARCHITECTURE.md` 11.7の例に合わせる)。`<hr>`は`PLAN.md` Phase 6の初期scopeにあるため`HorizontalRuleBlock`へ直接変換する。
+`ARCHITECTURE.md` 13.1(保存用本文の処理: Unicode validation/CRLF→LF/不正制御文字除去/ゼロ幅文字の方針適用/連続空白の文脈別整理)を実装する、pass `N120 Normalize whitespace`を実装する。すでに構築済みのBlock木を再帰的に走査し、prose的なテキスト(`TextInline.value`等)は空白を正規化するが、`PreformattedBlock.text`/`CodeInline.value`/`CodeBlock.text`/`MathBlock.source`はverbatim保持のため対象外とする(`ARCHITECTURE.md` 13.1「本文は過剰にNFKCしません」およびG009で確立した"preformatted/codeはverbatim"方針を踏襲)。
 
 ## 事前条件
 
@@ -14,14 +14,14 @@ TASK-G010
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-G010(依存: G004-G009)を読んだ
-- [x] `ARCHITECTURE.md` 11.7のdiagnostic code例(`DOM_UNKNOWN_ELEMENT`)を確認した
-- [x] これまで実装した`normalize/headings.py`/`paragraphs.py`/`lists.py`/`definition_lists.py`/`quotes.py`の`is_x`/`convert_x`関数群を確認した
+- [x] `TASKS.md`のTASK-G011(依存: G010)を読んだ
+- [x] `ARCHITECTURE.md` 13.1・13.2(索引用文字列は別関数であり、本文とは混同しない)を確認した
+- [x] `model/blocks.py`/`model/inline.py`の全variantを確認し、再構築ロジックを網羅する
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/normalize/convert_block.py`
-- `tests/test_normalize_convert_block.py`
+- `src/wikiepwing/normalize/whitespace.py`
+- `tests/test_normalize_whitespace.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -29,31 +29,32 @@ TASK-G010
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_normalize_convert_block.py
+uv run pytest tests/test_normalize_whitespace.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `convert_block(node) -> (Block, tuple[Diagnostic, ...])`がheading/paragraph/unordered list/ordered list/definition list/quote/preformattedそれぞれを正しくディスパッチする
-- [x] `<hr>`を`HorizontalRuleBlock`へ変換する
-- [x] 未知の要素(`<table>`等)を`UnsupportedBlock`(`element_name`/`fallback_text`(平坦化テキスト)/`diagnostic_code="DOM_UNKNOWN_ELEMENT"`)へ変換し、diagnosticを記録する
-- [x] `convert_document(nodes) -> (tuple[Block, ...], tuple[Diagnostic, ...])`が、連続する素のテキスト/inline要素を1つの`ParagraphBlock`にまとめ、ブロック要素が現れるとそこで区切る
+- [x] `normalize_text(text) -> str`がCRLF→LF、C0/C1制御文字除去(`\n`は保持)、ゼロ幅文字除去、連続空白の単一スペースへの圧縮を行う
+- [x] `normalize_block_whitespace(block) -> Block`がBlock/Inlineの全variantを再帰的に処理する
+- [x] `PreformattedBlock.text`/`CodeInline.value`/`CodeBlock.text`/`MathBlock.source`は変更されない
+- [x] `ParagraphBlock`/`HeadingBlock`/list/definition list/quote内のネストした`TextInline`が正しく正規化される
+- [x] `UnsupportedBlock.fallback_text`/`UnsupportedInline.fallback_text`も正規化される
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 空白正規化(TASK-G011)
-- Article/model DBへの実際の統合(TASK-G012)
-- Table/Infobox/Image/Math/Referencesの実HTML変換(Epic K/L/N/O)
+- Article/model DBへの統合(TASK-G012)
+- 索引用文字列の正規化(`ARCHITECTURE.md` 13.2、別の関数・別タスク)
 
 ## 実施結果
 
-- `src/wikiepwing/normalize/convert_block.py`に`convert_block`/`convert_document`を実装した。
-- `tests/test_normalize_convert_block.py`に11件のテストを追加。テスト作成中に、未知のblock-level要素(`<table>`)がinline bufferへ誤って蓄積されるバグを発見し、`_is_block_level`にHTML標準のblock-level tag集合を追加して修正した。
-- `uv run pytest tests/test_normalize_convert_block.py`: 11 passed。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート579件)すべて成功。
+- `src/wikiepwing/normalize/whitespace.py`に`normalize_text`/`normalize_block_whitespace`を実装した。
+- `tests/test_normalize_whitespace.py`に14件のテストを追加。
+- `uv run pytest tests/test_normalize_whitespace.py`: 14 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート593件)すべて成功。
 - `git diff --check`: 問題なし。
-- `TASKS.md`(G010チェック)、`LOG.md`(新規エントリ)を更新した。
-- 次タスク: TASK-G011 Whitespace normalization。
+- `TASKS.md`(G011チェック)、`LOG.md`(新規エントリ)を更新した。
+- ゼロ幅文字対象(ZWSP/ZWNJ/ZWJ/BOM)はdocumented assumption。
+- 次タスク: TASK-G012 Normalize command and model DB write。

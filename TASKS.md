@@ -403,7 +403,7 @@
 
 **依存:** G004-G009
 
-### TASK-G011 [ ] Whitespace normalization
+### TASK-G011 [x] Whitespace normalization
 
 **依存:** G010
 
