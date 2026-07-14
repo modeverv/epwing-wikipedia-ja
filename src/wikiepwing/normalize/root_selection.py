@@ -12,14 +12,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from wikiepwing.normalize.html_parser import ElementNode, Node
+from wikiepwing.normalize.html_parser import ElementNode, Node, has_class
 
 _PARSER_OUTPUT_CLASS = "mw-parser-output"
 
 
 def select_root_content(document: ElementNode) -> tuple[Node, ...]:
     """Return the children of the article's content root within a parsed document."""
-    parser_output = _find_first(document, lambda node: _has_class(node, _PARSER_OUTPUT_CLASS))
+    parser_output = _find_first(
+        document, lambda node: node.tag == "div" and has_class(node, _PARSER_OUTPUT_CLASS)
+    )
     if parser_output is not None:
         return parser_output.children
 
@@ -28,15 +30,6 @@ def select_root_content(document: ElementNode) -> tuple[Node, ...]:
         return body.children
 
     return document.children
-
-
-def _has_class(node: ElementNode, class_name: str) -> bool:
-    if node.tag != "div":
-        return False
-    for name, value in node.attributes:
-        if name == "class":
-            return class_name in value.split()
-    return False
 
 
 def _find_first(node: ElementNode, predicate: Callable[[ElementNode], bool]) -> ElementNode | None:

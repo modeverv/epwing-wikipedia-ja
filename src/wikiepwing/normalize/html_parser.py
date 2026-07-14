@@ -60,6 +60,14 @@ class ElementNode:
 Node = ElementNode | TextNode
 
 
+def has_class(node: ElementNode, class_name: str) -> bool:
+    """Return whether `node`'s `class` attribute contains `class_name` as a whitespace-sep token."""
+    for name, value in node.attributes:
+        if name == "class":
+            return class_name in value.split()
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class HtmlParseResult:
     """The parsed DOM tree plus any recovery diagnostics."""

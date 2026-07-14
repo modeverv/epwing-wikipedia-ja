@@ -2305,3 +2305,37 @@ git diff --check
 **次タスク**
 
 - TASK-G003 Unsafe/UI node removal(依存: G002)
+
+### 2026-07-14 11:05 UTC — TASK-G003
+
+**目的**
+
+- `ARCHITECTURE.md` 12.2のpass `N20 Remove unsafe/non-content nodes`を実装する。12.1の必須安全策(script/style除去)と、12.3の除外候補のうち既存configフラグを持つ3種(edit UI/navbox/authority control)を対象とする。
+
+**変更**
+
+- `src/wikiepwing/normalize/html_parser.py`に`has_class(node, class_name)`ヘルパーを公開し、`root_selection.py`の重複ロジックをこれに置き換えた。
+- `src/wikiepwing/normalize/unsafe_nodes.py`に`UnsafeNodeRemovalOptions`(`from_config`付き)と`remove_unsafe_nodes`を実装した。`script`/`style`は設定に関わらず常に除去し、`.mw-editsection`/`.navbox`/`.authority-control`はそれぞれ対応するconfigフラグが有効な場合のみ除去する。除去はネストした木構造に対して再帰的に行い、無関係な兄弟要素は保持する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_unsafe_nodes.py tests/test_normalize_root_selection.py
+make check
+git diff --check
+```
+
+**結果**
+
+- script/style無条件除去、フラグON/OFFそれぞれでのedit UI/navbox/authority control除去・保持、再帰的除去と兄弟要素保持、除去対象が無い場合の空diagnosticsを13件のテストで確認した(既存のroot selectionテスト5件を含む)。
+- 標準スイート515件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ARCHITECTURE.md` 12.3記載の他の除外候補(coordinates UI重複表示/hidden metadata/maintenance category表示/portal box/language switch UI)は、12.3自身が「情報を落とす可能性があるclassは、fixtureで確認してからruleへ追加します」と明記しており、具体的なclass名の裏付けが無い現時点では実装しなかった。
+- 12.4記載のTOML `[[remove]]`/`[[classify]]`汎用ルールエンジン化は、既存のboolean flag方式(`config/default.toml`の`[normalize]`)からの大幅なconfig schema拡張を要するため見送り、既存のboolean flag方式を踏襲した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G004 Heading conversion(依存: G003)

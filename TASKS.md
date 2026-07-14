@@ -371,7 +371,7 @@
 
 **依存:** G001
 
-### TASK-G003 [ ] Unsafe/UI node removal
+### TASK-G003 [x] Unsafe/UI node removal
 
 **依存:** G002
 
