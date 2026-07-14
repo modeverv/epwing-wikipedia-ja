@@ -387,7 +387,7 @@
 
 **依存:** G005
 
-### TASK-G007 [ ] Ordered/unordered lists
+### TASK-G007 [x] Ordered/unordered lists
 
 **依存:** G005
 
