@@ -30,8 +30,17 @@ from wikiepwing.render.render_node import RenderNode, TextRenderNode
 from wikiepwing.render.rendered_entry import RenderedEntry
 
 
-def render_article_to_entry(article: Article) -> RenderedEntry:
-    """Render one Article into a Mini-profile RenderedEntry."""
+def render_article_to_entry(
+    article: Article, *, headwords: tuple[str, ...] | None = None
+) -> RenderedEntry:
+    """Render one Article into a Mini-profile RenderedEntry.
+
+    `headwords` overrides the default title-plus-aliases headword list.
+    TASK-J007's `wikiepwing.search.backend_mapping.headwords_for_articles`
+    supplies a collision-resolved list (title/redirect/variant SearchTerms,
+    TASK-H008/J001-J006) built across every article in a build; callers
+    that don't need that (e.g. single-article tests) can omit it.
+    """
     lines: list[str] = [article.title]
     if article.aliases:
         lines.append("別名: " + "、".join(alias.title for alias in article.aliases))
@@ -58,7 +67,8 @@ def render_article_to_entry(article: Article) -> RenderedEntry:
     body_text = "\n".join(lines).rstrip("\n")
     body: tuple[RenderNode, ...] = (TextRenderNode(text=body_text),)
 
-    headwords = (article.title, *(alias.title for alias in article.aliases))
+    if headwords is None:
+        headwords = (article.title, *(alias.title for alias in article.aliases))
     internal_targets = _extract_internal_targets(article.blocks)
 
     return RenderedEntry(

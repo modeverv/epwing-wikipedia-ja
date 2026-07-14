@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import cast
 
 from wikiepwing.ingest.zstd_codec import decompress
+from wikiepwing.model.article import Article
 from wikiepwing.model.canonical import decode_article
 from wikiepwing.model.database import connect_model_database
 from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
@@ -33,6 +34,7 @@ from wikiepwing.pipeline.stage_manifest import (
 from wikiepwing.render.freepwing_source import write_entries_jsonl
 from wikiepwing.render.mini_layout import render_article_to_entry
 from wikiepwing.render.rendered_entry import RenderedEntry
+from wikiepwing.search.backend_mapping import headwords_for_articles
 from wikiepwing.source.checksums import compute_fingerprint
 
 SCHEMA_VERSION = 1
@@ -202,15 +204,25 @@ def _render_all(
     rows = connection.execute(
         "SELECT page_id, article_json_zstd, normalize_status FROM articles ORDER BY page_id"
     ).fetchall()
-    entries: list[RenderedEntry] = []
+    articles: list[Article] = []
     for row in rows:
         metrics.articles_read += 1
         if row["normalize_status"] == "rejected":
             metrics.articles_skipped += 1
             continue
         canonical_json = decompress(row["article_json_zstd"])
-        article = decode_article(canonical_json)
-        entries.append(render_article_to_entry(article))
+        articles.append(decode_article(canonical_json))
+
+    # Headwords are resolved across every article at once (TASK-J007) so a
+    # SearchTerm collision between two different articles' variants is
+    # settled globally, not article-by-article.
+    headwords_by_page_id = headwords_for_articles(articles)
+
+    entries: list[RenderedEntry] = []
+    for article in articles:
+        entries.append(
+            render_article_to_entry(article, headwords=headwords_by_page_id[article.page_id])
+        )
         metrics.entries_written += 1
         if on_progress is not None:
             on_progress(metrics)

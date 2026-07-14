@@ -3569,3 +3569,39 @@ git diff --check
 **次タスク**
 
 - TASK-J007 Backend search mapping(依存: B009,J006)
+
+### 2026-07-15 02:20 UTC — TASK-J007
+
+**目的**
+
+- `ARCHITECTURE.md` 17.2(FreePWING adapter)と14(Search architecture)を接続する。既存の`mini_layout.render_article_to_entry`は`article.title`+全aliasという素朴なheadword生成のみで、TASK-H008/J001-J006のSearchTerm基盤(title/redirect/variant、priority、衝突解決)を一切使っていなかったことに気づいた。
+
+**変更**
+
+- `src/wikiepwing/search/backend_mapping.py`に`headwords_for_articles()`を実装した。ビルド対象の全記事のSearchTermをまとめて`resolve_single_candidate_per_key`(TASK-J006)で衝突解決し、`target_page_id`で再グルーピングしてpriority降順のheadwordタプルを返す。自記事のSearchTermが全て他記事との衝突で失われても、`article.title`は必ず先頭に残す。
+- `render/mini_layout.py`の`render_article_to_entry`に`headwords`オーバーライド引数を追加した(省略時は従来の素朴な生成にフォールバックし、既存テストとの後方互換を保った)。
+- `render/generate.py`の`_render_all`を2パス化した: 先に全articleをデコードし、`headwords_for_articles`を1回だけ呼んでから各entryを構築する(記事間のSearchTerm衝突をグローバルに解決するため)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_backend_mapping.py tests/test_render_generate.py tests/test_render_mini_layout.py tests/test_mini_end_to_end_build.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `headwords_for_articles`について、単一記事のtitle+redirect、無関係な2記事がそれぞれ自分のheadwordのみ持つこと、space variantが2記事間で衝突した際に高priority側(title)だけが勝ち残ること、自記事のtitleが必ず残ることを4件のテストで確認した。
+- 既存の`test_render_generate.py`(6件)・`test_render_mini_layout.py`(12件)・`test_mini_end_to_end_build.py`(1件)は変更無しで成功し、後方互換を確認した。
+- 標準スイート835件(新規4件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `render/verify.py`のDUPLICATE_HEADWORDチェック(異なるentry間で同一headword文字列を許さない)が実質的に単一候補per keyの制約であることに気づき、TASK-J006の`resolve_single_candidate_per_key`をそのまま適用する設計にした。
+- `rendered.sqlite3`本体の`search_terms`テーブル(全候補を保持できる設計)はまだ実装されていないため、現状は単一候補解決のみを実データに反映する。将来そのテーブルが実装されたら、dropされた候補も含めた全SearchTermをそこへ書き込む形に拡張できる。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- EPIC K(Tables and infoboxes、依存: D010,G010)

@@ -531,7 +531,7 @@
 
 **依存:** J005
 
-### TASK-J007 [ ] Backend search mapping
+### TASK-J007 [x] Backend search mapping
 
 **依存:** B009,J006
 
