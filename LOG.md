@@ -3537,3 +3537,35 @@ git diff --check
 **次タスク**
 
 - TASK-J006 Collision repository/report(依存: J005)
+
+### 2026-07-15 01:55 UTC — TASK-J006
+
+**目的**
+
+- `ARCHITECTURE.md` 14.2(衝突規則: サイレント上書きしない・全候補保持を優先・単一候補backendではpriorityと安定sortで選ぶ・dropped候補をレポートする)を実装する。`rendered.sqlite3`(`search_terms`テーブル、正規化キーへのUNIQUE制約無し)の永続化層自体はまだ存在しないため、本タスクは純粋な検出・解決・レポート関数として実装した。
+
+**変更**
+
+- `src/wikiepwing/search/collision.py`に`SearchTermCollision`・`find_collisions()`・`resolve_single_candidate_per_key()`を実装した。`normalized_key`でグルーピングし、`target_page_id`が2種類以上あるグループのみを衝突として報告する(titleとredirectが偶然同じ正規化キーになっても同一記事なら衝突扱いしない)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_collision.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 非衝突(単一候補・同一記事への複数候補)・衝突検出・priorityによるwinner選択・レポートのnormalized_key順整列・単一候補への解決(衝突有り/無し)を7件のテストで確認した。
+- 標準スイート831件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `rendered.sqlite3`本体(`entries`/`entry_parts`/`search_terms`/`graphics`/`entry_graphics`テーブルの永続化層、migrations)はまだどのタスクでも実装されていないことに気づいた。`search_terms`テーブルは`normalized_key`にUNIQUE制約が無く全候補を保持できる設計(`DATA_CONTRACTS.md` 7)であるため、本タスクの`find_collisions`/`resolve_single_candidate_per_key`はその永続化層が実装された際にそのまま呼び出せる純粋関数として設計した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-J007 Backend search mapping(依存: B009,J006)

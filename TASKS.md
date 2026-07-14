@@ -527,7 +527,7 @@
 
 **依存:** J002-J004
 
-### TASK-J006 [ ] Collision repository/report
+### TASK-J006 [x] Collision repository/report
 
 **依存:** J005
 

@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-J005
+TASK-J006
 
 ## 目的
 
-`DATA_CONTRACTS.md` 8(SearchTerm contract)のpriority proposal(1000 exact title 〜 100 cross component の10段階スケール)と衝突時の安定sort規則(`normalized_key`, `target_entry_id`, `source`)を実装する。TASK-H008/J002-J004で導入した優先度定数(`_TITLE_PRIORITY=0`等、数値が小さいほど優先という暫定のローカルスケール)を、DATA_CONTRACTS.mdの正式スケール(数値が大きいほど優先)へ置き換える。
+`ARCHITECTURE.md` 14.2(衝突規則)を実装する: 同一`normalized_key`が複数の異なる記事(`target_page_id`)へ向く場合、(1)サイレントに上書きしない、(2)全候補を保持可能な方式を優先する、(3)単一候補しか持てない場合はpriorityと安定sort(TASK-J005の`sort_search_terms`)で選ぶ、(4)dropされた候補をレポートする。`rendered.sqlite3`(`DATA_CONTRACTS.md` 7、`search_terms`テーブル)の永続化層自体はまだ存在せず別タスクの対象であるため、本タスクは純粋な関数として衝突検出・解決・レポート生成を実装する(将来の永続化層はこれを呼び出すだけで良い設計にする)。
 
 ## 事前条件
 
@@ -14,14 +14,14 @@ TASK-J005
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-J005(依存: J002-J004)を読んだ
-- [x] `DATA_CONTRACTS.md` 8のpriority proposal・"同priorityは`normalized_key`, `target_entry_id`, `source`で安定sort"を再確認した
-- [x] 既存`search_term.py`の暫定優先度定数(0/10/20/30/40、小さいほど優先)を確認した
+- [x] `TASKS.md`のTASK-J006(依存: J005)を読んだ
+- [x] `ARCHITECTURE.md` 14.2(衝突規則)を再確認した
+- [x] `DATA_CONTRACTS.md` 7の`search_terms`テーブル(normalized_key毎に複数行を許容する設計、UNIQUE制約無し)を確認し、`rendered.sqlite3`自体の永続化層はまだ実装されていないことに気づいた
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/search/search_term.py`(優先度定数をDATA_CONTRACTS.mdスケールへ置き換え、`sort_search_terms()`を追加)
-- `tests/test_search_term.py`(優先度の大小関係のテストを新スケールに合わせて修正、安定sortのテストを追加)
+- `src/wikiepwing/search/collision.py`(新規: `SearchTermCollision`, `find_collisions()`, `resolve_single_candidate_per_key()`)
+- `tests/test_search_collision.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -29,26 +29,25 @@ TASK-J005
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_search_term.py
+uv run pytest tests/test_search_collision.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] title=1000, redirect=900, kana variant=600(DATA_CONTRACTS.mdの明示値)、space/punctuation variantは"800 normalized title variant"として扱う
-- [x] `sort_search_terms(terms)`が、priority降順、同priority内は`normalized_key`, `target_page_id`, `source`で安定sortする
+- [x] `find_collisions(terms)`が、同一`normalized_key`グループ内で`target_page_id`が複数種類存在する場合のみ衝突として報告し、winnerを`sort_search_terms`で選び、残りを`dropped`として保持する
+- [x] 同一`normalized_key`でも`target_page_id`が全て同じ(例: titleとredirectが偶然同じ正規化キーになる)場合は衝突として報告しない
+- [x] `resolve_single_candidate_per_key(terms)`が、正規化キー毎に1件(winner)だけを返す(単一候補しか持てないbackend向け)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- alias/category/keyword/cross_componentの生成(まだどのコードも生成していない、将来のEPIC J/K/L)
-- collision repository/report(TASK-J006、dropped候補のレポート)
+- `rendered.sqlite3`本体の永続化層(migrations/schemaの実装、将来タスク)
+- backend search mapping(TASK-J007、実際にEPWING/FreePWINGへ書き出す配線)
 
 ## 実施結果
 
-- `search_term.py`の優先度定数をDATA_CONTRACTS.mdのスケール(数値が大きいほど優先)へ置き換えた: title=1000、redirect=900、space/punctuation variant=800(normalized title variant)、kana variant=600。
-- `sort_search_terms(terms)`を実装した。priority降順、同priority内は`normalized_key`→`target_page_id`→`source`の昇順で安定sortする。
-- 優先度スケールの向きが変わったことで既存の`test_title_priority_is_higher_than_redirect_priority`のassertion(`<`)を`>`へ修正した(数値が大きい方が優先という新スケールと整合)。
-- `tests/test_search_term.py`に、優先度スケールの検証テストと`sort_search_terms`のpriority降順/tie-break動作を確認するテスト3件を追加した。
-- `make check`(format-check/lint/mypy/pytest 824件)と`git diff --check`が成功した。
+- `src/wikiepwing/search/collision.py`に`SearchTermCollision`・`find_collisions()`・`resolve_single_candidate_per_key()`を実装した。`normalized_key`でグルーピングし、`target_page_id`が複数種類存在するグループのみを衝突として報告(同一記事への複数候補は非衝突)、winnerは`sort_search_terms`(TASK-J005)で選ぶ。
+- `tests/test_search_collision.py`(新規7件)で、非衝突(単一候補/同一記事への複数候補)・衝突検出・priorityによるwinner選択・normalized_key順でのレポート整列・単一候補への解決(衝突有り/無し双方)を確認した。
+- `make check`(format-check/lint/mypy/pytest 831件)と`git diff --check`が成功した。
