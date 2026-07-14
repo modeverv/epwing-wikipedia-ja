@@ -3010,3 +3010,36 @@ git diff --check
 **次タスク**
 
 - TASK-H011 EPWING verifier baseline(依存: H010)
+
+### 2026-07-14 19:00 UTC — TASK-H011
+
+**目的**
+
+- `ARCHITECTURE.md` 7.1の`wikiepwing verify`コマンドの基礎を実装する。`entries.jsonl`(TASK-H010出力)に対し、`freepwing_build_entries.pl`(TASK-H009)がPerl側で行っているのと同じ不変条件をDocker無しでPython側から先に検査する。
+
+**変更**
+
+- `src/wikiepwing/render/verify.py`に`verify_entries_jsonl`/`VerificationResult`/`VerificationIssue`/`EntriesVerificationError`を実装した。空tag/空title/重複tag/entry間の重複headword/未知link targetを検出する。
+- `src/wikiepwing/cli.py`に`verify`サブコマンド(`--entries`)を追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_verify.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 正常entries、空tag/空title/重複tag/entry間重複headword(entry内の同一headwordは許容)/未知target/空ファイル/不正JSON/ファイル欠如それぞれの検出を10件のテストで確認した。CLI側は`register-local-source`→`ingest`→`normalize`→`generate`→`verify`の実end-to-end連鎖、および問題ありreportでの非0終了コードを含め追加のテストで確認した。
+- 標準スイート707件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実際に構築されたEPWINGバイナリ(honmon等)へのEB Library経由の検証は本タスクの対象外とし、Docker不要で高速に実行できるentries.jsonlレベルの静的検査に留めた。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H012 100-article fixture(依存: D010)

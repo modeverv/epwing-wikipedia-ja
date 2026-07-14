@@ -31,6 +31,7 @@ from wikiepwing.reference.inventory import (
 from wikiepwing.reference.report import write_reference_report
 from wikiepwing.reference.searches import EbSearchAdapter, run_reference_searches
 from wikiepwing.render.generate import run_generate
+from wikiepwing.render.verify import verify_entries_jsonl
 from wikiepwing.secrets import load_enterprise_secrets
 from wikiepwing.source.acquire import acquire_snapshot
 from wikiepwing.source.auth import EnterpriseAuthClient, HttpAuthTransport
@@ -413,6 +414,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="proceed even if the manifest shows a previous run still 'running'",
     )
+    verify = subparsers.add_parser(
+        "verify", help="verify entries.jsonl: empty/duplicate tags, headwords, unknown targets"
+    )
+    verify.add_argument(
+        "--entries",
+        type=Path,
+        required=True,
+        help="path to the entries.jsonl to verify",
+    )
     return parser
 
 
@@ -722,6 +732,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(generate_result.manifest_path)
         return 0 if generate_result.manifest.status == "complete" else 1
+    if command == "verify":
+        entries_verification = verify_entries_jsonl(cast(Path, arguments.entries))
+        print(
+            json.dumps(entries_verification.payload(), ensure_ascii=False, indent=2, sort_keys=True)
+        )
+        return 0 if entries_verification.ok else 1
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0

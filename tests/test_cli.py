@@ -474,6 +474,36 @@ class CliTest(unittest.TestCase):
             record_out = json.loads(lines[0])
             self.assertEqual(record_out["tag"], "p1")
 
+            verify_result = self.run_cli("verify", "--entries", str(entries_output))
+            self.assertEqual(verify_result.returncode, 0, verify_result.stderr)
+            verification = json.loads(verify_result.stdout)
+            self.assertTrue(verification["ok"])
+            self.assertEqual(verification["entry_count"], 1)
+
+    def test_verify_help(self) -> None:
+        result = self.run_cli("verify", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--entries", result.stdout)
+
+    def test_verify_reports_issues_and_nonzero_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            entries_path = Path(directory) / "entries.jsonl"
+            entries_path.write_text(
+                json.dumps(
+                    {"tag": "p1", "title": "A", "aliases": [], "body": "", "targets": ["pmissing"]}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli("verify", "--entries", str(entries_path))
+
+            self.assertEqual(result.returncode, 1)
+            report = json.loads(result.stdout)
+            self.assertFalse(report["ok"])
+            self.assertTrue(any(issue["code"] == "UNKNOWN_TARGET" for issue in report["issues"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -459,7 +459,7 @@
 
 **依存:** H009
 
-### TASK-H011 [ ] EPWING verifier baseline
+### TASK-H011 [x] EPWING verifier baseline
 
 **依存:** H010
 
