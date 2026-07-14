@@ -3941,3 +3941,35 @@ git diff --check
 **次タスク**
 
 - EPIC L(References and categories、依存: G012,H007)
+
+### 2026-07-15 07:00 UTC — TASK-L001
+
+**目的**
+
+- `ARCHITECTURE.md` 12.2の"N100 Convert references"パスの最初の段階として、本文中の脚注マーカー(MediaWiki Cite拡張の`<sup class="reference"><a href="#cite_note-X">[1]</a></sup>`)を解析する。
+
+**変更**
+
+- `src/wikiepwing/normalize/reference_marker.py`に`ReferenceMarker`・`is_reference_marker()`・`parse_reference_marker()`を実装した。可視ラベルと、内部`<a href="#...">`から抽出したフラグメントID(参照リスト項目とのマッチングにTASK-L002で使う)を返す。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_reference_marker.py
+make check
+git diff --check
+```
+
+**結果**
+
+- マーカー検出・非マーカーの非検出・label/target_id抽出・`<a>`欠落時/非フラグメントhref時の`target_id=None`・非マーカーへの呼び出し時のエラーを7件のテストで確認した。
+- 標準スイート919件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ARCHITECTURE.md`の`Inline`union(11.3)にreference marker専用の型が無いため、実際のInline変換は既存の透過的wrapper fallback(`convert_inline_nodes`が`<sup>`/`<a>`を再帰し可視テキストを得る)に委ね、本タスクは`target_id`抽出という補助的な解析のみを追加した。本文Inline変換パイプラインへの実配線(target_idの活用)はTASK-L002以降で行う。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-L002 Reference list parser(依存: L001)

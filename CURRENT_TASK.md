@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-K010
+TASK-L001
 
 ## 目的
 
-`PLAN.md` Phase 11の出口条件("simple cells lossless"、"wide table readable vertical layout"、"malformed fallback"、"oversized diagnostic")を実際のend-to-endパイプラインで検証するgolden setを作る。実装中に気づいた重大なギャップ: TASK-K001-K009で構築した`build_table_block`/`build_infobox_block`は、`normalize/convert_block.py`の`convert_block()`ディスパッチャからまだ一度も呼ばれておらず、`<table>`要素は依然として`_convert_unsupported`(fallback)へ落ちていた。本タスクでまずこの配線を行い(循環import回避のため`build_table_block`/`build_infobox_block`は関数内local importで取り込む)、その上でTASK-G013と同じ形式(HTML fixture + 期待JSON)のgolden setを追加する。
+`ARCHITECTURE.md` 12.2の"N100 Convert references"パスの最初の段階として、本文中の脚注マーカー(MediaWikiのCite拡張が出力する`<sup class="reference"><a href="#cite_note-X">[1]</a></sup>`)を解析する。可視ラベル(例: "[1]")と、対応する参照リスト項目へのフラグメントID(`cite_note-X`)を抽出する。EPWINGはハイパーリンクを持てないプレーンテキストであるため、実際のInline型としては可視ラベルをそのまま使う(既存の`convert_inline_nodes`の透過的wrapper fallbackで`<sup>`/`<a>`を再帰すれば同じテキストは既に得られる)が、TASK-L002(参照リスト解析)が脚注マーカーと参照リスト項目を対応付けるために`target_id`の抽出が必要となるため、本タスクで独立した解析関数として実装する。
 
 ## 事前条件
 
@@ -14,18 +14,15 @@ TASK-K010
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-K010(依存: K006,K009)を読んだ
-- [x] `PLAN.md` Phase 11の出口条件・fixture一覧(2x2 simple, multi-header, rowspan, colspan, wide 12 columns, nested table, malformed table, very large table)を確認した
-- [x] `convert_block.py`の`convert_block()`が`<table>`を`_convert_unsupported`へ落としていたことに気づいた(K001-K009が配線されていなかった)
-- [x] `table_block.py`/`infobox_block.py`が`convert_document`(`convert_block.py`内で定義)を使っており、`convert_block.py`から直接importすると循環importになることを確認した(関数内local importで回避する)
-- [x] TASK-G013の golden set構造(`tests/golden/normalize/*.html`+`*.json`、`test_golden_normalize.py`)を確認した
+- [x] `TASKS.md`のTASK-L001(依存: G001)を読んだ
+- [x] `ARCHITECTURE.md` 11.3(Inline union)にreference marker専用の型が無く、`UnsupportedInline`のような汎用型のみであることを確認した
+- [x] MediaWiki Cite拡張の実際のHTML出力形式(`<sup id="cite_ref-..." class="reference"><a href="#cite_note-...">[1]</a></sup>`)を確認した(ドキュメントにアルゴリズムが無いため、この形式を判断根拠として採用する)
+- [x] `model/blocks.py`の`ReferencesBlock`(`items: tuple[tuple[Inline,...],...]`)を確認した(TASK-L002-L003で使う)
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/normalize/convert_block.py`(`<table>`をinfobox/table判定して`build_infobox_block`/`build_table_block`へディスパッチするよう配線)
-- `tests/golden/normalize/`(table/infobox向けのHTML+JSON fixtureを追加)
-- `tests/test_golden_normalize.py`(fixture数の期待値を更新)
-- `tests/test_normalize_convert_block.py`(table配線の回帰テスト追加)
+- `src/wikiepwing/normalize/reference_marker.py`(新規: `ReferenceMarker`, `is_reference_marker()`, `parse_reference_marker()`)
+- `tests/test_normalize_reference_marker.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -33,25 +30,26 @@ TASK-K010
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_golden_normalize.py tests/test_normalize_convert_block.py
+uv run pytest tests/test_normalize_reference_marker.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `convert_block()`が`<table>`要素をinfobox/tableとして正しくディスパッチし、`_convert_unsupported`へ落ちなくなる
-- [x] simple/wide/complexの各complexityのテーブル、infobox、malformed(不正span)なテーブル、ネストしたテーブルを含むgolden fixtureを追加する
+- [x] `is_reference_marker(node)`が、`class`に`reference`トークンを含む`<sup>`要素を検出する
+- [x] `parse_reference_marker(node)`が、可視ラベル(flattenされたテキスト)と、内部の`<a href="#...">`から抽出した`target_id`(`#`除去済み)を返す
+- [x] 対応する`<a>`が無い、またはhrefがフラグメントでない場合は`target_id=None`
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 画像の実ダウンロード(別epic)
-- 数式・参照(別epic)
+- 参照リスト(`<ol class="references">`)の解析(TASK-L002)
+- 実際のレンダリング(TASK-L003)
+- 本文Inline変換パイプラインへの実配線(既存の透過的wrapper fallbackで可視テキストは既に得られるため、target_id活用はL002以降で行う)
 
 ## 実施結果
 
-- 実装中に発見した重大なギャップ: `convert_block.py`の`convert_block()`は、TASK-K001-K009で構築した`build_table_block`/`build_infobox_block`を一度も呼んでおらず、`<table>`要素は依然として`_convert_unsupported`(fallback)へ落ちていた。`is_infobox`/`is_table`をモジュール先頭でimportし、`build_infobox_block`/`build_table_block`(`convert_document`を呼び返すため循環importになる)は関数内local importで取り込むことで配線した。
-- `tests/test_normalize_convert_block.py`・`tests/test_normalize_pipeline.py`の既存テストが`<table>`を「未知要素のfallback例」として使っていたため、`<div>`/`<figure>`に差し替え、新たに`<table>`/infoboxが正しくTableBlock/InfoboxBlockへディスパッチされることを確認する専用テスト2件を追加した。
-- `tests/golden/normalize/`にTASK-G013と同形式のfixture6件(11_table_simple, 12_table_wide, 13_table_rowspan, 14_table_malformed_span, 15_infobox, 16_table_nested)を追加した。期待JSONは実際のパイプライン(`normalize_html`)を実行して機械生成し、目視で妥当性を確認した。`14_table_malformed_span`のみ`TABLE_INVALID_SPAN`診断を期待するよう`test_golden_normalize.py`を拡張した(他は従来通りdiagnostics無しを要求)。
-- 標準スイート912件(golden fixture 6件・その他新規/変更テストを含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。実DB経由のend-to-endテスト(`test_mini_end_to_end_build.py`等)も影響を受けず成功した。
+- `src/wikiepwing/normalize/reference_marker.py`に`ReferenceMarker`・`is_reference_marker()`・`parse_reference_marker()`を実装した。`<sup class="reference">`要素を検出し、可視ラベル(flattenテキスト)と内部`<a href="#...">`から抽出したフラグメントID(`#`除去済み)を返す。
+- `tests/test_normalize_reference_marker.py`(新規7件)で、マーカー検出・非マーカー(素の`<sup>`・`<span>`)の非検出・label/target_id抽出・`<a>`欠落時/フラグメント以外のhref時の`target_id=None`・非マーカーへの`parse_reference_marker`呼び出し時のエラーを確認した。
+- `make check`(format-check/lint/mypy/pytest 919件)と`git diff --check`が成功した。

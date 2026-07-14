@@ -583,7 +583,7 @@
 
 ## EPIC L — References and categories
 
-### TASK-L001 [ ] Reference marker parser
+### TASK-L001 [x] Reference marker parser
 
 **依存:** G001
 
