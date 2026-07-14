@@ -2538,3 +2538,36 @@ git diff --check
 **次タスク**
 
 - TASK-G010 Unknown DOM fallback(依存: G004-G009)
+
+### 2026-07-14 13:30 UTC — TASK-G010
+
+**目的**
+
+- G004-G009の各変換関数を1つのディスパッチャ(`convert_block`)にまとめ、認識できない要素を`UnsupportedBlock`+diagnosticで確実に情報保持するfallbackと、文書レベルで隣接する非ブロック要素を1つの`ParagraphBlock`にまとめる`convert_document`を実装する。
+
+**変更**
+
+- `src/wikiepwing/normalize/convert_block.py`に`convert_block`/`convert_document`を実装した。`convert_block`はheading/paragraph/unordered list/ordered list/definition list/quote/preformatted/`<hr>`をディスパッチし、それ以外は`UnsupportedBlock`(`element_name`/`fallback_text`/`diagnostic_code="DOM_UNKNOWN_ELEMENT"`)+diagnosticへfallbackする。`convert_document`は、既知のblock要素(変換対応済みのもの、および`table`/`div`/`figure`等の既知のHTML block-level tagでまだ変換未対応のもの)が現れるまで、素のテキスト/inline要素を1つの`ParagraphBlock`バッファへ蓄積する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_convert_block.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 各種要素のdispatch、`<hr>`変換、`<table>`等の未知要素のfallback(element_name/fallback_text/diagnostic_code)、文書レベルでの隣接する非ブロック要素のグループ化(単純なtext/inline混在、既知block要素での区切り)、空文書、fallback diagnosticsの伝播を11件のテストで確認した。テスト作成時に、未知のblock-level要素(`<table>`)がinline bufferへ誤って蓄積されるバグを発見し、`_is_block_level`にHTML標準のblock-level tag集合(`div`/`table`/`figure`等)を追加して修正した。
+- 標準スイート579件(新規11件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `_ADDITIONAL_BLOCK_TAGS`(未変換だがinlineとして扱ってはいけないHTML標準block-level tag)はdocumented assumption。Table/Infobox/Image/Math/Referencesの実HTML変換はEpic K/L/N/O以降で、この一覧が置き換えられていく。
+- 空白正規化(G011)とArticle/model DBへの統合(G012)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G011 Whitespace normalization(依存: G010)

@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-G009
+TASK-G010
 
 ## 目的
 
-`ARCHITECTURE.md` 12.2のpass `N60`(引用/preformatted変換)を実装する。`<blockquote>`要素を`QuoteBlock`(`blocks: tuple[Block, ...]`)へ、`<pre>`要素を`PreformattedBlock`(`text: str`)へ変換する。blockquote内は典型パターン(`<p>`の並び、またはinline contentの並び)のみを扱い、preformattedはテキストを一切正規化せず(空白・改行をそのまま)保持する。
+`TASKS.md` TASK-G010(依存: G004-G009)を実装する。これまでのG004-G009各変換関数(heading/paragraph/list/definition list/quote/preformatted)を1つにまとめる`convert_block`ディスパッチャと、文書レベルで隣接する非ブロック要素(素のテキスト/inline要素の並び)をひとつの`ParagraphBlock`にまとめる`convert_document`を実装する。認識できない要素(`<table>`/`<div>`ラッパー等、Table/Infobox/Image/Math/Referencesの実変換はEpic K/L/N/O以降)は`UnsupportedBlock`+`DOM_UNKNOWN_ELEMENT`診断で確実に情報を残す(`ARCHITECTURE.md` 11.7の例に合わせる)。`<hr>`は`PLAN.md` Phase 6の初期scopeにあるため`HorizontalRuleBlock`へ直接変換する。
 
 ## 事前条件
 
@@ -14,15 +14,14 @@ TASK-G009
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-G009(依存: G005)を読んだ
-- [x] `model/blocks.py`の`QuoteBlock`/`PreformattedBlock`を確認した
-- [x] `normalize/paragraphs.py`(`convert_paragraph`/`convert_inline_nodes`)、`normalize/lists.py`/`normalize/definition_lists.py`のモジュール構成パターンを踏襲する
-- [x] `ARCHITECTURE.md` 13.1("本文は過剰にNFKCしません")を確認し、preformattedのtext抽出でも正規化を行わない方針とした
+- [x] `TASKS.md`のTASK-G010(依存: G004-G009)を読んだ
+- [x] `ARCHITECTURE.md` 11.7のdiagnostic code例(`DOM_UNKNOWN_ELEMENT`)を確認した
+- [x] これまで実装した`normalize/headings.py`/`paragraphs.py`/`lists.py`/`definition_lists.py`/`quotes.py`の`is_x`/`convert_x`関数群を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/normalize/quotes.py`
-- `tests/test_normalize_quotes.py`
+- `src/wikiepwing/normalize/convert_block.py`
+- `tests/test_normalize_convert_block.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,31 +29,31 @@ TASK-G009
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_normalize_quotes.py
+uv run pytest tests/test_normalize_convert_block.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `is_quote`/`is_preformatted`が`<blockquote>`/`<pre>`要素を判定する
-- [x] `convert_quote`が`<p>`子要素をそれぞれ`ParagraphBlock`へ変換する
-- [x] `convert_quote`が`<p>`以外のinline/テキスト内容を1つの`ParagraphBlock`にまとめる(`<p>`との混在時は分離される)
-- [x] `convert_preformatted`がテキストを空白・改行を保持したまま抽出する(NFKC等の正規化を行わない)
-- [x] 非対応要素を渡すとそれぞれ`ValueError`を送出する
+- [x] `convert_block(node) -> (Block, tuple[Diagnostic, ...])`がheading/paragraph/unordered list/ordered list/definition list/quote/preformattedそれぞれを正しくディスパッチする
+- [x] `<hr>`を`HorizontalRuleBlock`へ変換する
+- [x] 未知の要素(`<table>`等)を`UnsupportedBlock`(`element_name`/`fallback_text`(平坦化テキスト)/`diagnostic_code="DOM_UNKNOWN_ELEMENT"`)へ変換し、diagnosticを記録する
+- [x] `convert_document(nodes) -> (tuple[Block, ...], tuple[Diagnostic, ...])`が、連続する素のテキスト/inline要素を1つの`ParagraphBlock`にまとめ、ブロック要素が現れるとそこで区切る
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 任意のDOMノードをBlockへ振り分ける汎用dispatcher(TASK-G010/G012)
-- `<pre>`内のinline要素(`<code>`等)の変換(テキストとして平坦化するのみ)
+- 空白正規化(TASK-G011)
+- Article/model DBへの実際の統合(TASK-G012)
+- Table/Infobox/Image/Math/Referencesの実HTML変換(Epic K/L/N/O)
 
 ## 実施結果
 
-- `src/wikiepwing/normalize/quotes.py`に`is_quote`/`is_preformatted`/`convert_quote`/`convert_preformatted`を実装した。
-- `tests/test_normalize_quotes.py`に10件のテストを追加。
-- `uv run pytest tests/test_normalize_quotes.py`: 10 passed。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート568件)すべて成功。
+- `src/wikiepwing/normalize/convert_block.py`に`convert_block`/`convert_document`を実装した。
+- `tests/test_normalize_convert_block.py`に11件のテストを追加。テスト作成中に、未知のblock-level要素(`<table>`)がinline bufferへ誤って蓄積されるバグを発見し、`_is_block_level`にHTML標準のblock-level tag集合を追加して修正した。
+- `uv run pytest tests/test_normalize_convert_block.py`: 11 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート579件)すべて成功。
 - `git diff --check`: 問題なし。
-- `TASKS.md`(G009チェック)、`LOG.md`(新規エントリ)を更新した。
-- 次タスク: TASK-G010 Unknown DOM fallback。
+- `TASKS.md`(G010チェック)、`LOG.md`(新規エントリ)を更新した。
+- 次タスク: TASK-G011 Whitespace normalization。

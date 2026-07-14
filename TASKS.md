@@ -399,7 +399,7 @@
 
 **依存:** G005
 
-### TASK-G010 [ ] Unknown DOM fallback
+### TASK-G010 [x] Unknown DOM fallback
 
 **依存:** G004-G009
 
