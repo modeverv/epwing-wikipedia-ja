@@ -2806,3 +2806,35 @@ git diff --check
 **次タスク**
 
 - TASK-H005 Stable entry IDs(依存: F004)
+
+### 2026-07-14 16:20 UTC — TASK-H005
+
+**目的**
+
+- `ARCHITECTURE.md` 16.1(entry ID: `p<page_id>`)を実装する。
+
+**変更**
+
+- `src/wikiepwing/render/__init__.py`(新規パッケージ)、`src/wikiepwing/render/entry_id.py`に`compute_entry_id`/`EntryIdError`を実装した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_entry_id.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `p<page_id>`形式の生成、page_id 0以下の拒否を4件のテストで確認した。
+- 標準スイート652件(新規4件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- RenderedEntry model本体(H006)・Mini layout renderer(H007)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H006 RenderedEntry model(依存: H005)

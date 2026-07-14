@@ -435,7 +435,7 @@
 
 **依存:** E008
 
-### TASK-H005 [ ] Stable entry IDs
+### TASK-H005 [x] Stable entry IDs
 
 **依存:** F004
 
