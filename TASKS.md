@@ -463,7 +463,7 @@
 
 **依存:** H010
 
-### TASK-H012 [ ] 100-article fixture
+### TASK-H012 [x] 100-article fixture
 
 **依存:** D010
 

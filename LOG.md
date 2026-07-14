@@ -3043,3 +3043,37 @@ git diff --check
 **次タスク**
 
 - TASK-H012 100-article fixture(依存: D010)
+
+### 2026-07-14 19:20 UTC — TASK-H012
+
+**目的**
+
+- `TASK-D010`の10記事`normal_articles.ndjson`を拡張し、`TASK-H013`(Mini end-to-end build)向けに100記事規模のfixtureを作成する。
+
+**変更**
+
+- `tests/fixtures/enterprise/generate_hundred_articles.py`(決定的生成スクリプト)と、それが生成する`tests/fixtures/enterprise/hundred_articles.ndjson`(100記事)を追加した。既存の`normal_articles.ndjson`と同じWikimedia Enterprise NDJSONスキーマに従い、redirect数(0-2)・category数(1-2)・画像fieldの有無を記事ごとに変化させ、`article_body.html`内に他fixture記事への内部link(`/wiki/Title`形式)を含める。
+
+**実行コマンド**
+
+```bash
+uv run python3 tests/fixtures/enterprise/generate_hundred_articles.py
+uv run pytest tests/test_hundred_articles_fixture.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 100記事であること、identifierの一意性、既存スキーマとの整合、redirect数の分布、内部linkが他fixture記事のみを指すこと、生成スクリプトの決定性(2回実行して同一出力)を6件のテストで確認した。
+- 標準スイート713件(新規6件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- identifier範囲は既存fixture(`normal_articles.ndjson`の900xxx、`edge_case_articles.ndjson`の1100xxx)と衝突しないよう920001-920100とした。
+- Mini end-to-end build自体の実行・検証は本タスクの対象外(TASK-H013)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H013 Mini end-to-end build(依存: H011-H012)

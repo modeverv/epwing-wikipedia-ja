@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-H011
+TASK-H012
 
 ## 目的
 
-`ARCHITECTURE.md` 7.1に記載の`wikiepwing verify`コマンドの基礎を実装する。TASK-H010の`generate`が生成する`entries.jsonl`を対象に、`docker/toolchain/freepwing_build_entries.pl`(TASK-H009)がPerl側で行っているのと同じ不変条件(重複tag/重複headword/未知link target/空title)を、Dockerを使わずPython側で先に検査できる軽量verifierを実装する。実際のEPWINGバイナリ(honmon等)を対象とした検証(EB Libraryでの実lookup等)はEpic後半(H013 Mini end-to-end build等)に委ねる。
+`TASK-D010`で作成した10記事の`normal_articles.ndjson`を拡張し、より大きな規模(100記事)でのend-to-end検証(TASK-H013 Mini end-to-end build)を可能にするfixtureを作成する。実データではなく、既存の10記事と同じWikimedia Enterprise NDJSONスキーマに従う決定的な合成データとする(D010の`normal_articles.ndjson`自体も合成データであり、同じ方針を踏襲する)。redirect数(0-2)・category数(1-2)・画像fieldの有無を変化させ、内部link(`article_body.html`内の`<a href="/wiki/...">`)で相互参照する記事群を含めることで、G012(normalize)・H002(link resolver)・H010(generate)・H011(verify)を100記事規模で実行できるようにする。
 
 ## 事前条件
 
@@ -14,18 +14,14 @@ TASK-H011
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-H011(依存: H010)を読んだ
-- [x] `ARCHITECTURE.md` 7.1(`wikiepwing verify`)を確認した
-- [x] `docker/toolchain/freepwing_build_entries.pl`(TASK-H009)が検証している不変条件(invalid tag/duplicate tag/empty title/unknown link target/duplicate headword)を確認し、同等のチェックをPython側でも先に行う設計とした
-- [x] `src/wikiepwing/render/freepwing_source.py`(`write_entries_jsonl`)が書き出す`entries.jsonl`の形式(tag/title/aliases/body/targets)を確認した
-- [x] `ingest/verify.py`(`verify_raw_database`)のVerificationResult/payload()パターンを参考にする
+- [x] `TASKS.md`のTASK-H012(依存: D010)とH013(Mini end-to-end build、依存: H011-H012)を読んだ
+- [x] `tests/fixtures/enterprise/normal_articles.ndjson`(D010、10記事)のスキーマ(identifier/name/url/namespace/in_language/is_part_of/date_modified/version/article_body/license/redirects/categories/templates/image)を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/render/verify.py`
-- `src/wikiepwing/cli.py`(`verify`サブコマンド追加)
-- `tests/test_render_verify.py`
-- `tests/test_cli.py`(verifyサブコマンドの確認を追加)
+- `tests/fixtures/enterprise/generate_hundred_articles.py`(決定的生成スクリプト、再現性のため保持)
+- `tests/fixtures/enterprise/hundred_articles.ndjson`(生成された100記事fixture)
+- `tests/test_hundred_articles_fixture.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -33,30 +29,33 @@ TASK-H011
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_render_verify.py tests/test_cli.py
+uv run python3 tests/fixtures/enterprise/generate_hundred_articles.py
+uv run pytest tests/test_hundred_articles_fixture.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `verify_entries_jsonl(path) -> VerificationResult`が空tag/空title/重複tag/重複headword(別entry間)/未知link targetを検出する
-- [x] 問題が無ければ`ok=True`を返す
-- [x] `wikiepwing verify --entries <path>`サブコマンドがJSON reportを出力し、`ok`に応じて終了コードを返す
+- [x] `hundred_articles.ndjson`が100行(記事)を持ち、既存のNDJSONスキーマ(D010と同型)に従う
+- [x] 各記事の`identifier`(page_id相当)が一意である
+- [x] 一部の記事が0-2件のredirectsを持つ
+- [x] 一部の記事が`article_body.html`内に他記事への内部link(`/wiki/Title`形式)を持つ(G010以降のlink処理検証に使える)
+- [x] 生成スクリプトが決定的(再実行しても同一出力)である
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際に構築されたEPWINGバイナリ(honmon等)へのEB Library経由の検証(TASK-H013等)
-- 100-article fixture(TASK-H012)
+- Mini end-to-end build自体の実行・検証(TASK-H013)
+- 実Wikipediaデータの取得(引き続き合成データのまま)
 
 ## 実施結果
 
-- `src/wikiepwing/render/verify.py`に`verify_entries_jsonl`/`VerificationResult`/`VerificationIssue`/`EntriesVerificationError`を実装した。
-- `src/wikiepwing/cli.py`に`verify`サブコマンドを追加した。
-- `tests/test_render_verify.py`(10件)、`tests/test_cli.py`への追加(3件)を実装。
-- `uv run pytest tests/test_render_verify.py tests/test_cli.py`: 30 passed。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート707件)すべて成功。
+- `tests/fixtures/enterprise/generate_hundred_articles.py`(生成スクリプト)と`tests/fixtures/enterprise/hundred_articles.ndjson`(100記事)を追加した。
+- `tests/test_hundred_articles_fixture.py`に6件のテストを追加。
+- `uv run pytest tests/test_hundred_articles_fixture.py`: 6 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート713件)すべて成功。
 - `git diff --check`: 問題なし。
-- `TASKS.md`(H011チェック)、`LOG.md`(新規エントリ)を更新した。
-- 次タスク: TASK-H012 100-article fixture。
+- `TASKS.md`(H012チェック)、`LOG.md`(新規エントリ)を更新した。
+- identifier範囲(920001-920100)は既存fixtureとの衝突回避のため選定。
+- 次タスク: TASK-H013 Mini end-to-end build。
