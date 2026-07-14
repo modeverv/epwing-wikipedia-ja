@@ -323,7 +323,7 @@
 
 ## EPIC F — Model
 
-### TASK-F001 [ ] Diagnostic model
+### TASK-F001 [x] Diagnostic model
 
 **依存:** E001
 

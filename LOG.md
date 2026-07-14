@@ -1972,3 +1972,34 @@ git diff --check
 **次タスク**
 
 - EPIC F(Model)のTASK-F001 Diagnostic model(依存: E001は完了済み)
+
+### 2026-07-14 06:55 UTC — TASK-F001
+
+**目的**
+
+- 意味論モデル層の`Diagnostic`(`ARCHITECTURE.md` 11.7)を実装する。Article JSON contractの`diagnostics`配列要素として自己完結的に往復可能にする。
+
+**変更**
+
+- `src/wikiepwing/model/diagnostics.py`に`Diagnostic`、`parse_diagnostic`、`DiagnosticError`を実装した。ingest層の`wikiepwing.ingest.validate.Diagnostic`とは異なり、page_id/title/stageを自身に内包する自己完結型とした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_model_diagnostics.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート381件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- ingest層Diagnosticからmodel層Diagnosticへの変換はEpic G以降のnormalize統合時に実装する。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-F002 Inline model(`PLAN.md` Phase 6の初期対応範囲: text/strong/emphasis/internal link/external link/code/line break/unsupported)
