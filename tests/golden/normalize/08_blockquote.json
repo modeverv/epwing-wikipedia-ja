@@ -1,0 +1,16 @@
+[
+  {
+    "blocks": [
+      {
+        "inlines": [
+          {
+            "type": "text",
+            "value": "Free software is a matter of liberty, not price."
+          }
+        ],
+        "type": "paragraph"
+      }
+    ],
+    "type": "quote"
+  }
+]

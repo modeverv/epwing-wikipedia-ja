@@ -2641,3 +2641,36 @@ git diff --check
 **次タスク**
 
 - TASK-G013 Baseline golden snapshots(依存: G012)
+
+### 2026-07-14 14:45 UTC — TASK-G013
+
+**目的**
+
+- `PLAN.md` Phase 6出口条件"10記事golden一致"を実装する。`ARCHITECTURE.md`の`tests/golden/`ディレクトリ構成に沿って、初期対応範囲を代表する10個のHTML入力+期待Block JSON出力のペアを配置する。
+
+**変更**
+
+- `tests/golden/normalize/`に10組のHTML/JSONペアを新規作成した(01 heading+paragraph, 02 bold/italic, 03 ordered list, 04 nested unordered list, 05 definition list, 06 preformatted/code, 07 line break, 08 blockquote, 09 horizontal rule, 10 HTML entities+section anchor)。JSONは`normalize_html`の実出力を目視確認した上で`block_payload`でシリアライズして保存した。
+- `tests/test_golden_normalize.py`に、10ファイルの存在確認と各fixtureの`normalize_html`出力が保存済みJSONと完全一致することを検証するparametrizeテストを実装した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_golden_normalize.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 10 golden fixtureすべてで`normalize_html`出力が保存済み期待値と完全一致し、diagnosticsが空であることを11件のテストで確認した。
+- 標準スイート620件(新規11件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- internal/external link(Epic H未実装)、Table/Infobox/Image/Math/References(Epic K/L/N/O未実装)を含むgolden fixtureは対象外とした。
+- これでEpic G(HTML normalization baseline)が完了した。
+
+**次タスク**
+
+- Epic H(Links and Mini rendering)へ進む。

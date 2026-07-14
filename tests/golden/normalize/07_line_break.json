@@ -1,0 +1,18 @@
+[
+  {
+    "inlines": [
+      {
+        "type": "text",
+        "value": "First line"
+      },
+      {
+        "type": "line_break"
+      },
+      {
+        "type": "text",
+        "value": "Second line"
+      }
+    ],
+    "type": "paragraph"
+  }
+]

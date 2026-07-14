@@ -1,0 +1,6 @@
+[
+  {
+    "text": "(defun square (x)\n  (* x x))",
+    "type": "preformatted"
+  }
+]

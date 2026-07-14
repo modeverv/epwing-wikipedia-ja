@@ -1,0 +1,46 @@
+[
+  {
+    "items": [
+      {
+        "blocks": [
+          {
+            "inlines": [
+              {
+                "type": "text",
+                "value": "Install"
+              }
+            ],
+            "type": "paragraph"
+          }
+        ]
+      },
+      {
+        "blocks": [
+          {
+            "inlines": [
+              {
+                "type": "text",
+                "value": "Configure"
+              }
+            ],
+            "type": "paragraph"
+          }
+        ]
+      },
+      {
+        "blocks": [
+          {
+            "inlines": [
+              {
+                "type": "text",
+                "value": "Use"
+              }
+            ],
+            "type": "paragraph"
+          }
+        ]
+      }
+    ],
+    "type": "ordered_list"
+  }
+]

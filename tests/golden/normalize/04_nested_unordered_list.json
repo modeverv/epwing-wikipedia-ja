@@ -1,0 +1,64 @@
+[
+  {
+    "items": [
+      {
+        "blocks": [
+          {
+            "inlines": [
+              {
+                "type": "text",
+                "value": "Editors"
+              }
+            ],
+            "type": "paragraph"
+          },
+          {
+            "items": [
+              {
+                "blocks": [
+                  {
+                    "inlines": [
+                      {
+                        "type": "text",
+                        "value": "Emacs"
+                      }
+                    ],
+                    "type": "paragraph"
+                  }
+                ]
+              },
+              {
+                "blocks": [
+                  {
+                    "inlines": [
+                      {
+                        "type": "text",
+                        "value": "Vim"
+                      }
+                    ],
+                    "type": "paragraph"
+                  }
+                ]
+              }
+            ],
+            "type": "unordered_list"
+          }
+        ]
+      },
+      {
+        "blocks": [
+          {
+            "inlines": [
+              {
+                "type": "text",
+                "value": "Shells"
+              }
+            ],
+            "type": "paragraph"
+          }
+        ]
+      }
+    ],
+    "type": "unordered_list"
+  }
+]

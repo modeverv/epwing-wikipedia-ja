@@ -411,7 +411,7 @@
 
 **依存:** F007-F008,G011
 
-### TASK-G013 [ ] Baseline golden snapshots
+### TASK-G013 [x] Baseline golden snapshots
 
 **依存:** G012
 

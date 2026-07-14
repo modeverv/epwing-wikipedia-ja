@@ -1,0 +1,23 @@
+[
+  {
+    "inlines": [
+      {
+        "type": "text",
+        "value": "Before the break."
+      }
+    ],
+    "type": "paragraph"
+  },
+  {
+    "type": "horizontal_rule"
+  },
+  {
+    "inlines": [
+      {
+        "type": "text",
+        "value": "After the break."
+      }
+    ],
+    "type": "paragraph"
+  }
+]

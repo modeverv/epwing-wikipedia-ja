@@ -1,0 +1,22 @@
+[
+  {
+    "anchor": "History",
+    "inlines": [
+      {
+        "type": "text",
+        "value": "History"
+      }
+    ],
+    "level": 2,
+    "type": "heading"
+  },
+  {
+    "inlines": [
+      {
+        "type": "text",
+        "value": "Emacs is an extensible editor."
+      }
+    ],
+    "type": "paragraph"
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "anchor": "license",
+    "inlines": [
+      {
+        "type": "text",
+        "value": "License & Terms"
+      }
+    ],
+    "level": 3,
+    "type": "heading"
+  },
+  {
+    "inlines": [
+      {
+        "type": "text",
+        "value": "Copyright © 2026 — distributed <freely>."
+      }
+    ],
+    "type": "paragraph"
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "entries": [
+      {
+        "definitions": [
+          [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "An extensible text editor."
+                }
+              ],
+              "type": "paragraph"
+            }
+          ]
+        ],
+        "terms": [
+          [
+            {
+              "type": "text",
+              "value": "Emacs"
+            }
+          ]
+        ]
+      }
+    ],
+    "type": "definition_list"
+  }
+]
