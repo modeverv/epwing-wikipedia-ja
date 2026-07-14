@@ -2068,3 +2068,36 @@ git diff --check
 **次タスク**
 
 - TASK-F004 Article model(依存: F003)
+
+### 2026-07-14 08:15 UTC — TASK-F004
+
+**目的**
+
+- `ARCHITECTURE.md` 11.1のArticle dataclass、13.3のalias(source/confidence)、15.2のMediaReferenceを実装する。
+
+**変更**
+
+- `src/wikiepwing/model/article.py`に`Article`/`Alias`/`MediaReference`と`payload()`/`parse_article`/`parse_alias`/`parse_media_reference`を実装した。`source_date_modified`はUTC ISO-8601(`...Z`)文字列として往復する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_model_article.py
+make check
+git diff --check
+```
+
+**結果**
+
+- Article/Alias/MediaReferenceのroundtrip(nested blocks/aliases/media/diagnosticsを含む)、非UTCタイムゾーンの往復、各種バリデーション拒否を19件のテストで確認した。
+- 標準スイート450件(新規19件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `Alias`の`source`値は`ARCHITECTURE.md` 13.3のalias候補一覧(redirects/記事title/normalized title variant/HTML display title/lead bold/Wikidata)から導出したdocumented assumptionである。
+- Model validator(F005)とcanonical JSON codec/hash(F006)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-F005 Model validator(依存: F004)

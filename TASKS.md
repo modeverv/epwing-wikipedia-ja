@@ -335,7 +335,7 @@
 
 **依存:** F002
 
-### TASK-F004 [ ] Article model
+### TASK-F004 [x] Article model
 
 **依存:** F003
 
