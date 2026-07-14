@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-G003
+TASK-G004
 
 ## 目的
 
-`ARCHITECTURE.md` 12.2のpass `N20 Remove unsafe/non-content nodes`を実装する。12.1が要求する"script/style/template-like executable contentを除去する"を無条件の安全策として実装し、12.3の除外候補のうち`config/default.toml`の`[normalize]`に既存のconfigフラグ(`remove_edit_ui`/`remove_navboxes`/`remove_authority_control`)が既にscaffoldされている3種を実装する。それ以外の除外候補(coordinates UI重複表示/hidden metadata/maintenance category表示/portal box/language switch UI)は、`ARCHITECTURE.md` 12.3自身が"情報を落とす可能性があるclassは、fixtureで確認してからruleへ追加します"と明記しており、実データ・具体的なclass名の裏付けが無い現時点では対象外とする。
+`ARCHITECTURE.md` 12.2のpass `N30 Normalize headings and section anchors`を実装する。`<h1>`〜`<h6>`要素を`HeadingBlock`(`level`/`anchor`/`inlines`)へ変換する。`TASKS.md`の依存グラフ上、G004はG003のみに依存しG005(paragraph/text conversion)には依存しないため、見出し内のinline変換は本タスクでは単純なテキスト平坦化(`TextInline`一つ)に留め、太字/斜体/リンク等の豊かなinline変換はG005/G006以降が担う。
 
 ## 事前条件
 
@@ -14,17 +14,14 @@ TASK-G003
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-G003(依存: G002、実装note無し)を読んだ
-- [x] `ARCHITECTURE.md` 12.1(script/style除去は必須の安全策)・12.3(除外候補一覧、および"fixtureで確認してからrule追加"という明示的な留保)・12.4(DOM rule設定のTOML例、`.mw-editsection`という具体的selector)を確認した
-- [x] `config/default.toml`の`[normalize]`セクション(`remove_edit_ui`/`remove_navboxes`/`remove_authority_control`)が既に存在することを確認した
-- [x] `src/wikiepwing/normalize/root_selection.py`の`_has_class`相当ロジックを再利用可能な形にリファクタリングする
+- [x] `TASKS.md`のTASK-G004(依存: G003)とG005(依存: G003)・G006(依存: G005)の依存関係を確認し、G004がG005より前にinline変換全体を実装する必要が無いことを確認した
+- [x] `ARCHITECTURE.md` 12.2(pass `N30`)を確認した。具体的なanchor生成アルゴリズムの明文化は無いため、MediaWikiの一般的な慣行(`id`属性またはネストした`span`の`id`、無ければテキストから生成するslug)をdocumented assumptionとして採用する
+- [x] `model/blocks.py`の`HeadingBlock`(`level`は1-6、`anchor`は非空文字列必須)を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/normalize/html_parser.py`(`has_class`ヘルパーを公開)
-- `src/wikiepwing/normalize/root_selection.py`(`has_class`を再利用するようリファクタ)
-- `src/wikiepwing/normalize/unsafe_nodes.py`
-- `tests/test_normalize_unsafe_nodes.py`
+- `src/wikiepwing/normalize/headings.py`
+- `tests/test_normalize_headings.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -32,36 +29,35 @@ TASK-G003
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_normalize_unsafe_nodes.py tests/test_normalize_root_selection.py
+uv run pytest tests/test_normalize_headings.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `<script>`/`<style>`要素を設定に関わらず常に除去し、diagnosticを記録する
-- [x] `UnsafeNodeRemovalOptions.from_config`が`[normalize]`の3フラグを読み込む
-- [x] `remove_edit_ui=True`時に`.mw-editsection`クラスを持つ要素を除去する
-- [x] `remove_navboxes=True`時に`.navbox`クラスを持つ要素を除去する
-- [x] `remove_authority_control=True`時に`.authority-control`クラスを持つ要素を除去する
-- [x] 各フラグが`False`の場合は対応する要素を保持する
-- [x] 除去対象がネストしていても(祖先要素ごと)正しく除去され、無関係な兄弟要素は保持される
+- [x] `is_heading(node)`が`h1`〜`h6`要素を判定する
+- [x] `convert_heading(node) -> (HeadingBlock, tuple[Diagnostic, ...])`が要素タグからlevelを抽出する
+- [x] 要素自身の`id`属性を優先してanchorとする
+- [x] 自身に`id`が無い場合、最初にネストした子孫要素の`id`属性を使う(`<span class="mw-headline" id="...">`慣行に対応)
+- [x] どちらも無い場合、平坦化したテキストからslug(空白を`_`に置換)を生成してanchorとする
+- [x] テキストも`id`も全く無い空見出しの場合、fallback anchorを使いdiagnosticを記録する
+- [x] 見出しが空文字列の場合もdiagnosticを記録する
+- [x] 見出し以外の要素を渡すと`ValueError`を送出する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- coordinates UI重複表示/hidden metadata/maintenance category表示/portal box/language switch UIの除去(具体的なclass名の裏付けが無いため対象外。実データ確認後に追加)
-- Block/Inlineへの実際の変換(TASK-G004以降)
-- 12.4記載のTOML `[[remove]]`/`[[classify]]`形式による汎用ルールエンジン化(config schemaの大幅拡張を要するため、既存のbooleanフラグ方式のままとする)
+- 見出し内の太字/斜体/リンク等の豊かなinline変換(TASK-G005/G006以降)
+- 文書全体でのanchor一意性保証(将来必要になれば別タスクで対応)
 
 ## 実施結果
 
-- `src/wikiepwing/normalize/html_parser.py`に`has_class`を公開し、`root_selection.py`から重複ロジックを削除して再利用した。
-- `src/wikiepwing/normalize/unsafe_nodes.py`に`UnsafeNodeRemovalOptions`/`remove_unsafe_nodes`を実装した。
-- `tests/test_normalize_unsafe_nodes.py`に8件のテストを追加。
-- `uv run pytest tests/test_normalize_unsafe_nodes.py tests/test_normalize_root_selection.py`: 13 passed。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート515件)すべて成功。
+- `src/wikiepwing/normalize/headings.py`に`is_heading`/`convert_heading`を実装した。
+- `tests/test_normalize_headings.py`に8件のテストを追加。
+- `uv run pytest tests/test_normalize_headings.py`: 8 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート523件)すべて成功。
 - `git diff --check`: 問題なし。
-- `TASKS.md`(G003チェック)、`LOG.md`(新規エントリ)を更新した。
-- coordinates UI重複表示/hidden metadata/maintenance category表示/portal box/language switch UIは具体的class名の裏付けが無いため非対象とした。
-- 次タスク: TASK-G004 Heading conversion。
+- `TASKS.md`(G004チェック)、`LOG.md`(新規エントリ)を更新した。
+- anchor生成規則(own id/nested mw-headline id/slug fallback)はdocumented assumption。
+- 次タスク: TASK-G005 Paragraph and text conversion。

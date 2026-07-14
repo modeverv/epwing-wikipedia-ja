@@ -375,7 +375,7 @@
 
 **依存:** G002
 
-### TASK-G004 [ ] Heading conversion
+### TASK-G004 [x] Heading conversion
 
 **依存:** G003
 

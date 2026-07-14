@@ -2339,3 +2339,37 @@ git diff --check
 **次タスク**
 
 - TASK-G004 Heading conversion(依存: G003)
+
+### 2026-07-14 11:25 UTC — TASK-G004
+
+**目的**
+
+- `ARCHITECTURE.md` 12.2のpass `N30 Normalize headings and section anchors`を実装する。`<h1>`〜`<h6>`要素を`HeadingBlock`へ変換する。
+
+**変更**
+
+- `src/wikiepwing/normalize/headings.py`に`is_heading`/`convert_heading`を実装した。anchorは要素自身の`id`→ネストした子孫の`id`(`mw-headline`慣行)→平坦化テキストからのslug、の優先順で決定し、全て空の場合はfallback anchor `"section"`とdiagnosticを記録する。見出し内テキストは単一の`TextInline`へ平坦化する(豊かなinline変換はG005/G006以降)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_headings.py
+make check
+git diff --check
+```
+
+**結果**
+
+- h1〜h6判定、own id/nested id/slug fallbackそれぞれのanchor決定、ネストしたformatting要素のテキスト平坦化、空見出しでのdiagnostic記録、非見出し要素での`ValueError`を8件のテストで確認した。
+- 標準スイート523件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- anchor生成アルゴリズムは`ARCHITECTURE.md`に明文化が無く、MediaWikiの一般的な慣行(own id / nested `mw-headline` id / テキストからのslug)をdocumented assumptionとして採用した。
+- `TASKS.md`の依存グラフ上G004はG005(paragraph/text conversion)に依存しないため、見出し内容は単純なテキスト平坦化に留めた。豊かなinline変換への統合は将来必要になれば別タスクで検討する。
+- 文書全体でのanchor一意性保証は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G005 Paragraph and text conversion(依存: G003)
