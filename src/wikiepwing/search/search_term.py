@@ -1,13 +1,27 @@
-"""SearchTerm model and title/redirect term generation (TASK-H008/J002-J005, ARCHITECTURE.md 14.1).
+"""SearchTerm model and term generation (TASK-H008/J002-J005/L005, ARCHITECTURE.md 14.1).
 
 `title_terms_for_article` covers the article's own title (`kind="title"`),
 its redirect-sourced aliases (`kind="redirect"`, TASK-H004), and three
 variants of each (`kind="alias"`): space-removed (TASK-J002, see
 `wikiepwing.search.space_variant`), hiragana/katakana-swapped (TASK-J003,
 see `wikiepwing.search.kana_variant`), and punctuation-removed (TASK-J004,
-see `wikiepwing.search.punctuation_variant`). reading/category/keyword/
+see `wikiepwing.search.punctuation_variant`). heading/infobox keyword/
 cross_component terms are separate, later work (no code generates them
-yet), as is the collision repository/report (TASK-J006).
+yet).
+
+`category_terms_for_article` (TASK-L005, `kind="category"`) is
+deliberately *not* folded into `title_terms_for_article`'s output: a
+category name maps to every article in it (one-to-many), unlike every
+other term kind here (one key -> one article, TASK-J006's collision
+resolution picks a single winner when two different articles' terms
+collide on the same key). Feeding category terms through
+`wikiepwing.search.backend_mapping.headwords_for_articles`'s
+single-candidate resolution would wrongly collapse a whole category down
+to one article's headword. Category terms only make sense once
+`rendered.sqlite3`'s `search_terms` table (DATA_CONTRACTS.md 7, no
+uniqueness constraint on `normalized_key` by design) has a persistence
+layer to hold every candidate; until then this function exists as a
+standalone generator callers can use directly.
 
 Priorities (TASK-J005) follow DATA_CONTRACTS.md 8's proposal, where a
 *higher* number wins. `sort_search_terms` applies its priority-descending
@@ -40,6 +54,7 @@ _TITLE_PRIORITY = 1000
 _REDIRECT_PRIORITY = 900
 _NORMALIZED_TITLE_VARIANT_PRIORITY = 800
 _KANA_VARIANT_PRIORITY = 600
+_CATEGORY_PRIORITY = 500
 
 _VARIANT_GENERATORS: tuple[tuple[Callable[[str], str | None], int, str], ...] = (
     (space_removed_variant, _NORMALIZED_TITLE_VARIANT_PRIORITY, "nfkc_case_space_variant"),
@@ -106,6 +121,25 @@ def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
         )
         terms.extend(_variant_terms(alias_normalized_key, article.page_id))
     return tuple(terms)
+
+
+def category_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
+    """Return one `kind="category"` SearchTerm per category the article belongs to.
+
+    See this module's docstring for why these are generated separately
+    from `title_terms_for_article` rather than merged into it.
+    """
+    return tuple(
+        SearchTerm(
+            key=category,
+            normalized_key=normalize_index_key(category),
+            target_page_id=article.page_id,
+            kind="category",
+            priority=_CATEGORY_PRIORITY,
+            source="category",
+        )
+        for category in article.categories
+    )
 
 
 def sort_search_terms(terms: Iterable[SearchTerm]) -> tuple[SearchTerm, ...]:

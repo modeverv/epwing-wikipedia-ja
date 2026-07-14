@@ -4070,3 +4070,35 @@ git diff --check
 **次タスク**
 
 - TASK-L005 Category search terms(依存: L004,J007)
+
+### 2026-07-15 08:25 UTC — TASK-L005
+
+**目的**
+
+- `ARCHITECTURE.md` 14.3(Full profileの"category")と`DATA_CONTRACTS.md` 8("500 category")を実装する。
+
+**変更**
+
+- `src/wikiepwing/search/search_term.py`に`category_terms_for_article()`を実装した。`article.categories`の各カテゴリについて`kind="category"`・priority=500・`source="category"`のSearchTermを生成する。カテゴリは「1カテゴリ名→複数記事」という一対多の性質を持ち、これまでのtitle/redirect/variant term(1キー→1記事、衝突時はTASK-J006で単一勝者に解決)とは相容れないため、`title_terms_for_article`とは独立した関数として実装し、`headwords_for_articles`(TASK-J007)の単一候補解決パスには通さない設計とした(理由をモジュールdocstringに明記)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 複数カテゴリからの複数term生成・`normalize_index_key`の適用・カテゴリ無し記事での空タプル・`title_terms_for_article`に含まれないことを4件のテストで確認した。
+- 標準スイート939件(新規4件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- カテゴリ検索は本来`rendered.sqlite3`の`search_terms`テーブル(正規化キーへのUNIQUE制約無し、複数候補を保持できる設計、TASK-J006で気づき済み)向けの機能であり、その永続化層がまだ実装されていないため、本タスクは純粋なterm生成関数のみを提供するに留めた。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- EPIC M(Unicode and gaiji、依存: B009)

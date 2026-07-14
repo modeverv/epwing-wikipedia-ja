@@ -599,7 +599,7 @@
 
 **依存:** E008,H007
 
-### TASK-L005 [ ] Category search terms
+### TASK-L005 [x] Category search terms
 
 **依存:** L004,J007
 

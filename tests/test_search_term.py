@@ -8,6 +8,7 @@ from wikiepwing.model.article import Alias, Article
 from wikiepwing.search.search_term import (
     SearchTerm,
     SearchTermError,
+    category_terms_for_article,
     sort_search_terms,
     title_terms_for_article,
 )
@@ -223,3 +224,38 @@ def test_sort_search_terms_tie_breaks_by_normalized_key_then_page_id_then_source
     c = _term(500, "a", page_id=1, source="b")
 
     assert sort_search_terms([a, b, c]) == (b, c, a)
+
+
+def test_category_terms_generate_one_term_per_category() -> None:
+    article = _make_article(categories=("Text editors", "Free software"))
+
+    terms = category_terms_for_article(article)
+
+    assert len(terms) == 2
+    assert {term.key for term in terms} == {"Text editors", "Free software"}
+    assert all(term.kind == "category" for term in terms)
+    assert all(term.priority == 500 for term in terms)
+    assert all(term.target_page_id == article.page_id for term in terms)
+    assert all(term.source == "category" for term in terms)
+
+
+def test_category_terms_use_normalized_index_key() -> None:
+    article = _make_article(categories=("Ｅｍａｃｓ",))
+
+    terms = category_terms_for_article(article)
+
+    assert terms[0].normalized_key == "emacs"
+
+
+def test_no_categories_yields_no_category_terms() -> None:
+    article = _make_article()
+
+    assert category_terms_for_article(article) == ()
+
+
+def test_category_terms_are_not_part_of_title_terms_for_article() -> None:
+    article = _make_article(categories=("Text editors",))
+
+    terms = title_terms_for_article(article)
+
+    assert not any(term.kind == "category" for term in terms)
