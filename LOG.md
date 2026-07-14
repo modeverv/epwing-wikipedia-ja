@@ -2169,3 +2169,38 @@ git diff --check
 **次タスク**
 
 - TASK-F007 Compressed model DB schema(依存: F006)
+
+### 2026-07-14 09:35 UTC — TASK-F007
+
+**目的**
+
+- `DATA_CONTRACTS.md` 5節の"model.sqlite3 schema draft"を実マイグレーションとして実装する。`migrations/raw/001_initial.sql` + `ingest/database.py`と同じ構造をmodel.sqlite3向けに再現した。
+
+**変更**
+
+- `migrations/model/001_initial.sql`(`PRAGMA application_id = 1297040460`〈ASCII "MODL"〉、`schema_migrations`/`articles`/`links`/`media_references`/`diagnostics`/`metadata`、STRICT/`WITHOUT ROWID, STRICT`/CHECK制約)を新規作成した。
+- `src/wikiepwing/model/database.py`に`ModelDatabaseError`/`Migration`/`connect_model_database`/`initialize_model_database`を実装した(`ingest/database.py`のマイグレーションエンジンを踏襲、model向けにパス/エラーメッセージのみ変更)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_model_database.py
+make check
+git diff --check
+```
+
+**結果**
+
+- schema作成・STRICT/PRAGMA検証、CHECK制約による不正行拒否、idempotentな再初期化、checksum不一致検出、失敗マイグレーションのrollback、gap/symlink/oversizedなmigration setの拒否を7件のテストで確認した。
+- 標準スイート478件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+- `docker/app.Dockerfile`は`COPY migrations ./migrations`で`migrations/`配下全体をコピーするため、`migrations/model/`は変更不要で自動的に含まれることを確認した。
+
+**判断・注意点**
+
+- Repository層(実際のarticle書き込み)は`TASK-G012`(依存: F007-F008,G011)に委ね、本タスクではschemaと接続/マイグレーションモジュールのみを実装した。`article_logical_hash`列はTASK-F008のhash関数が返す値を書き込む前提のCHECK制約(sha256 hex, 64文字)のみ定義した。
+- `ingest/database.py`とのコード重複は既存の`raw`/`reference`データベースモジュール間の重複と同様、許容する判断とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-F008 Logical hash(依存: F006)

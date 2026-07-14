@@ -347,7 +347,7 @@
 
 **依存:** F004-F005
 
-### TASK-F007 [ ] Compressed model DB schema
+### TASK-F007 [x] Compressed model DB schema
 
 **依存:** F006
 
