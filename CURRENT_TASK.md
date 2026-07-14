@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-N001
+TASK-N002
 
 ## 目的
 
-`ARCHITECTURE.md` 15.7(数式: 1.テキスト代替を保存 2.TeX sourceがあればcache keyに使用...)の最初の段階として、記事HTML中の数式ノード(`<math>`要素、MathML)を検出し、TeX source・テキスト代替・block/inline区分を抽出する。MediaWikiのMath拡張は`<math>`要素にMathML標準の`alttext`属性(TeX風の代替テキスト)と`display`属性(`"block"`/`"inline"`)を付与し、`<annotation encoding="application/x-tex">`子要素に元のTeX sourceを保持するという安定した標準に基づく(MediaWiki固有のwrapper class名の詳細ではなく、MathML仕様自体の属性に依拠することで、確認できないHTML実例への依存を避ける)。
+`ARCHITECTURE.md` 15.7の"2. TeX sourceがあればcache keyに使用"を実装する。TASK-N001の`RawMathNode`から、表記ゆれ(空白の差・Unicode正規化形式の違い)を吸収した正準形(canonical form)を作り、それをcache keyとして使えるハッシュへ変換する。TeX sourceが無い場合はテキスト代替(alttext)へフォールバックし、両方とも無い場合は安定したcache keyを作れないため`None`を返す(呼び出し側はcacheせずレンダリングする、TASK-N003-N004の対象)。
 
 ## 事前条件
 
@@ -14,15 +14,14 @@ TASK-N001
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-N001(依存: G001)を読んだ
-- [x] `ARCHITECTURE.md` 15.7(数式の優先順位)を再確認した
-- [x] `model/blocks.py`の`MathBlock`(`source`/`source_format`)を確認した(HTML変換はTASK-N002以降)
-- [x] MathML標準の`<math alttext="..." display="block|inline">`属性と`<annotation encoding="application/x-tex">`子要素という安定した規約を判断根拠として採用した(MediaWiki固有のwrapper HTML構造の詳細確認はできないため)
+- [x] `TASKS.md`のTASK-N002(依存: N001)を読んだ
+- [x] `ARCHITECTURE.md` 15.7("2. TeX sourceがあればcache keyに使用")を再確認した
+- [x] TASK-N001の`RawMathNode`(`tex_source`/`text_alternative`)を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/normalize/math_node.py`(新規: `RawMathNode`, `is_math_node()`, `parse_math_node()`)
-- `tests/test_normalize_math_node.py`(新規)
+- `src/wikiepwing/normalize/math_source.py`(新規: `canonicalize_math_source()`, `compute_math_cache_key()`)
+- `tests/test_normalize_math_source.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,25 +29,25 @@ TASK-N001
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_normalize_math_node.py
+uv run pytest tests/test_normalize_math_source.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `is_math_node(node)`が`<math>`要素を検出する
-- [x] `parse_math_node(node)`が、`<annotation encoding="application/x-tex">`からTeX sourceを、`alttext`属性からテキスト代替を、`display`属性からblock/inline区分を抽出する
-- [x] TeX source・alttextが無い場合はNoneを返す(データを失わない、Noneのまま保持)
+- [x] `canonicalize_math_source(text)`が、NFC正規化+空白run畳み込み+trimを行う
+- [x] `compute_math_cache_key(node)`が、`tex_source`があればそれを優先し、無ければ`text_alternative`にフォールバックしてSHA-256ハッシュを返す
+- [x] 表記ゆれのある同一の数式(空白の差等)が同じcache keyになる
+- [x] `tex_source`/`text_alternative`が両方とも無い場合は`None`を返す
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際の`MathBlock`/`MathInline`モデルへの変換(TASK-N002以降)
-- レンダリング・cache・fallback(TASK-N003-N007)
+- 実際のレンダリング・cache格納(TASK-N003-N004)
 
 ## 実施結果
 
-- `src/wikiepwing/normalize/math_node.py`に`RawMathNode`・`is_math_node()`・`parse_math_node()`を実装した。MathML標準の`alttext`/`display`属性と`<annotation encoding="application/x-tex">`子要素(ネストの深さに依らず再帰探索)からTeX source・テキスト代替・block/inline区分を抽出する。
-- `tests/test_normalize_math_node.py`(新規11件)で、math要素の検出・非検出・TeX source抽出・alttext抽出・display=block/inline/欠落の判定・TeX source欠落時のNone・alttext欠落時のNone・異なるencodingのannotationの無視・深くネストしたannotationの探索・非math要素へのエラーを確認した。
-- `make check`(format-check/lint/mypy/pytest 1033件)と`git diff --check`が成功した。
+- `src/wikiepwing/normalize/math_source.py`に`canonicalize_math_source()`・`compute_math_cache_key()`を実装した。NFC正規化+空白run畳み込み+trimでcanonical formを作り、`tex_source`優先・`text_alternative`フォールバックでSHA-256ハッシュを計算する。両方とも無い/canonical化後に空文字列になる場合は`None`を返す。
+- `tests/test_normalize_math_source.py`(新規10件)で、空白畳み込み・trim・NFC正規化・tex_source優先・text_alternativeへのフォールバック・両方無い場合のNone・空白のみの場合のNone・表記ゆれのある同一数式での同一key・異なる数式での異なるkey・SHA-256 hex digest形式を確認した。
+- `make check`(format-check/lint/mypy/pytest 1043件)と`git diff --check`が成功した。

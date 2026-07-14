@@ -651,7 +651,7 @@
 
 **依存:** G001
 
-### TASK-N002 [ ] Canonical math source
+### TASK-N002 [x] Canonical math source
 
 **依存:** N001
 
