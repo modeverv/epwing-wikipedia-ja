@@ -4199,3 +4199,36 @@ git diff --check
 **次タスク**
 
 - TASK-M004 Gaiji registry schema(依存: M002)
+
+### 2026-07-15 09:45 UTC — TASK-M004
+
+**目的**
+
+- `ARCHITECTURE.md` 18.3(Gaiji registry)の永続化スキーマを実装する。既存の`ingest/database.py`・`model/database.py`・`reference/database.py`と同じmigrationエンジンパターンを複製する。
+
+**変更**
+
+- `migrations/gaiji/001_initial.sql`に`gaiji_registry`テーブル(18.3の全フィールド、`normalized_sequence`にUNIQUE制約)を実装した。`application_id`は既存3 DBの慣習("MODL"/"RAWD"のような4文字ASCIIコード)に倣い"GAJI"(1195461193)を採用した。
+- `src/wikiepwing/gaiji/database.py`に`connect_gaiji_database()`・`initialize_gaiji_database()`・`GaijiDatabaseError`を実装した(`model/database.py`のmigrationエンジンをそのまま複製)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_database.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 初期migration・有効行のINSERT・重複normalized_sequenceの拒否・不正width_classの拒否・負のusage_countの拒否・migrationの冪等性/チェックサム不一致検出・失敗migrationのロールバック・不正migration集合の拒否を10件のテストで確認した。
+- 標準スイート978件(新規10件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 「同じ文字列は一度だけbitmap生成します」(18.3)という要件を、アプリケーションロジックだけでなくDBレベルのUNIQUE制約でも保証する設計にした(重複INSERTが確実に失敗する)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M005 Glyph bitmap renderer(依存: M004)

@@ -619,7 +619,7 @@
 
 **依存:** M002
 
-### TASK-M004 [ ] Gaiji registry schema
+### TASK-M004 [x] Gaiji registry schema
 
 **依存:** M002
 
