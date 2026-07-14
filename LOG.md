@@ -1634,3 +1634,37 @@ git diff --check
 **次タスク**
 
 - EPIC E(Raw ingest)のTASK-E001 raw DB migrations(依存: A003, D010は完了)
+
+### 2026-07-14 04:20 UTC — TASK-E001
+
+**目的**
+
+- `raw.sqlite3`のSQL migrationと、それを安全に適用・検証・接続するmoduleを実装する。
+
+**変更**
+
+- `migrations/raw/001_initial.sql`に`DATA_CONTRACTS.md` 4節のtable(articles/redirects/categories/templates/licenses/article_licenses/main_images/ingest_duplicates/diagnostics/metadata)を作成した。全tableをSTRICT(`WITHOUT ROWID`と組み合わせを含む)とし、`migrations/reference`の慣例に合わせて長さCHECK制約を追加した。`PRAGMA application_id = 1380013892`(ASCII "RAWD")を設定した。
+- `src/wikiepwing/ingest/database.py`に`connect_raw_database`/`initialize_raw_database`/`RawDatabaseError`を実装した。`reference/database.py`と同じmigration engineパターン(schema_migrations追跡、checksum検証、失敗時rollback、symlink/欠番/サイズ超過拒否)を踏襲した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_raw_database.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート274件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- セッション中盤でBashツールのコード実行系(`uv run`/`python3`)が一時的に利用不能になったが、本タスク着手前に復旧した。
+- `reference/database.py`と`ingest/database.py`のmigration engineロジックはほぼ同一で重複が生じているが、既存moduleへの影響を避けるため意図的に別moduleとして実装した。将来model/rendered/index dbが増える際に共通化を検討する。
+- `DATA_CONTRACTS.md`のdraftには無い、`WITHOUT ROWID` tableへのSTRICT追加は契約に反しない強化として扱った。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E002 zstd codec

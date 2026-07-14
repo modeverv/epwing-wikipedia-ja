@@ -259,7 +259,7 @@
 
 ## EPIC E — Raw ingest
 
-### TASK-E001 [ ] raw DB migrations
+### TASK-E001 [x] raw DB migrations
 
 **依存:** A003,D010
 
