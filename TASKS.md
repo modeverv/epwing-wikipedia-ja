@@ -427,7 +427,7 @@
 
 **依存:** H001,E008
 
-### TASK-H003 [ ] External link policy
+### TASK-H003 [x] External link policy
 
 **依存:** H001
 

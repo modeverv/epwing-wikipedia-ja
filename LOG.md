@@ -2740,3 +2740,36 @@ git diff --check
 **次タスク**
 
 - TASK-H003 External link policy(依存: H001)
+
+### 2026-07-14 15:45 UTC — TASK-H003
+
+**目的**
+
+- `ARCHITECTURE.md` 12.5最終行"外部サイトへのリンクはplain URLまたは注記として残します"を実装する。H001が内部linkでは無いと判定したURLを安全に`ExternalLinkInline`化するか、labelのみへfallbackする。
+
+**変更**
+
+- `src/wikiepwing/links/external_policy.py`に`apply_external_link_policy`/`ExternalLinkPolicyError`を実装した。`http`/`https`および`//host/...`(protocol-relative、`https:`を補完)のみを`policy="plain-text"`で`ExternalLinkInline`化し、`javascript:`/`data:`/`mailto:`等の安全でないURLはlabelをそのまま返す(情報を失わない)。未知の`policy`値は明示的にエラーとする。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_links_external_policy.py
+make check
+git diff --check
+```
+
+**結果**
+
+- http/https/protocol-relativeの`ExternalLinkInline`化、javascript:/data:/mailto:のlabelのみfallback、未知policyの拒否、空labelの保持を8件のテストで確認した。
+- 標準スイート646件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 現時点で`config/default.toml`の`[references] external_urls`には`"plain-text"`のみが設定されており、他のpolicy値は明文化されていないため`"plain-text"`のみを受け付ける設計とした。将来別の値(footnote等)が必要になれば拡張する。
+- Redirect alias抽出(H004)、References/footnote sectionでの実際のrendering(Epic L)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H004 Redirect alias extraction(依存: E008)
