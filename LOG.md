@@ -1834,3 +1834,37 @@ git diff --check
 **次タスク**
 
 - TASK-E007 Batch repository writer
+
+### 2026-07-14 05:50 UTC — TASK-E007
+
+**目的**
+
+- `raw.sqlite3`への実際の書込を行うrepositoryを実装する。transaction・prepared SQL・foreign keyを守る。
+
+**変更**
+
+- `src/wikiepwing/ingest/repository.py`に`RawRepository`、`normalize_title`、`RawRepositoryError`を実装した。
+- `get_existing_accepted`は`ingest_status='accepted'`の行のみを対象にする。`write_accepted_article`はUPSERT+zstd圧縮+子行のFK順序を守った置換、`write_rejected_article`はblob/子行無しで記録、`write_duplicate`/`write_diagnostic`は対応tableへ記録する。`batch()`がtransactionを管理する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_repository.py
+make check
+git diff --check
+```
+
+**結果**
+
+- TASK-D010の10正常記事をすべて書込み、`PRAGMA integrity_check`/`foreign_key_check`が共に成功することを確認した。
+- 標準スイート350件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- title正規化は最小限のNFKC+trimのみとし、実際の日本語索引正規化はEPIC Jへ委ねた。
+- `validate_article`/`resolve_duplicate`の呼び出しはTASK-E008(Ingestコマンド)のオーケストレーション対象とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E008 Ingest command

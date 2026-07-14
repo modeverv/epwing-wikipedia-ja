@@ -295,7 +295,7 @@
 
 **実装:** page ID/revision/hash rules。
 
-### TASK-E007 [ ] Batch repository writer
+### TASK-E007 [x] Batch repository writer
 
 **依存:** E001,E002,E006
 
