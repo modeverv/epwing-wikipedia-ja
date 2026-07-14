@@ -1702,3 +1702,36 @@ git diff --check
 **次タスク**
 
 - TASK-E003 Tar streaming reader
+
+### 2026-07-14 04:50 UTC — TASK-E003
+
+**目的**
+
+- acquireされたchunkの`.tar.gz`から、全展開せずにNDJSON行をstreamingで読み出すreaderを実装する。
+
+**変更**
+
+- `src/wikiepwing/ingest/tar_reader.py`に`iter_ndjson_lines`、`TarStreamError`を実装した。`tarfile.open(..., mode="r|gz")`の純粋streamingモードで、唯一の`*.ndjson`通常file memberを検証してgeneratorとして1行ずつ返す。symlink・directory・path traversal名・2つ目のmemberを拒否する。streaming modeの制約上、「member数」検証はgenerator完全消費後に完了する(tarfileが未読データを自動skipする性質を利用)。
+- 1行あたりのbyte数上限(既定8 MiB)を実装した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_tar_reader.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `tests/fixtures/enterprise/normal_articles.ndjson`(TASK-D010)を実際にtar.gz化し、end-to-endで10行すべて正しく読めることを確認した。
+- 標準スイート298件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実データではchunk archiveが常に1 memberのみだった前提(TASK-D005/D009で確認済み)を踏襲し、複数member・0 memberを異常として拒否した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E004 NDJSON record parser

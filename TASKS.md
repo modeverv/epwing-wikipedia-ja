@@ -271,7 +271,7 @@
 
 **実装:** deterministic settings、roundtrip、size limits。
 
-### TASK-E003 [ ] Tar streaming reader
+### TASK-E003 [x] Tar streaming reader
 
 **依存:** D010
 
