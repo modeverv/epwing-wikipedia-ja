@@ -587,7 +587,7 @@
 
 **依存:** G001
 
-### TASK-L002 [ ] Reference list parser
+### TASK-L002 [x] Reference list parser
 
 **依存:** L001
 

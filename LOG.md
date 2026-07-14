@@ -3973,3 +3973,35 @@ git diff --check
 **次タスク**
 
 - TASK-L002 Reference list parser(依存: L001)
+
+### 2026-07-15 07:20 UTC — TASK-L002
+
+**目的**
+
+- `ARCHITECTURE.md` 12.2の"N100 Convert references"の続きとして、記事末尾の参照リスト(MediaWiki Cite拡張の`<ol class="references">`)を解析する。
+
+**変更**
+
+- `src/wikiepwing/normalize/reference_list.py`に`RawReferenceItem`・`is_reference_list()`・`parse_reference_list()`を実装した。各`<li>`から`note_id`(`id`属性、TASK-L001のマーカーの`target_id`と対応)と、`<span class="reference-text">`があればその内容、無ければbacklinkを除いた残りを`content`として抽出する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_reference_list.py
+make check
+git diff --check
+```
+
+**結果**
+
+- リスト検出・非検出・note_id+reference-text抽出・複数項目の順序保持・backlinkのみ除去のフォールバック・id欠落時のNone・非リストへの呼び出し時のエラー・非`<li>`子要素の無視を8件のテストで確認した。
+- 標準スイート927件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ReferencesBlock`(既存モデル)は`items: tuple[tuple[Inline,...],...]`のみでid情報を保持しない設計のため、`note_id`は将来のマーカー⇔リスト対応付けの布石として抽出するに留め、TASK-L003での実際のBlock組み立てには使わない。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-L003 Reference renderer(依存: L002,H007)
