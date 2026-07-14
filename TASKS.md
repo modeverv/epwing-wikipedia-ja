@@ -351,7 +351,7 @@
 
 **依存:** F006
 
-### TASK-F008 [ ] Logical hash
+### TASK-F008 [x] Logical hash
 
 **依存:** F006
 

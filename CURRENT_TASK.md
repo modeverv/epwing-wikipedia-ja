@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-F007
+TASK-F008
 
 ## 目的
 
-`DATA_CONTRACTS.md` 5節の"model.sqlite3 schema draft"を実マイグレーションとして実装し、`migrations/raw/001_initial.sql` + `src/wikiepwing/ingest/database.py`と同じ既存パターンをmodel.sqlite3向けに再現する(`src/wikiepwing/model/database.py`)。本タスクはschemaと接続/マイグレーション適用モジュールまでを対象とし、実際の書き込みRepository(TASK-G012が`F007-F008,G011`に依存して実装)は対象外とする。
+`TASKS.md`のTASK-F008完了条件("order-independent sources yield deterministic canonical output where contract permits")を満たす、Articleの論理hash(logical hash)計算を実装する。TASK-F006のcanonical JSON codecの上に構築し、抽出順序が非決定的なcollection(aliases/categories/media/diagnostics/source_license_ids)を安定した順序に正規化してからhashすることで、意味的に同じ内容なら抽出順序に関わらず同一hashになるようにする。block配列(本文の出現順序)は意味を持つため並べ替えない。
 
 ## 事前条件
 
@@ -14,16 +14,14 @@ TASK-F007
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-F007(依存: F006)とTASK-G012(依存: F007-F008,G011、"Normalize command and model DB write")を読んだ。model DB書き込みの実装はG012側であることを確認した
-- [x] `DATA_CONTRACTS.md` 5節(model.sqlite3 schema draft: articles/links/media_references/diagnostics)・6節(Article JSON contract)を確認した
-- [x] `ARCHITECTURE.md`のpipeline図・§20.1 manifest例(`model.sqlite3`の`logical_hash`)・§22.3 disk見積りを確認した
-- [x] `migrations/raw/001_initial.sql`と`src/wikiepwing/ingest/database.py`(`RawDatabaseError`/`Migration`/`connect_raw_database`/`initialize_raw_database`)を実装パターンとして踏襲する
+- [x] `TASKS.md`のTASK-F008(依存: F006、完了条件: order-independent sources yield deterministic canonical output where contract permits)を読んだ
+- [x] `ARCHITECTURE.md` 26.1(physical SHA-256 vs logical hashの区別、ただしEPWINGパッケージ出力の文脈)を確認し、Article/model層でのlogical hashの算出方法自体は明文化されていないことを確認した(documented assumptionとして設計する)
+- [x] `src/wikiepwing/model/canonical.py`(`encode_article`のkey順ソート済みJSON出力)を確認した
 
 ## 変更予定ファイル
 
-- `migrations/model/001_initial.sql`
-- `src/wikiepwing/model/database.py`
-- `tests/test_model_database.py`
+- `src/wikiepwing/model/logical_hash.py`
+- `tests/test_model_logical_hash.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,34 +29,32 @@ TASK-F007
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_model_database.py
+uv run pytest tests/test_model_logical_hash.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `migrations/model/001_initial.sql`が`schema_migrations`/`articles`/`links`/`media_references`/`diagnostics`/`metadata`テーブルを`DATA_CONTRACTS.md` 5節通りに定義する(STRICT、`WITHOUT ROWID, STRICT`、CHECK制約、`PRAGMA application_id`)
-- [x] `src/wikiepwing/model/database.py`が`connect_model_database`/`initialize_model_database`/`ModelDatabaseError`/`Migration`を提供し、`ingest/database.py`と同じ安全策(busy_timeout, foreign_keys, integrity_check, foreign_key_check, migration sha256検証, versionの連番検証)を持つ
-- [x] 初期化後に`PRAGMA integrity_check`/`PRAGMA foreign_key_check`が成功する
-- [x] 2回目の初期化(既に適用済み)がidempotentに成功する
-- [x] マイグレーションのchecksum不一致・versionの欠番・シンボリックリンク・サイズ超過を拒否する
+- [x] `compute_logical_hash(article) -> str`が64文字16進のsha256 hex digestを返す
+- [x] `aliases`/`categories`/`media`/`diagnostics`/`source_license_ids`のtuple順序を入れ替えても同一Articleに対して同一hashを返す(order-independent)
+- [x] `blocks`の順序を入れ替えると異なるhashになる(本文順序は意味を持つため正規化しない)
+- [x] 内容が異なるArticleは異なるhashになる
+- [x] 同一入力に対して複数回呼び出しても同一hashを返す(決定的)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Model repository(実際のarticle書き込み、TASK-G012で実装)
-- Logical hash計算(TASK-F008)
-- normalize orchestration(Epic G)
+- EPWINGパッケージ出力のphysical/logical hash(`ARCHITECTURE.md` 26.1、別epic)
+- model DBへのhash書き込み(TASK-G012)
 
 ## 実施結果
 
-- `migrations/model/001_initial.sql`を新規作成した(schema_migrations/articles/links/media_references/diagnostics/metadata、STRICT/WITHOUT ROWID, STRICT/CHECK制約、`PRAGMA application_id = 1297040460`)。
-- `src/wikiepwing/model/database.py`に`ModelDatabaseError`/`Migration`/`connect_model_database`/`initialize_model_database`を実装した。
-- `tests/test_model_database.py`に7件のテストを追加。
-- `uv run pytest tests/test_model_database.py`: 7 passed。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート478件)すべて成功。
+- `src/wikiepwing/model/logical_hash.py`に`compute_logical_hash`を実装した。
+- `tests/test_model_logical_hash.py`に9件のテストを追加。
+- `uv run pytest tests/test_model_logical_hash.py`: 9 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート487件)すべて成功。
 - `git diff --check`: 問題なし。
-- `docker/app.Dockerfile`の`COPY migrations ./migrations`により`migrations/model/`は変更不要で自動的に含まれることを確認した。
-- `TASKS.md`(F007チェック)、`LOG.md`(新規エントリ)を更新した。
-- 次タスク: TASK-F008 Logical hash。
+- `TASKS.md`(F008チェック)、`LOG.md`(新規エントリ)を更新した。
+- "order-independent"とみなすcollectionの選定(aliases/categories/media/diagnostics/source_license_idsのみ、blocksは対象外)はdocumented assumption。
+- Epic F(Model)完了。次はEpic G(HTML normalization baseline)。

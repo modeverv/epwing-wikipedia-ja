@@ -2204,3 +2204,36 @@ git diff --check
 **次タスク**
 
 - TASK-F008 Logical hash(依存: F006)
+
+### 2026-07-14 10:00 UTC — TASK-F008
+
+**目的**
+
+- `TASKS.md` TASK-F008の完了条件("order-independent sources yield deterministic canonical output where contract permits")を満たすArticleのlogical hashを実装する。
+
+**変更**
+
+- `src/wikiepwing/model/logical_hash.py`に`compute_logical_hash(article) -> str`を実装した。`aliases`/`categories`/`media`/`diagnostics`/`source_license_ids`を安定キーでソートしてから`canonical.py`と同じ決定的JSON serialization(`sort_keys=True`/`ensure_ascii=False`/固定separators)でsha256 hex digestを計算する。`blocks`は本文順序が意味を持つため並べ替えない。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_model_logical_hash.py
+make check
+git diff --check
+```
+
+**結果**
+
+- hash長(64 hex)、決定性、categories/source_license_ids/aliases/media/diagnosticsの順序非依存性、blocks順序変更時のhash変化、内容差分時のhash変化を9件のテストで確認した。
+- 標準スイート487件(新規9件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- どのcollectionを"order-independent"とみなすかは`ARCHITECTURE.md`/`DATA_CONTRACTS.md`に明文化が無かったため、抽出順序が非決定的になり得るaliases/categories/media/diagnostics/source_license_idsのみ正規化し、文書順序を持つblocks(と内部のinline/list item/table cell等)は対象外とするdocumented assumptionを採用した。
+- EPWINGパッケージ出力のphysical/logical hash(`ARCHITECTURE.md` 26.1)とmodel DBへの実際の書き込み(TASK-G012)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- Epic F完了。TASK-G001以降(HTML normalization baseline)へ進む。
