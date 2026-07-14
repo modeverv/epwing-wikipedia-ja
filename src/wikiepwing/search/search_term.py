@@ -1,8 +1,10 @@
-"""SearchTerm model and title/redirect term generation (TASK-H008, ARCHITECTURE.md 14.1).
+"""SearchTerm model and title/redirect term generation (TASK-H008/J002, ARCHITECTURE.md 14.1).
 
-`title_terms_for_article` covers only the two term kinds this task scopes:
-the article's own title (`kind="title"`) and its redirect-sourced aliases
-(`kind="redirect"`, TASK-H004). reading/category/keyword/cross_component
+`title_terms_for_article` covers the article's own title (`kind="title"`),
+its redirect-sourced aliases (`kind="redirect"`, TASK-H004), and a
+space-removed variant of each (`kind="alias"`, TASK-J002 -- see
+`wikiepwing.search.space_variant` for why only the space axis needs a
+separately stored SearchTerm). reading/category/keyword/cross_component
 terms are separate, later work, as are the collision rules (14.2) and
 per-profile indexing (14.3).
 """
@@ -14,6 +16,7 @@ from typing import Literal
 
 from wikiepwing.model.article import Article
 from wikiepwing.search.normalize_key import normalize_index_key
+from wikiepwing.search.space_variant import space_removed_variant
 
 SearchTermKind = Literal[
     "title", "redirect", "alias", "reading", "category", "keyword", "cross_component"
@@ -22,6 +25,7 @@ _KINDS = ("title", "redirect", "alias", "reading", "category", "keyword", "cross
 
 _TITLE_PRIORITY = 0
 _REDIRECT_PRIORITY = 10
+_SPACE_VARIANT_PRIORITY = 20
 
 
 class SearchTermError(ValueError):
@@ -53,28 +57,48 @@ class SearchTerm:
 
 
 def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
-    """Return the title and redirect-alias SearchTerms for one Article."""
+    """Return the title, redirect-alias, and space-removed variant SearchTerms."""
+    title_normalized_key = normalize_index_key(article.title)
     terms = [
         SearchTerm(
             key=article.title,
-            normalized_key=normalize_index_key(article.title),
+            normalized_key=title_normalized_key,
             target_page_id=article.page_id,
             kind="title",
             priority=_TITLE_PRIORITY,
             source="normalize",
         )
     ]
+    terms.extend(_space_variant_terms(title_normalized_key, article.page_id))
     for alias in article.aliases:
         if alias.source != "redirect":
             continue
+        alias_normalized_key = normalize_index_key(alias.title)
         terms.append(
             SearchTerm(
                 key=alias.title,
-                normalized_key=normalize_index_key(alias.title),
+                normalized_key=alias_normalized_key,
                 target_page_id=article.page_id,
                 kind="redirect",
                 priority=_REDIRECT_PRIORITY,
                 source="redirect",
             )
         )
+        terms.extend(_space_variant_terms(alias_normalized_key, article.page_id))
     return tuple(terms)
+
+
+def _space_variant_terms(normalized_key: str, page_id: int) -> tuple[SearchTerm, ...]:
+    variant = space_removed_variant(normalized_key)
+    if variant is None:
+        return ()
+    return (
+        SearchTerm(
+            key=variant,
+            normalized_key=variant,
+            target_page_id=page_id,
+            kind="alias",
+            priority=_SPACE_VARIANT_PRIORITY,
+            source="nfkc_case_space_variant",
+        ),
+    )

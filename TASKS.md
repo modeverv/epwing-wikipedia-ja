@@ -511,7 +511,7 @@
 
 **依存:** H008
 
-### TASK-J002 [ ] NFKC/case/space variants
+### TASK-J002 [x] NFKC/case/space variants
 
 **依存:** J001
 

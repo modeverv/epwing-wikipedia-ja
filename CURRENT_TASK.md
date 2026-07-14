@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-J001
+TASK-J002
 
 ## 目的
 
-`ARCHITECTURE.md` 14(Search architecture)と`DATA_CONTRACTS.md` 8(SearchTerm contract、例: `"key": "Ｅｍａｃｓ"` -> `"normalized_key": "emacs"`)が要求する索引キー正規化を、単一の正本関数として明文化する。現状`search_term.py`は`ingest.repository.normalize_title`(NFKC + strip のみ、大文字小文字を畳み込まない)を流用しており、`Ｅｍａｃｓ`は`Emacs`にはなるが`emacs`にはならず、DATA_CONTRACTS.mdの例と食い違う。EPIC J以降(NFKC/case/space variants、kana variants、punctuation variants)が積み上がる土台として、検索索引専用の正規化契約を`search`パッケージ内に切り出す。
+`ARCHITECTURE.md` 14 / `PLAN.md`のNFKC/case/space variantsを実装する。設計を詰める過程で気づいた点: NFKC正規化とcase-foldの2軸は、TASK-J001の`normalize_index_key`が**クエリ側にも同じ関数を適用する前提**(TASK-J007のbackend search mappingで保証される)であれば、既存の1つの`normalized_key`だけで自動的に吸収される――全角`Ｅｍａｃｓ`で検索しても半角`Emacs`で検索しても、双方が`normalize_index_key`を通れば同じ`"emacs"`になるため、別々のSearchTermを追加登録する必要が無い。一方で**空白**は事情が異なる: `normalize_index_key`は空白の「連続run」を1個のスペースへ畳み込むだけで、空白を完全に除去はしない。したがって"New York"(スペース1個)と"NewYork"(スペース無し)は正規化しても別の文字列のままであり、ユーザーがスペース無しで検索した場合にヒットさせるには、**スペース除去済みの別バリアントを明示的にSearchTermとして追加登録する**必要がある。本タスクはこの空白除去バリアント生成を実装する(NFKC/case軸は追加実装不要であることをテストで明示する)。
 
 ## 事前条件
 
@@ -14,17 +14,17 @@ TASK-J001
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-J001(依存: H008)を読んだ
-- [x] `ARCHITECTURE.md` 14.1-14.3(SearchTerm/衝突規則/プロファイル別索引)を確認した
-- [x] `DATA_CONTRACTS.md` 8(SearchTerm contract、priority proposal)を確認した
-- [x] 既存`search/search_term.py`が`ingest.repository.normalize_title`(NFKC+strip、case-fold無し)を流用しており、DATA_CONTRACTS.mdの例(`Ｅｍａｃｓ` -> `emacs`)を満たさないことに気づいた
+- [x] `TASKS.md`のTASK-J002(依存: J001)を読んだ
+- [x] `ARCHITECTURE.md` 14.1-14.3・`DATA_CONTRACTS.md` 8を再確認した
+- [x] TASK-J001の`normalize_index_key`がNFKC+case-fold+空白run畳み込みを行うことを確認した
+- [x] NFKC/case軸は共有の正規化関数で双方向に吸収されるが、空白の完全除去だけは別途バリアント生成が必要であることに気づいた
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/search/normalize_key.py`(新規: `normalize_index_key()`)
-- `src/wikiepwing/search/search_term.py`(`normalize_title`の代わりに`normalize_index_key`を使うよう変更)
-- `tests/test_search_normalize_key.py`(新規)
-- `tests/test_search_term.py`(既存テストが新しい正規化結果と整合するか確認・必要なら更新)
+- `src/wikiepwing/search/space_variant.py`(新規: `space_removed_variant()`)
+- `src/wikiepwing/search/search_term.py`(`title_terms_for_article`が空白除去バリアントも生成するよう拡張)
+- `tests/test_search_space_variant.py`(新規)
+- `tests/test_search_term.py`(空白除去バリアント生成の回帰テスト追加)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -32,26 +32,27 @@ TASK-J001
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_search_normalize_key.py tests/test_search_term.py
+uv run pytest tests/test_search_space_variant.py tests/test_search_term.py tests/test_search_normalize_key.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `normalize_index_key(text)`が、NFKC正規化・Unicode case-fold・空白の畳み込みとtrimを行う
-- [x] `normalize_index_key("Ｅｍａｃｓ") == "emacs"`(DATA_CONTRACTS.md 8の例と一致)
-- [x] `search_term.title_terms_for_article`が`normalize_index_key`を使うよう切り替わる
+- [x] `space_removed_variant(normalized_key)`が、空白を含む場合は空白除去済み文字列を返し、含まない場合は`None`を返す(重複SearchTerm防止)
+- [x] `title_terms_for_article`が、titleおよびredirectエイリアスそれぞれについて、空白除去バリアントが元と異なる場合のみ`kind="alias"`のSearchTermを追加生成する
+- [x] NFKC/case軸(全角⇔半角、大文字⇔小文字)は`normalize_index_key`だけで双方向に吸収されることをテストで明示する(新規SearchTerm生成が不要であることの根拠)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- kana variant・punctuation variant・alias priority統一・collision repository(TASK-J002-J006)
-- `ingest.repository.normalize_title`自体の変更(ingest側の重複解決に使われており、別の関心事のため据え置く)
+- kana variant(TASK-J003)・punctuation variant(TASK-J004)
+- alias priority統一(TASK-J005)・collision repository(TASK-J006)・backend search mapping(TASK-J007、クエリ側にも`normalize_index_key`を適用する実配線はここで行う)
 
 ## 実施結果
 
-- `src/wikiepwing/search/normalize_key.py`に`normalize_index_key()`/`NormalizeKeyError`を実装した。NFKC正規化→Unicode case-fold(`str.casefold()`)→空白ランの単一スペースへの畳み込み→trimを行い、結果が空文字列なら`NormalizeKeyError`を送出する。
-- `search_term.py`の`title_terms_for_article`を、`ingest.repository.normalize_title`ではなく新しい`normalize_index_key`を使うよう変更した。
-- `tests/test_search_normalize_key.py`(新規8件)で、全角→半角小文字化(DATA_CONTRACTS.mdの例)・大文字小文字畳み込み・前後/内部空白・全角空白・日本語保持・空文字列/空白のみでのエラーを確認した。既存`tests/test_search_term.py`は変更なしで7件成功した。
-- `make check`(format-check/lint/mypy/pytest 794件)と`git diff --check`が成功した。
+- `src/wikiepwing/search/space_variant.py`に`space_removed_variant()`を実装した(空白を全て除去した文字列を返し、変化が無ければ`None`)。
+- `search_term.py`の`title_terms_for_article`を拡張し、titleおよび各redirectエイリアスについて、空白除去バリアントが元と異なる場合に`kind="alias"`・`source="nfkc_case_space_variant"`のSearchTermを追加生成するようにした。
+- 既存の`test_title_terms_include_redirect_aliases`が、新しく挿入される空白除去バリアントによりkeysの並びが変わったため、redirect種別のみを抽出して比較する形に修正した。
+- `tests/test_search_space_variant.py`(新規4件)・`tests/test_search_term.py`への追加3件(複数単語title/単一単語title/複数単語alias)・`tests/test_search_normalize_key.py`への追加2件(全角⇔半角、大文字⇔小文字が`normalize_index_key`だけで収束することの明示)を実装した。
+- `make check`(format-check/lint/mypy/pytest 803件)と`git diff --check`が成功した。

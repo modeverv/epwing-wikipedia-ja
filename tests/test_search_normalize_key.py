@@ -38,3 +38,15 @@ def test_empty_string_raises() -> None:
 def test_whitespace_only_string_raises() -> None:
     with pytest.raises(NormalizeKeyError):
         normalize_index_key("   ")
+
+
+def test_fullwidth_and_halfwidth_queries_converge_on_the_same_key() -> None:
+    # TASK-J002: NFKC + case-fold alone is enough to make a full-width query
+    # and a half-width query resolve to the same normalized_key, as long as
+    # both the stored key and the incoming query pass through this same
+    # function -- no separately stored "NFKC variant" SearchTerm is needed.
+    assert normalize_index_key("Ｅｍａｃｓ") == normalize_index_key("emacs")
+
+
+def test_uppercase_and_lowercase_queries_converge_on_the_same_key() -> None:
+    assert normalize_index_key("EMACS") == normalize_index_key("emacs")

@@ -3395,3 +3395,39 @@ git diff --check
 **次タスク**
 
 - TASK-J002 NFKC/case/space variants(依存: J001)
+
+### 2026-07-15 00:20 UTC — TASK-J002
+
+**目的**
+
+- `ARCHITECTURE.md` 14 / `PLAN.md`のNFKC/case/space variantsを実装する。設計を詰める過程で、NFKC・case-fold軸は(クエリ側にも`normalize_index_key`を適用する前提で)J001の1関数だけで双方向に吸収され、追加のSearchTerm登録が不要であることに気づいた。空白だけは`normalize_index_key`が「連続runの畳み込み」しか行わず「除去」はしないため、"New York"と"NewYork"のように別文字列のまま残る。このギャップを埋めるため、空白除去バリアントの明示的なSearchTerm生成を実装した。
+
+**変更**
+
+- `src/wikiepwing/search/space_variant.py`に`space_removed_variant()`を実装した。
+- `search_term.py`の`title_terms_for_article`を拡張し、title・redirectエイリアスそれぞれについて空白除去バリアントが元と異なる場合に`kind="alias"`・`source="nfkc_case_space_variant"`のSearchTermを追加登録するようにした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_space_variant.py tests/test_search_term.py tests/test_search_normalize_key.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 空白除去バリアント生成を4件、`title_terms_for_article`での配線を3件のテストで確認した。既存の`test_title_terms_include_redirect_aliases`はSearchTermの並びが変わったため、redirect種別のみを抽出する形に修正して成功させた。
+- NFKC/case軸が`normalize_index_key`単体で双方向に吸収されることを2件のテストで明示した。
+- 標準スイート803件(新規9件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 「NFKC/case/space variants」という名前だが、実装が必要だったのは空白軸のみで、NFKC/case軸は既存の`normalize_index_key`(TASK-J001)で既に解決済みだった。この判断根拠(なぜ新規SearchTermが不要か)をモジュールdocstringとテストに明記した。
+- クエリ側にも`normalize_index_key`を適用する実配線はTASK-J007(backend search mapping)の対象として据え置いた。
+- 優先度定数(`_SPACE_VARIANT_PRIORITY = 20`)はTASK-J005(alias priorities)でDATA_CONTRACTS.mdのpriority proposalスケールへ統一する前提の暫定値。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-J003 Kana variants(依存: J001)
