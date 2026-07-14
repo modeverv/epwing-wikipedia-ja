@@ -14,6 +14,8 @@ import pytest
 from wikiepwing.config import load_config
 from wikiepwing.ingest.orchestrate import run_ingest
 from wikiepwing.ingest.validate import ValidationLimits
+from wikiepwing.ingest.zstd_codec import decompress
+from wikiepwing.model.canonical import decode_article
 from wikiepwing.model.database import connect_model_database
 from wikiepwing.model.validate import ModelValidationLimits
 from wikiepwing.normalize.orchestrate import NormalizeError, read_manifest_status, run_normalize
@@ -117,6 +119,30 @@ def test_normalize_end_to_end_over_normal_fixture(tmp_path: Path) -> None:
         assert len(row["article_logical_hash"]) == 64
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_categories_survive_raw_ingest_through_normalize(tmp_path: Path) -> None:
+    """TASK-L004: the category appendix (TASK-H007) is only useful if categories
+    actually survive ingest -> normalize into Article.categories; no test
+    checked that end-to-end before this one."""
+    raw_database_path = _build_raw_database(tmp_path)
+
+    result = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=tmp_path / "work" / "model.sqlite3",
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=tmp_path / "manifests" / "40-normalize.json",
+        run_id="test-normalize-run",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+    )
+
+    with connect_model_database(result.model_database_path) as connection:
+        row = connection.execute(
+            "SELECT article_json_zstd FROM articles WHERE page_id = 900001"
+        ).fetchone()
+        article = decode_article(decompress(row["article_json_zstd"]))
+        assert article.categories == ("Category:Emacs",)
 
 
 def test_normalize_is_idempotent_on_rerun(tmp_path: Path) -> None:

@@ -4039,3 +4039,34 @@ git diff --check
 **次タスク**
 
 - TASK-L004 Category appendix(依存: E008,H007)
+
+### 2026-07-15 08:05 UTC — TASK-L004
+
+**目的**
+
+- `ARCHITECTURE.md` 16.2("標準レイアウト"のカテゴリ付録)を検証するend-to-endテストを追加する。調査の結果、カテゴリ機能自体(TASK-E008のingest取り込み、`normalize/orchestrate.py`の`_read_categories`、TASK-H007の`mini_layout.py`カテゴリ付録レンダリング)はすでに実装済みだったが、raw ingest→normalizeの全体を通してカテゴリが失われずに伝播することを確認する専用テストが一つも無いことに気づいた。
+
+**変更**
+
+- `tests/test_normalize_orchestrate.py`に`test_categories_survive_raw_ingest_through_normalize`を追加した。既知のfixture記事(Emacs、page_id 900001)についてnormalize後の`model.sqlite3`から`article_json_zstd`を実際に解凍・デコードし、`Article.categories == ("Category:Emacs",)`であることを確認する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_orchestrate.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 新規テストを含む標準スイート935件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 本タスクは新規実装ではなく、既存のend-to-end動作確認テストの追加が中心だった。各層(ingest/normalize/render)は個別にテストされていたが、"category appendix"という機能としての結合テストが無かったというギャップをTASKS.mdのタスク番号を辿る過程で発見した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-L005 Category search terms(依存: L004,J007)

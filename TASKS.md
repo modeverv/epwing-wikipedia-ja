@@ -595,7 +595,7 @@
 
 **依存:** L002,H007
 
-### TASK-L004 [ ] Category appendix
+### TASK-L004 [x] Category appendix
 
 **依存:** E008,H007
 
