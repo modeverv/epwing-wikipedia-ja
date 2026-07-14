@@ -213,7 +213,7 @@
 
 **実装:** jawiki namespace 0 filter、specific version object。
 
-### TASK-D004 [ ] Source lock schema
+### TASK-D004 [x] Source lock schema
 
 **依存:** D003
 

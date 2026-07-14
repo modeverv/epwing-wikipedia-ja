@@ -36,7 +36,8 @@ Required JSON:
   "downloaded_at": "RFC3339",
   "files": [
     {
-      "relative_path": "jawiki_namespace_0.tar.gz",
+      "relative_path": "jawiki_namespace_0_chunk_0.ndjson.gz",
+      "chunk_identifier": "jawiki_namespace_0_chunk_0",
       "size_bytes": 1,
       "sha256": "64 lowercase hex chars",
       "media_type": "application/gzip"
@@ -52,9 +53,12 @@ Required JSON:
 }
 ```
 
+Snapshotはproject/namespaceあたり複数chunkへ分割配信される(ADR-016)。`files`は1 chunkにつき1エントリを持ち、`chunk_identifier`はSnapshot metadataの`chunks`配列の要素と1:1対応する。
+
 Invariants:
 
 - `files` non-empty
+- `files`の`chunk_identifier`は重複しない
 - path relative, no `..`
 - concrete `snapshot_version`; `latest` forbidden
 - no credentials

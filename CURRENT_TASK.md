@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-D003
+TASK-D004
 
 ## 目的
 
-Wikimedia Enterprise Snapshot metadataクライアントを実装する。project/namespaceでSnapshotを列挙・絞り込みし、`latest`のような曖昧な文字列を残さず1つの具体的versionへ解決する。
+`source.lock.json`のJSON schemaと、それを構築・正準直列化・往復検証するモデルを実装する。chunk単位ダウンロード(ADR-016)を前提にした`files`配列を持つ。
 
 ## 事前条件
 
@@ -14,16 +14,18 @@ Wikimedia Enterprise Snapshot metadataクライアントを実装する。projec
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-D003を読んだ
-- [x] `ARCHITECTURE.md` 9.1(Snapshot availability gate)と9.2(source lock契約)を確認した
-- [x] `DATA_CONTRACTS.md` 2節のsource lock契約(`metadata_response_sha256`、`snapshot_version`が具体的である必要)を確認した
-- [x] `config/default.toml`の`source.namespace`/`source.snapshot`/`source.enterprise.api_base`を確認した
-- [x] TASK-D002の`EnterpriseAuthClient`/`ResolvedAccessToken`を確認した
+- [x] `TASKS.md`のTASK-D004を読んだ
+- [x] `DATA_CONTRACTS.md` 2節のsource lock契約(本タスクでchunk対応へ更新済み)を確認した
+- [x] `DECISIONS.md` ADR-016(chunk単位download)を確認した
+- [x] `schemas/doctor-report.schema.json`とその検証パターン(`tests/test_doctor.py`)を確認した
+- [x] TASK-D003の`ResolvedSnapshot`(`snapshot_identifier`/`version_identifier`/`chunk_identifiers`/`metadata_response_sha256`)を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/source/enterprise.py`
-- `tests/test_enterprise_metadata.py`
+- `schemas/source-lock.schema.json`
+- `src/wikiepwing/source/lockfile.py`
+- `tests/test_source_lockfile.py`
+- `DATA_CONTRACTS.md`(完了)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,50 +33,40 @@ Wikimedia Enterprise Snapshot metadataクライアントを実装する。projec
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_enterprise_metadata.py
+uv run pytest tests/test_source_lockfile.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] project/namespaceでSnapshot一覧を絞り込む
-- [x] `requested_version == "latest"`は列挙結果の中から最新の具体的versionへ解決し、`"latest"`という文字列を戻り値へ残さない
-- [x] 明示的versionが要求された場合は一致するものだけを返し、無ければ明確に失敗する
-- [x] メタデータ応答のbyte数を上限で制限する
-- [x] メタデータ応答のSHA-256を計算し`metadata_response_sha256`として返す
-- [x] 401/403は即座に失敗として扱う(リトライしない)
-- [x] 該当project/namespaceのSnapshotが1件も無い場合は明確に失敗する(Mini/Liteを自動で品質低下させない)
+- [x] `SourceLock`データモデルが`DATA_CONTRACTS.md`の必須フィールドを持つ
+- [x] `files`は1 chunkにつき1エントリ、`chunk_identifier`重複拒否、相対path・`..`拒否
+- [x] `snapshot_version`に`"latest"`を拒否する
+- [x] `sha256`・`metadata_response_sha256`は64桁小文字hexのみ許可する
+- [x] timestampはUTC(RFC3339)のみ許可する
+- [x] 正準直列化(`canonical_json`)が決定的(同じ入力→同じbytes)である
+- [x] 直列化したJSONを再度parseして同じモデルへ戻せる(round-trip)
+- [x] JSON SchemaでJSON構造を検証できる(`tests/test_source_lockfile.py`から`jsonschema`で検証)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際のダウンロード(TASK-D005)
-- source.lock.json全体の生成(TASK-D004、TASK-D007)
-- 5xx/timeoutのbounded retry(acquireコマンド側)
-- 実アカウントでの疎通確認(ユーザーがアカウント作成中のため保留)
+- 実際のdownload・atomic rename(TASK-D005)
+- `acquire`コマンドからのファイル書き込み(TASK-D007)
+- git_commitの実行環境からの自動取得(呼び出し側が渡す)
 
 ## 実施結果
 
-- `src/wikiepwing/source/enterprise.py`に`SnapshotMetadataClient`、`SnapshotMetadataTransport` Protocol、`HttpSnapshotMetadataTransport`(bounded urllib実装)、`SnapshotCandidate`/`ResolvedSnapshot`を実装した。
-- project/namespaceで一致するSnapshotのみへ絞り込み、1件も無ければ明確に失敗する(Mini/Liteを自動で品質低下させない)。
-- `requested_version == "latest"`は列挙結果から`(date_modified, version_identifier)`最大のものへ解決し、戻り値の`version_identifier`に`"latest"`という文字列を残さない。サーバ側が`version: "latest"`を返した場合も明示的に拒否する。
-- 明示的versionを要求した場合は完全一致のみを返し、0件または重複は失敗させる。
-- メタデータ応答は4 MiB上限で読み、上限超過・不正JSON・非配列・空配列・必須フィールド欠落・timezone欠落の`date_modified`を`SnapshotMetadataError`として拒否した。
-- `metadata_response_sha256`として生レスポンスのSHA-256を返し、`DATA_CONTRACTS.md`のsource lock契約と整合させた。
-- `HttpSnapshotMetadataTransport`はhttps以外のbase URLと空`access_token`を拒否し、401/403/5xx/timeout/URLErrorを即座に失敗させた(リトライなし)。
-- `tests/test_enterprise_metadata.py`に28件のオフラインテストを追加した。
-- format-check、ruff lint、mypy strict、標準スイート158件、`git diff --check`が成功した。
-- ユーザーが作成した実Wikimedia Enterpriseアカウント(`.env`のusername/password)で、TASK-D002/D003のコードから実APIへ疎通確認した。credentialsは一切ログ・文書へ出力していない。
-  - `POST /login`は実データで成功し、`username`/`password`/`access_token`のフィールド仮定は正しかった。
-  - `GET /snapshots`のレスポンス形状は当初仮定と異なっていたため、実データに合わせて修正した: `project` → `is_part_of.identifier`、`size`はbyte数の整数ではなく`{"value": <float>, "unit_text": <string>}`の近似値オブジェクト、さらに`chunks`(文字列配列)が必須フィールドとして存在する。
-  - jawiki namespace 0は2026-07-14時点で実際に列挙され、1件のみ一致し、81個のchunkへ分割されていることを確認した(単一tar.gzではない)。
-  - `SnapshotCandidate`/`ResolvedSnapshot`を`size_bytes: int`から`size_estimate: SnapshotSizeEstimate`(value/unit_text)と`chunk_identifiers: tuple[str, ...]`へ修正し、対応するテストを追加・更新した。
-- `SOURCES.md`に実疎通確認で得たAPI仕様(2026-07-14付)を記録した。
-- `DECISIONS.md`にADR-016(Snapshotはchunk単位でdownloadする)を追加し、TASK-D005の設計方針とTASK-D004でのsource lock schema更新の必要性を明記した。
+- `schemas/source-lock.schema.json`を`DATA_CONTRACTS.md`(本タスクで更新済み)に沿って作成した。`files`の`chunk_identifier`必須、`sha256`/`metadata_response_sha256`は64桁小文字hex、`snapshot_version`に`"latest"`を拒否するJSON Schemaを定義した。
+- `src/wikiepwing/source/lockfile.py`に`SourceLockFile`/`SourceLockAcquirer`/`SourceLock`データクラス、`build_source_lock`(検証付き構築)、`canonical_json`(決定的直列化)、`parse_source_lock`(往復検証)を実装した。
+- `files`はchunk_identifier重複・relative_path重複・絶対path・`.`/`..`セグメントを拒否し、chunk単位ダウンロード(ADR-016)を前提にした。
+- timestampはtimezone-aware必須とし、`canonical_json`はUTCへ正規化して秒精度のRFC3339(`...Z`)へ固定した(non-UTCタイムゾーンの入力も正しく変換されることをテストで確認)。
+- `DATA_CONTRACTS.md`のsource lock契約例を単一ファイルからchunk対応(`chunk_identifier`付き)へ更新した。
+- `tests/test_source_lockfile.py`に22件のテスト(schema検証、canonical直列化の決定性、round-trip、各種不正値拒否)を追加した。
+- format-check、ruff lint、mypy strict、標準スイート180件、`git diff --check`が成功した。
 
 **判断・注意点**
 
-- 5xx/timeoutのbounded retryはこのクライアントの責務外とし、将来のacquireコマンド(TASK-D007)に委ねた。
-- `ARCHITECTURE.md` 9.2のsource lock例(単一ファイル)は簡略化であり、実際は複数chunkになる。この更新はTASK-D004で行う。
-- 実データ疎通確認は本タスクの完了条件外だったが、コードの正しさを検証しスキーマの誤りを早期に発見できたため、実施して修正を反映した。
+- 実際のfile書き込み・atomic replaceはTASK-D007(acquireコマンド)の対象とし、本タスクはモデルと直列化/parseのみに限定した。
+- `git_commit`はacquirer実行環境からの自動取得を行わず、呼び出し側が渡す前提とした(自動取得はacquireコマンド側の責務)。

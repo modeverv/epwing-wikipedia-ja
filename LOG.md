@@ -1327,3 +1327,39 @@ git diff --check
 **次タスク**
 
 - TASK-D004 Source lock schema(chunk単位の`files`配列を前提に設計する)
+
+### 2026-07-14 01:40 UTC — TASK-D004
+
+**目的**
+
+- `source.lock.json`のJSON schemaと、それを構築・正準直列化・往復検証するモデルを実装する。ADR-016のchunk単位ダウンロードを前提にする。
+
+**変更**
+
+- `schemas/source-lock.schema.json`を追加した。`files`entryへ`chunk_identifier`を必須化し、`sha256`/`metadata_response_sha256`は64桁小文字hex、`snapshot_version`は`"latest"`を拒否する制約を持つ。
+- `src/wikiepwing/source/lockfile.py`に`SourceLockFile`/`SourceLockAcquirer`/`SourceLock`、`build_source_lock`、`canonical_json`、`parse_source_lock`を実装した。
+- `build_source_lock`はchunk_identifier/relative_path重複、絶対path、`.`/`..`セグメント、負のnamespace/size_bytes、不正な64桁hex、timezone-awareでないtimestamp、不正な`git_commit`を拒否する。
+- `canonical_json`はtimestampをUTCへ正規化し秒精度のRFC3339へ固定するため、同じ内容は常に同じbytesになる。`parse_source_lock`で再parseし元のモデルと一致することを確認した。
+- `DATA_CONTRACTS.md`のsource lock契約例を単一ファイルからchunk対応へ更新した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_source_lockfile.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート180件(新規22件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実際のfile書き込み・atomic replaceはTASK-D007(acquireコマンド)の対象とし、本タスクはモデルと直列化/parseのみに限定した。
+- `git_commit`は呼び出し側が渡す前提とし、実行環境からの自動取得はacquireコマンド側の責務とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D005 Resumable downloader(ADR-016のchunk単位取得を前提に設計する)
