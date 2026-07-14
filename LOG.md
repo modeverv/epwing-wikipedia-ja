@@ -3705,3 +3705,38 @@ git diff --check
 **次タスク**
 
 - TASK-K004 Simple table renderer(依存: K003,H007)
+
+### 2026-07-15 03:55 UTC — TASK-K004
+
+**目的**
+
+- `PLAN.md` Phase 11("simple renderer")と`ARCHITECTURE.md` 16.3("simple": grid-like text)を実装する。TASK-K001-K003はDOM解析→span正規化→複雑度分類までだったが、実際の`TableBlock`を組み立てる処理がまだ無かった。
+
+**変更**
+
+- `src/wikiepwing/normalize/table_block.py`に`build_table_block()`を実装した。K001→K002(列数計算用)→K003を連結し、各セル内容を`convert_document`でBlockへ、captionを`convert_inline_nodes`でInlineへ変換して実際の`TableBlock`/`TableCell`を組み立てる。
+- `render/mini_layout.py`の`_render_block`に`TableBlock`ケースを追加した。`complexity=="simple"`はcaption+各行を` | `区切りのgrid-likeテキストへレンダリングし、wide/complexはcaption+行数プレースホルダ、unsupported(空テーブル)はcaptionのみを出力し、データを失わない劣化表示にした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_table_block.py tests/test_render_mini_layout.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `build_table_block`について、simple組み立て・セル内容のBlock変換・captionのInline変換・header/span保持・class名保持・wide/complex分類・空テーブル・Diagnostic伝播を9件のテストで確認した。
+- Mini-layoutでのTableBlockレンダリングについて、simple tableのgrid text・非simpleのプレースホルダ(captionは保持)・空テーブルのcaptionのみ出力を3件のテストで確認した。
+- 標準スイート878件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ARCHITECTURE.md`のEpic K/L完了までの間、wide/complexは「専用レンダラ未実装」の暫定プレースホルダ(caption+行数)で扱い、データ損失(サイレントな空文字列化)を避けた。TASK-K005で本格的な縦record表示に置き換える前提。
+- "complex"専用のレンダラtaskがTASKS.mdに存在しないことを確認した。16.3の"wide"(縦record)と"complex"(row/sectionごとのkey-value)の方針が類似しているため、TASK-K005(wide renderer)がcomplexも扱う可能性を次タスクの検討事項として残した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-K005 Wide table renderer(依存: K003,H007)

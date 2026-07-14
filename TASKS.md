@@ -551,7 +551,7 @@
 
 **依存:** K002
 
-### TASK-K004 [ ] Simple table renderer
+### TASK-K004 [x] Simple table renderer
 
 **依存:** K003,H007
 

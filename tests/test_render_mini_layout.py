@@ -9,6 +9,8 @@ from wikiepwing.model.blocks import (
     ListItem,
     ParagraphBlock,
     PreformattedBlock,
+    TableBlock,
+    TableCell,
     UnorderedListBlock,
     UnsupportedBlock,
 )
@@ -226,3 +228,63 @@ def test_internal_targets_exclude_missing_links() -> None:
     entry = render_article_to_entry(article)
 
     assert entry.internal_targets == ()
+
+
+def _cell(text: str, *, is_header: bool = False) -> TableCell:
+    return TableCell(
+        blocks=(ParagraphBlock(inlines=(TextInline(value=text),)),),
+        row_span=1,
+        col_span=1,
+        is_header=is_header,
+    )
+
+
+def test_simple_table_renders_as_grid_like_text() -> None:
+    table = TableBlock(
+        caption=(TextInline(value="Sizes"),),
+        rows=(
+            (_cell("Name", is_header=True), _cell("Size", is_header=True)),
+            (_cell("Small"), _cell("1")),
+        ),
+        source_class_names=(),
+        complexity="simple",
+    )
+    article = _make_article(blocks=(table,))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "Sizes" in text
+    assert "Name | Size" in text
+    assert "Small | 1" in text
+
+
+def test_non_simple_table_renders_a_placeholder_without_losing_the_caption() -> None:
+    table = TableBlock(
+        caption=(TextInline(value="Wide data"),),
+        rows=((_cell("a"), _cell("b")),),
+        source_class_names=(),
+        complexity="wide",
+    )
+    article = _make_article(blocks=(table,))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "Wide data" in text
+    assert "簡略化して表示できません" in text
+
+
+def test_unsupported_empty_table_renders_only_its_caption() -> None:
+    table = TableBlock(
+        caption=(TextInline(value="Empty"),),
+        rows=(),
+        source_class_names=(),
+        complexity="unsupported",
+    )
+    article = _make_article(blocks=(table,))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "Empty" in text

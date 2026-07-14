@@ -1,11 +1,14 @@
-"""Mini layout renderer: Article -> RenderedEntry (TASK-H007, ARCHITECTURE.md 16.2).
+"""Mini layout renderer: Article -> RenderedEntry (TASK-H007/K004, ARCHITECTURE.md 16.2).
 
 Renders the "標準レイアウト" as plain text: title, aliases, update date, the
 abstract, section-numbered body (1./1.1 style), categories, and source
-license info. Table render policy (16.3) and entry size budget splitting
-(16.4) are out of scope here -- TableBlock/InfoboxBlock aren't produced by
-the current pipeline yet (Epic K/L), and no article this renderer sees today
-can be oversized enough to need splitting.
+license info. TableBlock render policy (16.3) is implemented only for
+`complexity == "simple"` so far (TASK-K004's grid-like plain text); wide
+and complex tables get a caption-preserving placeholder line until
+TASK-K005/K006 add their dedicated layouts, and InfoboxBlock plus entry
+size budget splitting (16.4) remain out of scope -- InfoboxBlock isn't
+produced by the current pipeline yet (Epic L), and no article this
+renderer sees today can be oversized enough to need splitting.
 """
 
 from __future__ import annotations
@@ -21,6 +24,8 @@ from wikiepwing.model.blocks import (
     ParagraphBlock,
     PreformattedBlock,
     QuoteBlock,
+    TableBlock,
+    TableCell,
     UnorderedListBlock,
     UnsupportedBlock,
 )
@@ -147,7 +152,34 @@ def _render_block(block: Block, numberer: _HeadingNumberer, *, indent: int) -> l
         return ["----", ""]
     if isinstance(block, UnsupportedBlock):
         return [f"{prefix}{block.fallback_text}", ""] if block.fallback_text else [""]
+    if isinstance(block, TableBlock):
+        return _render_table(block, prefix)
     return [""]
+
+
+def _render_table(block: TableBlock, prefix: str) -> list[str]:
+    lines: list[str] = []
+    caption_text = _flatten_inlines(block.caption)
+    if caption_text:
+        lines.append(f"{prefix}{caption_text}")
+    if block.complexity == "simple":
+        for row in block.rows:
+            lines.append(prefix + " | ".join(_flatten_table_cell(cell) for cell in row))
+    elif block.rows:
+        lines.append(f"{prefix}[表: {len(block.rows)}行、簡略化して表示できません]")
+    lines.append("")
+    return lines
+
+
+def _flatten_table_cell(cell: TableCell) -> str:
+    parts: list[str] = []
+    for child in cell.blocks:
+        parts.extend(
+            line.strip()
+            for line in _render_block(child, _HeadingNumberer(), indent=0)
+            if line.strip()
+        )
+    return " ".join(parts)
 
 
 def _flatten_inlines(inlines: tuple[Inline, ...]) -> str:
