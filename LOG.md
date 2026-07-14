@@ -4271,3 +4271,38 @@ git diff --check
 **次タスク**
 
 - TASK-M006 Gaiji code assignment(依存: M005)
+
+### 2026-07-15 10:25 UTC — TASK-M004訂正(TASK-M006着手時に発見)
+
+**目的**
+
+- TASK-M006(gaiji code assignment)に着手する際、`DATA_CONTRACTS.md` 10("Gaiji registry contract")に既に正式なテーブル定義(`CREATE TABLE gaiji (sequence TEXT PRIMARY KEY, ...)`)が存在することに気づいた。TASK-M004実装時にこの節を確認せず独自のスキーマ(`gaiji_registry`テーブル、列名も異なる)を設計してしまっていたため、正式な契約に合わせて修正する。
+
+**変更**
+
+- `migrations/gaiji/001_initial.sql`のテーブルを、`DATA_CONTRACTS.md` 10の正式定義通りに書き換えた: テーブル名`gaiji`(`gaiji_registry`から変更)、`sequence`を主キーに(独自の`gaiji_id`連番主キーを廃止)、列名を`bitmap_path`/`bitmap_sha256`/`font_identifier`/`assigned_code`に統一(`bitmap_hash`/`font_source_identifier`/`assigned_gaiji_code`から変更)、`width_class`の値を`'narrow'/'wide'`に統一(独自の`'half'/'full'`から変更)、`assigned_code`をNOT NULL UNIQUE(独自実装ではnullable扱いだった)に修正。
+- `src/wikiepwing/gaiji/database.py`のdocstringを`DATA_CONTRACTS.md` 10参照へ更新した(コード自体はmigrationエンジンで汎用的なため変更不要)。
+- `tests/test_gaiji_database.py`を新スキーマに合わせて全面的に書き直した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_database.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 修正後のスキーマで11件のテストが成功した(初期migration・有効行のINSERT・`sequence`/`assigned_code`重複拒否・不正width_class拒否・負のusage_count拒否・migration冪等性/ロールバック/不正集合拒否)。
+- 標準スイート988件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 本プロジェクトはまだ実運用データが存在しない開発中フェーズであるため、新しいmigration versionを追加するのではなく、`001_initial.sql`自体を訂正した(TASK-M004のコミットはまだ実データベースを生成する形で配布されていない)。
+- 今後、新しいDBスキーマを設計する際は、`DATA_CONTRACTS.md`の該当節を先に確認する運用を徹底する(本件はその確認を怠ったために生じた)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M006 Gaiji code assignment(依存: M005)

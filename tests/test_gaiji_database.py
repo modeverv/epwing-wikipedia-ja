@@ -13,7 +13,7 @@ from wikiepwing.gaiji.database import (
 )
 
 MIGRATIONS = Path(__file__).parents[1] / "migrations" / "gaiji"
-EXPECTED_TABLES = {"gaiji_registry", "schema_migrations"}
+EXPECTED_TABLES = {"gaiji", "schema_migrations"}
 
 
 def test_initial_migration_creates_strict_gaiji_schema(tmp_path: Path) -> None:
@@ -38,76 +38,74 @@ def test_initial_migration_creates_strict_gaiji_schema(tmp_path: Path) -> None:
         assert all(len(row["sha256"]) == 64 for row in migrations)
 
 
-def test_gaiji_registry_accepts_a_valid_row(tmp_path: Path) -> None:
+def _insert_row(connection: sqlite3.Connection, **overrides: object) -> None:
+    defaults: dict[str, object] = {
+        "sequence": "\U00020000",
+        "normalized_sequence": "\U00020000",
+        "width_class": "wide",
+        "assigned_code": "F0A1",
+        "bitmap_path": "gaiji/F0A1.png",
+        "bitmap_sha256": "a" * 64,
+        "font_identifier": "noto-cjk-1.0",
+        "usage_count": 1,
+    }
+    defaults.update(overrides)
+    connection.execute(
+        """
+        INSERT INTO gaiji (
+            sequence, normalized_sequence, width_class, assigned_code,
+            bitmap_path, bitmap_sha256, font_identifier, usage_count
+        ) VALUES (
+            :sequence, :normalized_sequence, :width_class, :assigned_code,
+            :bitmap_path, :bitmap_sha256, :font_identifier, :usage_count
+        )
+        """,
+        defaults,
+    )
+
+
+def test_gaiji_table_accepts_a_valid_row(tmp_path: Path) -> None:
     database = initialize_gaiji_database(tmp_path / "gaiji.sqlite3", MIGRATIONS)
 
     with connect_gaiji_database(database) as connection:
-        connection.execute(
-            """
-            INSERT INTO gaiji_registry (
-                unicode_sequence, normalized_sequence, width_class,
-                font_source_identifier, bitmap_hash, assigned_gaiji_code, usage_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("\U00020000", "\U00020000", "full", "noto-cjk-1.0", "a" * 64, "F0A1", 1),
-        )
-        row = connection.execute("SELECT * FROM gaiji_registry").fetchone()
-        assert row["width_class"] == "full"
+        _insert_row(connection)
+        row = connection.execute("SELECT * FROM gaiji").fetchone()
+        assert row["width_class"] == "wide"
         assert row["usage_count"] == 1
 
 
-def test_gaiji_registry_rejects_duplicate_normalized_sequence(tmp_path: Path) -> None:
+def test_gaiji_table_rejects_duplicate_sequence(tmp_path: Path) -> None:
     database = initialize_gaiji_database(tmp_path / "gaiji.sqlite3", MIGRATIONS)
 
     with connect_gaiji_database(database) as connection:
-        connection.execute(
-            """
-            INSERT INTO gaiji_registry (
-                unicode_sequence, normalized_sequence, width_class, font_source_identifier
-            ) VALUES (?, ?, ?, ?)
-            """,
-            ("\U00020000", "\U00020000", "full", "noto-cjk-1.0"),
-        )
+        _insert_row(connection)
         with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO gaiji_registry (
-                    unicode_sequence, normalized_sequence, width_class, font_source_identifier
-                ) VALUES (?, ?, ?, ?)
-                """,
-                ("\U00020000", "\U00020000", "half", "noto-cjk-1.0"),
-            )
+            _insert_row(connection, assigned_code="F0A2")
 
 
-def test_gaiji_registry_rejects_invalid_width_class(tmp_path: Path) -> None:
+def test_gaiji_table_rejects_duplicate_assigned_code(tmp_path: Path) -> None:
+    database = initialize_gaiji_database(tmp_path / "gaiji.sqlite3", MIGRATIONS)
+
+    with connect_gaiji_database(database) as connection:
+        _insert_row(connection)
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_row(connection, sequence="\U00020001", normalized_sequence="\U00020001")
+
+
+def test_gaiji_table_rejects_invalid_width_class(tmp_path: Path) -> None:
     database = initialize_gaiji_database(tmp_path / "gaiji.sqlite3", MIGRATIONS)
 
     with connect_gaiji_database(database) as connection:
         with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO gaiji_registry (
-                    unicode_sequence, normalized_sequence, width_class, font_source_identifier
-                ) VALUES (?, ?, ?, ?)
-                """,
-                ("\U00020000", "\U00020000", "wide", "noto-cjk-1.0"),
-            )
+            _insert_row(connection, width_class="wideish")
 
 
-def test_gaiji_registry_rejects_negative_usage_count(tmp_path: Path) -> None:
+def test_gaiji_table_rejects_negative_usage_count(tmp_path: Path) -> None:
     database = initialize_gaiji_database(tmp_path / "gaiji.sqlite3", MIGRATIONS)
 
     with connect_gaiji_database(database) as connection:
         with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO gaiji_registry (
-                    unicode_sequence, normalized_sequence, width_class,
-                    font_source_identifier, usage_count
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                ("\U00020000", "\U00020000", "full", "noto-cjk-1.0", -1),
-            )
+            _insert_row(connection, usage_count=-1)
 
 
 def test_gaiji_migrations_are_idempotent_and_detect_changed_history(tmp_path: Path) -> None:

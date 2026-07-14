@@ -1,9 +1,9 @@
 """Explicit SQLite migration and verification support for gaiji.sqlite3.
 
 Mirrors `wikiepwing.model.database` (model.sqlite3's migration engine) for
-the gaiji registry (TASK-M004, ARCHITECTURE.md 18.3). The duplication is
-accepted for now, matching the raw/reference/model database modules'
-precedent.
+the gaiji registry (TASK-M004, `DATA_CONTRACTS.md` 10 "Gaiji registry
+contract"). The duplication is accepted for now, matching the
+raw/reference/model database modules' precedent.
 """
 
 from __future__ import annotations
