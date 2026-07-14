@@ -2938,3 +2938,42 @@ git diff --check
 **次タスク**
 
 - TASK-H009 FreePWING source writer(依存: B009,H007-H008)
+
+### 2026-07-14 18:15 UTC — TASK-H009
+
+**目的**
+
+- `ARCHITECTURE.md` 17.2(FreePWING adapterの責務"FreePWING source file生成")を実装する。任意件数・可変alias数・可変target数の`RenderedEntry`を`FreePWING::FPWUtils::FPWParser` Perl APIへ渡し、`fpwmake`が消費するsourceを生成する。
+
+**変更**
+
+- `src/wikiepwing/render/freepwing_source.py`に`write_entries_jsonl`を実装した(`RenderedEntry`列をtag/title/aliases/body/targetsのJSON Linesへ書き出す)。
+- `docker/toolchain/freepwing_build_entries.pl`に汎用Perl driverを実装した。既存の`tests/fixtures/handcrafted/build_fixture.pl`(entry数3・alias数2に固定)を一般化し、任意件数・可変alias数・可変target数を処理する。UTF-8のJSON Linesを`Encode::encode('euc-jp', ...)`でEUC-JPへ変換してから`FPWParser`へ渡す(既存smoke testの`iconv`変換と同等の処理をPerl側で行う)。
+- `docker/toolchain/freepwing-build-entries-smoke.sh`に実Docker end-to-end smoke testを実装した。Python側`write_entries_jsonl`で3entry(alias数0/1/4、target数0/1/2)のJSON Linesを生成し、Perl driver経由で`fpwmake`を実行、`wikiepwing-eb-search`で実際にtitle/alias headwordが正しく検索・解決できることを検証する(単なる非クラッシュ確認ではなく、実際のcontent検証)。
+- `Makefile`に`test-freepwing-build-entries`ターゲットを追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_freepwing_source.py tests/test_freepwing_build_entries_smoke.py
+sh docker/toolchain/freepwing-build-entries-smoke.sh wikiepwing-toolchain:dev
+make check
+git diff --check
+```
+
+**結果**
+
+- Python側writer(JSON Lines書き出し、alias/target無しの場合、複数entry順序、親ディレクトリ作成、複数行bodyの保持)を10件のテストで確認した。
+- 実Docker smoke testを`wikiepwing-toolchain:dev`イメージ(ローカルに既存)で実行し、`honmon`/`work/cgr`生成に加え、`wikiepwing-eb-search`で実際に"Entry One"(title)と"Alias A"(4alias中の1つ)を検索し、それぞれ異なる正しいheadingへ解決することを実機で確認した(単体テストでは検証できないPerl/FreePWING toolchain統合の実地検証)。
+- 標準スイート689件(新規10件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実装中、`iconv`によるUTF-8→EUC-JP変換ステップを見落とし、生成したJSON LinesをそのままFPWParserへ渡すバグに気づいた(ASCII文字のみのsmoke test entryでは偶然動作していたが、日本語文字では文字化けする設計ミス)。Perlスクリプト内で`Encode::encode('euc-jp', ...)`を明示的に適用する修正を行った。
+- `fpwmake`が全ての外部スクリプトへ`-workdir work`引数を渡すこと、および`FreePWING::FPWUtils::FPWParser`のuse時に`@ARGV`からこれを消費する挙動(スクリプト側で明示的な引数処理をしていないにも関わらず正しく動作する理由)を実機検証で確認した。
+- graphic/gaijiの実際の登録内容の一般化、EPWING generate command全体の配線(H010)、catalog/subbook設定の動的生成は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H010 EPWING generate command(依存: H009)

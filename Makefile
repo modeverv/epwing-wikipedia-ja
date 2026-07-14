@@ -2,7 +2,7 @@ APP_IMAGE ?= wikiepwing-app:dev
 TOOLCHAIN_IMAGE ?= wikiepwing-toolchain:dev
 FREEPWING_SOURCE ?= data/sources/freepwing_1.6.1.orig.tar.bz2
 
-.PHONY: app-image check doctor download-freepwing format format-check lint package-toolchain probe-toolchain test test-app-image test-compose test-eb-image test-eb-source test-ebzip test-freepwing-source test-handcrafted toolchain-image typecheck
+.PHONY: app-image check doctor download-freepwing format format-check lint package-toolchain probe-toolchain test test-app-image test-compose test-eb-image test-eb-source test-ebzip test-freepwing-build-entries test-freepwing-source test-handcrafted toolchain-image typecheck
 
 app-image:
 	docker build --file docker/app.Dockerfile --tag "$(APP_IMAGE)" .
@@ -52,6 +52,9 @@ test-eb-source:
 
 test-ebzip: toolchain-image
 	sh docker/toolchain/ebzip-roundtrip-smoke.sh "$(TOOLCHAIN_IMAGE)"
+
+test-freepwing-build-entries: toolchain-image
+	sh docker/toolchain/freepwing-build-entries-smoke.sh "$(TOOLCHAIN_IMAGE)"
 
 test-freepwing-source:
 	uv run pytest tests/test_freepwing_source.py
