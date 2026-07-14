@@ -395,7 +395,7 @@
 
 **依存:** G005
 
-### TASK-G009 [ ] Quote/preformatted
+### TASK-G009 [x] Quote/preformatted
 
 **依存:** G005
 
