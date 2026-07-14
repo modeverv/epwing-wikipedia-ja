@@ -2604,3 +2604,40 @@ git diff --check
 **次タスク**
 
 - TASK-G012 Normalize command and model DB write(依存: F007-F008,G011)
+
+### 2026-07-14 14:20 UTC — TASK-G012
+
+**目的**
+
+- raw.sqlite3の`accepted`記事を読み、既存のHTML正規化パイプライン(G001-G011)経由でArticleを組み立て、`model/validate.py`で検証、`model/canonical.py`+`model/logical_hash.py`でcanonical JSON化・ハッシュ計算した上でzstd圧縮しmodel.sqlite3(TASK-F007のschema)へ書き込む。`ingest/orchestrate.py`と同じmanifest lifecycleパターンに従う。`wikiepwing normalize` CLIコマンドを追加する。
+
+**変更**
+
+- `src/wikiepwing/normalize/pipeline.py`に`NormalizeOptions`/`normalize_html`を実装した(parse→root selection→unsafe node除去→document変換→whitespace正規化を一関数化)。
+- `src/wikiepwing/model/repository.py`に`ModelRepository`(batch書き込み、links/media_references/diagnostics子テーブルの置換)を実装した。
+- `src/wikiepwing/normalize/orchestrate.py`に`run_normalize`/`NormalizeMetrics`/`NormalizeManifest`/`NormalizeResult`/`read_manifest_status`を実装した。raw.sqlite3の`redirects`/`categories`/`article_licenses`+`licenses`/`main_images`からAlias/categories/media/source_license_idsを組み立て、`normalize_status`を`complete`/`fallback`(UnsupportedBlockを含む)/`rejected`(validate_articleがerror/fatalを検出)の3値で判定する。
+- `src/wikiepwing/cli.py`に`normalize`サブコマンドを追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_pipeline.py tests/test_model_repository.py tests/test_normalize_orchestrate.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- pipeline統合(mw-parser-output選択、edit UI除去、whitespace圧縮、未知要素fallback、recovery無効時の例外伝播)、ModelRepositoryの書き込み・子テーブル置換、raw→normalize→model.sqlite3のend-to-end(`tests/fixtures/enterprise/normal_articles.ndjson`の10記事)・manifestのidempotent再実行・running manifest拒否/`--force`・CLI `normalize`サブコマンドを合計30件の新規テストで確認した。
+- 標準スイート609件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実装中の静的レビューで、`ReferencesBlock.items`(`tuple[tuple[Inline,...],...]`)と`UnorderedListBlock.items`(`tuple[ListItem,...]`)が同名fieldだが型が異なるため、duck-typingしていたblock木走査ヘルパー(`_child_blocks`)がReferencesBlockに対して`AttributeError`を起こしうるバグを発見し、`isinstance`チェックへ修正した(`model/repository.py`・`normalize/orchestrate.py`双方)。現在のpipelineはReferencesBlockを生成しないため実害は無かったが、回帰テストを追加した。
+- `<a>`要素の実HTML変換(internal/external link)はEpic Hの範囲であり本タスクでは実装していないため、`links`テーブルは現時点で実質空になる。`media`はraw.sqlite3の`main_images`由来のみとした。
+- 作業中に長時間のBash実行環境の一時的な利用不可(safety classifier起因)が発生し、その間は静的コードレビューで対応し、上記バグを発見した。復旧後にテスト実行・確認を完了した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G013 Baseline golden snapshots(依存: G012)

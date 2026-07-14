@@ -407,7 +407,7 @@
 
 **依存:** G010
 
-### TASK-G012 [ ] Normalize command and model DB write
+### TASK-G012 [x] Normalize command and model DB write
 
 **依存:** F007-F008,G011
 

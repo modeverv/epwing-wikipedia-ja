@@ -20,6 +20,9 @@ from wikiepwing.ingest.database import connect_raw_database
 from wikiepwing.ingest.orchestrate import run_ingest
 from wikiepwing.ingest.validate import ValidationLimits
 from wikiepwing.ingest.verify import verify_raw_database
+from wikiepwing.model.validate import ModelValidationLimits
+from wikiepwing.normalize.orchestrate import DEFAULT_BATCH_SIZE, run_normalize
+from wikiepwing.normalize.pipeline import NormalizeOptions
 from wikiepwing.reference.entries import EbEntryAdapter, sample_reference_entries
 from wikiepwing.reference.inventory import (
     build_reference_inventory,
@@ -317,6 +320,55 @@ def build_parser() -> argparse.ArgumentParser:
         default=20,
         help="number of accepted articles to sample-decompress (default: 20)",
     )
+    normalize = subparsers.add_parser(
+        "normalize", help="normalize accepted raw articles into model.sqlite3"
+    )
+    normalize.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    normalize.add_argument(
+        "--raw-database",
+        type=Path,
+        help="raw.sqlite3 input path (default: paths.work/raw.sqlite3)",
+    )
+    normalize.add_argument(
+        "--model-database",
+        type=Path,
+        help="model.sqlite3 output path (default: paths.work/model.sqlite3)",
+    )
+    normalize.add_argument(
+        "--run-id",
+        type=str,
+        help="run identifier recorded in the stage manifest (default: generated)",
+    )
+    normalize.add_argument(
+        "--manifest-path",
+        type=Path,
+        help=(
+            "stage manifest output path "
+            "(default: paths.work/runs/<run-id>/manifests/40-normalize.json)"
+        ),
+    )
+    normalize.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help="articles per write transaction (default: 500)",
+    )
+    normalize.add_argument(
+        "--git-commit",
+        type=str,
+        help="git commit recorded in the manifest (default: `git rev-parse HEAD`)",
+    )
+    normalize.add_argument(
+        "--force",
+        action="store_true",
+        help="proceed even if the manifest shows a previous run still 'running'",
+    )
     return parser
 
 
@@ -539,6 +591,56 @@ def main(argv: Sequence[str] | None = None) -> int:
             connection.close()
         print(json.dumps(verification.payload(), ensure_ascii=False, indent=2, sort_keys=True))
         return 0 if verification.ok else 1
+    if command == "normalize":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+
+        normalize_section = config.section("normalize")
+        model_validation_limits = ModelValidationLimits.from_config(config)
+        normalize_options = NormalizeOptions(
+            max_dom_depth=cast(int, normalize_section["max_dom_depth"]),
+            html_recover=cast(bool, normalize_section["html_recover"]),
+            remove_edit_ui=cast(bool, normalize_section["remove_edit_ui"]),
+            remove_navboxes=cast(bool, normalize_section["remove_navboxes"]),
+            remove_authority_control=cast(bool, normalize_section["remove_authority_control"]),
+        )
+        run_id = cast(str | None, arguments.run_id) or (
+            f"{config.project}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+        )
+        raw_database_path = cast(Path | None, arguments.raw_database) or (
+            config.paths.work / "raw.sqlite3"
+        )
+        model_database_path = cast(Path | None, arguments.model_database) or (
+            config.paths.work / "model.sqlite3"
+        )
+        manifest_path = cast(Path | None, arguments.manifest_path) or (
+            config.paths.work / "runs" / run_id / "manifests" / "40-normalize.json"
+        )
+        git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+
+        normalize_result = run_normalize(
+            raw_database_path=raw_database_path,
+            model_database_path=model_database_path,
+            model_migrations_path=None,
+            manifest_path=manifest_path,
+            run_id=run_id,
+            model_validation_limits=model_validation_limits,
+            normalize_options=normalize_options,
+            batch_size=cast(int, arguments.batch_size),
+            git_commit=git_commit,
+            force=cast(bool, arguments.force),
+            on_progress=lambda metrics: print(
+                f"articles_read={metrics.articles_read} "
+                f"articles_written={metrics.articles_written} "
+                f"articles_rejected={metrics.articles_rejected}",
+                file=sys.stderr,
+            ),
+        )
+        print(normalize_result.manifest_path)
+        return 0 if normalize_result.manifest.status == "complete" else 1
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0
