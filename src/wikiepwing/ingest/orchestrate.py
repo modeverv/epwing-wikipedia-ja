@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import sqlite3
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -163,6 +164,7 @@ def run_ingest(
             previous_payload,
             stage_version=STAGE_VERSION,
             current_inputs=_manifest_inputs(lock),
+            current_output_fingerprint=_current_output_fingerprint(raw_database_path),
         )
         if decision.should_skip:
             assert previous_payload is not None
@@ -195,7 +197,14 @@ def run_ingest(
         manifest_path,
     )
 
-    database_path = initialize_raw_database(raw_database_path, migrations_path)
+    try:
+        database_path = initialize_raw_database(raw_database_path, migrations_path)
+    except sqlite3.DatabaseError:
+        # The previous output was corrupted (e.g. truncated by a mid-write crash)
+        # rather than a valid database we can migrate in place; discard it and
+        # rebuild from scratch instead of failing this run outright.
+        raw_database_path.unlink(missing_ok=True)
+        database_path = initialize_raw_database(raw_database_path, migrations_path)
     status = "failed"
     try:
         connection = connect_raw_database(database_path)
@@ -234,6 +243,13 @@ def run_ingest(
 
 def _manifest_inputs(lock: SourceLock) -> dict[str, str]:
     return {"source_lock": f"sha256:{lock.metadata_response_sha256}"}
+
+
+def _current_output_fingerprint(path: Path) -> tuple[int, str] | None:
+    if not path.is_file():
+        return None
+    fingerprint = compute_fingerprint(path)
+    return (fingerprint.size_bytes, fingerprint.sha256)
 
 
 def _resume_result(

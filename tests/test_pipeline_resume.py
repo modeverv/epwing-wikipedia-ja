@@ -63,3 +63,67 @@ def test_extra_inputs_key_counts_as_mismatch() -> None:
     decision = decide_resume(previous, stage_version=1, current_inputs=extra_inputs)
 
     assert decision.should_skip is False
+
+
+_OUTPUTS = [{"relative_path": "model.sqlite3", "size_bytes": 100, "sha256": "abc"}]
+
+
+def test_missing_output_file_requires_run_when_manifest_recorded_one() -> None:
+    previous = {
+        "status": "complete",
+        "stage_version": 1,
+        "inputs": _INPUTS,
+        "outputs": _OUTPUTS,
+    }
+
+    decision = decide_resume(
+        previous, stage_version=1, current_inputs=_INPUTS, current_output_fingerprint=None
+    )
+
+    assert decision.should_skip is False
+    assert "missing" in decision.reason
+
+
+def test_corrupt_output_file_requires_run() -> None:
+    previous = {
+        "status": "complete",
+        "stage_version": 1,
+        "inputs": _INPUTS,
+        "outputs": _OUTPUTS,
+    }
+
+    decision = decide_resume(
+        previous,
+        stage_version=1,
+        current_inputs=_INPUTS,
+        current_output_fingerprint=(999, "different-hash"),
+    )
+
+    assert decision.should_skip is False
+    assert "no longer matches" in decision.reason
+
+
+def test_matching_output_fingerprint_can_be_skipped() -> None:
+    previous = {
+        "status": "complete",
+        "stage_version": 1,
+        "inputs": _INPUTS,
+        "outputs": _OUTPUTS,
+    }
+
+    decision = decide_resume(
+        previous,
+        stage_version=1,
+        current_inputs=_INPUTS,
+        current_output_fingerprint=(100, "abc"),
+    )
+
+    assert decision.should_skip is True
+
+
+def test_output_fingerprint_check_is_skipped_when_manifest_has_no_outputs() -> None:
+    previous = {"status": "complete", "stage_version": 1, "inputs": _INPUTS, "outputs": []}
+
+    decision = decide_resume(previous, stage_version=1, current_inputs=_INPUTS)
+
+    assert decision.should_skip is True

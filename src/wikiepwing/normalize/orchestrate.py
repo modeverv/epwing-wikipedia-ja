@@ -169,6 +169,7 @@ def run_normalize(
             previous_payload,
             stage_version=STAGE_VERSION,
             current_inputs=_manifest_inputs(raw_database_path),
+            current_output_fingerprint=_current_output_fingerprint(model_database_path),
         )
         if decision.should_skip:
             assert previous_payload is not None
@@ -190,7 +191,14 @@ def run_normalize(
         manifest_path,
     )
 
-    database_path = initialize_model_database(model_database_path, model_migrations_path)
+    try:
+        database_path = initialize_model_database(model_database_path, model_migrations_path)
+    except sqlite3.DatabaseError:
+        # The previous output was corrupted (e.g. truncated by a mid-write crash)
+        # rather than a valid database we can migrate in place; discard it and
+        # rebuild from scratch instead of failing this run outright.
+        model_database_path.unlink(missing_ok=True)
+        database_path = initialize_model_database(model_database_path, model_migrations_path)
     status = "failed"
     try:
         raw_connection = connect_raw_database(raw_database_path)
@@ -228,6 +236,13 @@ def run_normalize(
     return NormalizeResult(
         manifest=manifest, manifest_path=manifest_path, model_database_path=database_path
     )
+
+
+def _current_output_fingerprint(path: Path) -> tuple[int, str] | None:
+    if not path.is_file():
+        return None
+    fingerprint = compute_fingerprint(path)
+    return (fingerprint.size_bytes, fingerprint.sha256)
 
 
 def _resume_result(

@@ -146,6 +146,7 @@ def run_generate(
             previous_payload,
             stage_version=STAGE_VERSION,
             current_inputs=_manifest_inputs(model_database_path),
+            current_output_fingerprint=_current_output_fingerprint(entries_path),
         )
         if decision.should_skip:
             assert previous_payload is not None
@@ -214,6 +215,13 @@ def _render_all(
         if on_progress is not None:
             on_progress(metrics)
     return tuple(entries)
+
+
+def _current_output_fingerprint(path: Path) -> tuple[int, str] | None:
+    if not path.is_file():
+        return None
+    fingerprint = compute_fingerprint(path)
+    return (fingerprint.size_bytes, fingerprint.sha256)
 
 
 def _resume_result(

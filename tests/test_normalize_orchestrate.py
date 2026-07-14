@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import io
+import multiprocessing
+import os
+import signal
 import tarfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -241,6 +245,116 @@ def test_normalize_force_reruns_despite_complete_manifest(tmp_path: Path) -> Non
     )
 
     assert second.manifest.run_id == "run-two"
+
+
+def test_normalize_reruns_when_output_file_is_corrupted_since_last_run(tmp_path: Path) -> None:
+    raw_database_path = _build_raw_database(tmp_path)
+    model_database_path = tmp_path / "work" / "model.sqlite3"
+    manifest_path = tmp_path / "manifests" / "40-normalize.json"
+
+    first = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=model_database_path,
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-one",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+    )
+    assert first.manifest.status == "complete"
+
+    # Simulate the output file being corrupted/truncated after the manifest
+    # recorded it as complete; a naive resume that only compares
+    # status/stage_version/inputs would wrongly trust this stale manifest.
+    model_database_path.write_bytes(b"not a sqlite file")
+
+    second = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=model_database_path,
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-two",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+    )
+
+    assert second.manifest.run_id == "run-two"
+    assert second.manifest.status == "complete"
+    with connect_model_database(model_database_path) as connection:
+        count = connection.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+        assert count == 10
+
+
+def test_normalize_killed_mid_run_leaves_manifest_running_and_force_restart_succeeds(
+    tmp_path: Path,
+) -> None:
+    """PLAN.md Phase 9: "normalize途中kill" / "interrupted stageだけ再実行".
+
+    Runs `run_normalize` in a forked child process with an artificial delay
+    between articles, sends it SIGKILL partway through, then confirms: the
+    manifest is left showing "running" (so a plain rerun is refused), and a
+    forced rerun completes successfully with the correct final article count.
+    """
+    raw_database_path = _build_raw_database(tmp_path)
+    model_database_path = tmp_path / "work" / "model.sqlite3"
+    manifest_path = tmp_path / "manifests" / "40-normalize.json"
+
+    ctx = multiprocessing.get_context("fork")
+    process = ctx.Process(
+        target=_run_normalize_slowly,
+        args=(raw_database_path, model_database_path, manifest_path),
+    )
+    process.start()
+    time.sleep(0.4)
+    os.kill(process.pid, signal.SIGKILL)
+    process.join(timeout=5)
+
+    assert process.exitcode != 0
+    assert read_manifest_status(manifest_path) == "running"
+
+    with pytest.raises(NormalizeError, match="still 'running'"):
+        run_normalize(
+            raw_database_path=raw_database_path,
+            model_database_path=model_database_path,
+            model_migrations_path=MODEL_MIGRATIONS,
+            manifest_path=manifest_path,
+            run_id="restart-run",
+            model_validation_limits=_model_validation_limits(),
+            normalize_options=_normalize_options(),
+        )
+
+    result = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=model_database_path,
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="restart-run",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+        force=True,
+    )
+
+    assert result.manifest.status == "complete"
+    with connect_model_database(model_database_path) as connection:
+        count = connection.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+        assert count == 10
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def _run_normalize_slowly(
+    raw_database_path: Path, model_database_path: Path, manifest_path: Path
+) -> None:
+    run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=model_database_path,
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="killed-run",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+        batch_size=1,
+        on_progress=lambda _metrics: time.sleep(0.2),
+    )
 
 
 def test_read_manifest_status_returns_none_when_missing(tmp_path: Path) -> None:

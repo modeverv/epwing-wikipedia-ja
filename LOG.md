@@ -3323,3 +3323,41 @@ git diff --check
 **次タスク**
 
 - TASK-I007 Kill/restart統合テスト(依存: I006)
+
+### 2026-07-14 23:20 UTC — TASK-I007
+
+**目的**
+
+- `PLAN.md` Phase 9の出口条件("corrupt output再利用拒否"・"interrupted stageだけ再実行")とテスト観点("normalize途中kill"・"output hash mismatch")を実装・検証する。TASK-I005/I006の`decide_resume`は`status`/`stage_version`/`inputs`のみを比較しており、manifestが`complete`と主張していても実際の出力ファイルが消失・破損している場合に誤って再利用してしまうギャップに気づいたため、まずこれを修正した。
+
+**変更**
+
+- `src/wikiepwing/pipeline/resume.py`の`decide_resume`に`current_output_fingerprint: tuple[int, str] | None`引数を追加した。直前manifestの`outputs`が非空の場合、渡されたfingerprintが一致しない、またはNone(ファイル消失)なら`should_skip=False`を返すfail-closed設計にした。`outputs`が空/未記録なら従来通りこのチェックをスキップする。
+- `ingest/orchestrate.py`・`normalize/orchestrate.py`・`render/generate.py`に`_current_output_fingerprint(path)`ヘルパーを追加し、実際の出力ファイルのfingerprintを`decide_resume`へ渡すよう配線した。
+- `run_normalize`/`run_ingest`に、出力先が壊れたsqliteファイルだった場合のフォールバック(`sqlite3.DatabaseError`を捕捉してファイルを削除し再初期化)を追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_pipeline_resume.py tests/test_ingest_orchestrate.py tests/test_normalize_orchestrate.py tests/test_render_generate.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `decide_resume`の出力fingerprint比較を4件のテスト(missing/corrupt/matching/no-outputs-recorded)で確認した。
+- normalizeについて、出力ファイルが破損していても正しく再構築され10記事全件が復元されることを確認するテストを追加した。
+- `multiprocessing`(fork context)で`run_normalize`をbatch_size=1・記事ごとに0.2秒sleepするon_progressで起動し、0.4秒後に実プロセスへ`SIGKILL`を送るkill/restart統合テストを追加した。manifestが`running`のまま残ること、`force=False`では拒否されること、`force=True`での再実行が成功し10記事全件・`PRAGMA integrity_check`が`ok`であることを確認した(3回連続実行して安定性を確認済み)。
+- 標準スイート786件(新規19件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `initialize_model_database`/`initialize_raw_database`が壊れたsqliteファイルへ直接接続しようとして`sqlite3.DatabaseError`で失敗するバグを、テスト実装中に発見・修正した(元々のTASK-I005/I006では出力ファイルの実在性チェック自体が無かったため露見していなかった)。
+- kill/restartテストはタイミング依存だが、`batch_size=1`+記事ごとの明示的sleepにより実処理時間(約2秒)がkillまでの待機時間(0.4秒)を十分上回る設計にし、フレーキーにならないようにした。
+- ingest/generateの実プロセスkillテストは追加していない(normalizeの1本でパターンを代表させる方針は事前に決めた通り)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- EPIC J(日本語検索、依存: H008)

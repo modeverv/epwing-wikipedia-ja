@@ -499,7 +499,7 @@
 
 **依存:** I005
 
-### TASK-I007 [ ] Kill/restart integration tests
+### TASK-I007 [x] Kill/restart integration tests
 
 **依存:** I006
 
