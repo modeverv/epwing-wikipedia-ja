@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -132,6 +134,57 @@ class CliTest(unittest.TestCase):
             lock = json.loads(lock_path.read_text(encoding="utf-8"))
             self.assertEqual(lock["snapshot_version"], "local-2026-07-14")
             self.assertEqual(lock["files"][0]["relative_path"], "jawiki_namespace_0_chunk_0.tar.gz")
+
+    def test_inspect_source_help(self) -> None:
+        result = self.run_cli("inspect-source", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--lock-path", result.stdout)
+        self.assertIn("--sample-lines", result.stdout)
+
+    def test_inspect_source_reports_ok_for_registered_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            sources = temporary / "sources"
+            tar_path = temporary / "downloads" / "chunk_0.tar.gz"
+            tar_path.parent.mkdir(parents=True)
+            body = b'{"identifier":"1"}\n'
+            with tarfile.open(tar_path, mode="w:gz") as archive:
+                info = tarfile.TarInfo(name="chunk_0.ndjson")
+                info.size = len(body)
+                archive.addfile(info, io.BytesIO(body))
+            config = temporary / "register.toml"
+            config.write_text(f'[paths]\nsources = "{sources}"\n', encoding="utf-8")
+
+            register_result = self.run_cli(
+                "register-local-source",
+                "--config",
+                str(config),
+                "--namespace",
+                "0",
+                "--snapshot-identifier",
+                "jawiki_namespace_0",
+                "--snapshot-version",
+                "local-2026-07-14",
+                "--date-modified",
+                "2026-07-14T00:00:00Z",
+                "--file",
+                f"{tar_path}:jawiki_namespace_0_chunk_0",
+                "--git-commit",
+                "abc1234",
+            )
+            self.assertEqual(register_result.returncode, 0, register_result.stderr)
+            lock_path = register_result.stdout.strip()
+
+            inspect_result = self.run_cli("inspect-source", "--lock-path", lock_path)
+
+            self.assertEqual(inspect_result.returncode, 0, inspect_result.stderr)
+            report = json.loads(inspect_result.stdout)
+            self.assertTrue(report["ok"])
+            self.assertEqual(
+                report["files"][0]["ndjson_sample"]["sample_records"],
+                [{"identifier": "1"}],
+            )
 
 
 if __name__ == "__main__":

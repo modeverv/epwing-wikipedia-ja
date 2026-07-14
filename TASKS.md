@@ -243,7 +243,7 @@
 
 **実装:** predownloaded file without copy optional。
 
-### TASK-D009 [ ] Source inspect command
+### TASK-D009 [x] Source inspect command
 
 **依存:** D007
 

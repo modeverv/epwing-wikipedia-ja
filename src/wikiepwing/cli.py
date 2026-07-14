@@ -27,6 +27,7 @@ from wikiepwing.source.acquire import acquire_snapshot
 from wikiepwing.source.auth import EnterpriseAuthClient, HttpAuthTransport
 from wikiepwing.source.downloader import HttpChunkTransport, ResumableChunkDownloader
 from wikiepwing.source.enterprise import HttpSnapshotMetadataTransport, SnapshotMetadataClient
+from wikiepwing.source.inspect import inspect_source
 from wikiepwing.source.register import LocalSourceFile, register_local_source
 
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{4,64}$")
@@ -228,6 +229,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="git commit recorded in source.lock.json (default: `git rev-parse HEAD`)",
     )
+    inspect = subparsers.add_parser(
+        "inspect-source", help="re-verify and sample an acquired Snapshot's source.lock.json"
+    )
+    inspect.add_argument(
+        "--lock-path",
+        type=Path,
+        required=True,
+        help="path to a source.lock.json to inspect",
+    )
+    inspect.add_argument(
+        "--sample-lines",
+        type=int,
+        default=5,
+        help="number of NDJSON records to sample per chunk (default: 5)",
+    )
     return parser
 
 
@@ -381,6 +397,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(result.lock_path)
         return 0
+    if command == "inspect-source":
+        inspection = inspect_source(
+            cast(Path, arguments.lock_path).resolve(),
+            sample_lines=cast(int, arguments.sample_lines),
+        )
+        print(json.dumps(inspection.payload(), ensure_ascii=False, indent=2, sort_keys=True))
+        return 0 if inspection.ok else 1
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0

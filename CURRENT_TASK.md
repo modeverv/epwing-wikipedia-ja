@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-D008
+TASK-D009
 
 ## 目的
 
-ユーザーが既に取得済みのfileを、再downloadせずに(copyまたはsymlinkで)source.lock.jsonへ登録できるようにする(`local-enterprise` provider相当)。
+`source.lock.json`を読み、記録済みfingerprintとの再検証(file)、tar構造の列挙(tar)、NDJSON内容の bounded sample(NDJSON)を行うinspectコマンドを実装する。
 
 ## 事前条件
 
@@ -14,16 +14,16 @@ TASK-D008
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-D008を読んだ
-- [x] `CONFIG_REFERENCE.md` 6節(`source.provider`の`local-enterprise`: predownloaded tar.gz)を確認した
-- [x] `PLAN.md`のlocal source registration/local file mode記述を確認した
-- [x] TASK-D004(`SourceLock`/`build_source_lock`/`canonical_json`)、TASK-D006(`compute_fingerprint`)、TASK-D007の`AcquireResult`を確認した
+- [x] `TASKS.md`のTASK-D009を読んだ
+- [x] `ARCHITECTURE.md` 7.1(`wikiepwing source inspect`)を確認した
+- [x] `PLAN.md` Phase 3出口条件(「source lockから再検証可能」)を確認した
+- [x] TASK-D004(`parse_source_lock`)、TASK-D006(`compute_fingerprint`)、TASK-D007/D008で生成される`source.lock.json`の実構造を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/source/register.py`
+- `src/wikiepwing/source/inspect.py`
 - `src/wikiepwing/cli.py`
-- `tests/test_register.py`
+- `tests/test_source_inspect.py`
 - `tests/test_cli.py`
 - `TASKS.md`
 - `LOG.md`
@@ -32,40 +32,39 @@ TASK-D008
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_register.py tests/test_cli.py
+uv run pytest tests/test_source_inspect.py tests/test_cli.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `register_local_source`が既存fileをcopy(既定)またはsymlink(`copy=False`)でsources_root配下へ登録する
-- [x] 登録済み(destinationが既に存在する)fileは再copy/再symlinkしない
-- [x] 各fileのfingerprintを計算し、呼び出し側が期待SHA-256を渡した場合は不一致を拒否する
-- [x] predownloaded fileが存在しない・通常fileでない場合を拒否する
-- [x] `sources_root`/snapshot directory/destinationのsymlink・絶対path要件を`acquire_snapshot`と整合させる
-- [x] `wikiepwing register-local-source` CLIコマンドがオフラインで動作する(ネットワーク・credentials不要)
+- [x] `source.lock.json`をparseし、記録されたfilesそれぞれの実際のsize/SHA-256を再計算して一致を判定する
+- [x] symlink登録(`register-local-source --no-copy`)されたfileも解決済みの実体を再検証できる
+- [x] fingerprintが一致したfileのみtar構造(member名・size)を列挙する
+- [x] NDJSON member(`.ndjson`で終わる名前)を検出し、bounded byte数・件数でJSON行をsample・parseする
+- [x] 不正なtar・不正なNDJSON行を明確なエラーとして報告する
+- [x] `wikiepwing inspect-source --lock-path`がオフラインで動作し、不一致があれば非ゼロ終了コードを返す
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Wikimedia Enterprise APIへの問い合わせ(このタスクは完全オフライン)
-- `source.provider`設定値の検証・切替ロジック自体(既存の`config.py`スキーマ範囲外)
-- Source inspect command(TASK-D009)
+- 実際のraw ingest処理(EPIC E)
+- fixture NDJSONの作成(TASK-D010)
+- HTML/Wikitextの検証(EPIC E/Gの対象)
 
 ## 実施結果
 
-- `src/wikiepwing/source/register.py`に`register_local_source`、`LocalSourceFile`、`RegisterError`を実装した。
-- destinationが既に存在する(file/symlinkいずれも)場合は再copy/再symlinkせず、その場でfingerprintを再計算するだけにした(acquireの冪等skipと同じ発想)。
-- `copy=True`(既定)は一時fileへ書込→fsync→`os.replace`でatomic copy、`copy=False`は解決済み絶対pathへの`symlink_to`を使う。
-- 呼び出し側が`expected_sha256`を渡した場合は不一致を明確なエラーで拒否する。predownloaded fileの不在・非通常file、`sources_root`非絶対path、snapshot directoryのsymlinkを拒否する。
-- Wikimedia Enterprise metadataレスポンスが存在しないため、`metadata_response_sha256`は登録入力(project/namespace/snapshot_identifier/snapshot_version/date_modified/chunk_identifiers)を正準JSON化したものへのSHA-256として合成した(同じ入力からは決定的に同じ値になることをテストで確認)。
-- `SourceLock`の書込を`lockfile.write_source_lock`として`acquire.py`から`lockfile.py`へ切り出し、`acquire.py`・`register.py`双方から再利用するようにした(重複実装の解消)。
-- `src/wikiepwing/cli.py`に`wikiepwing register-local-source`コマンドを追加した。`--file PATH:CHUNK_IDENTIFIER[:SHA256]`(複数指定可)、`--copy`/`--no-copy`、`--date-modified`(RFC3339)、`--git-commit`を実装した。完全にオフラインで動作する。
-- `tests/test_register.py`に12件、`tests/test_cli.py`に2件(`--help`とend-to-end登録)のテストを追加した。
-- format-check、ruff lint、mypy strict、標準スイート238件、`git diff --check`が成功した。
+- `src/wikiepwing/source/inspect.py`に`inspect_source`、`SourceInspection`、`FileInspection`、`TarMember`、`NdjsonSample`、`InspectError`を実装した。
+- lockの各fileについて`compute_fingerprint`で実際のsize/SHA-256を再計算し、記録値と比較する。symlink登録(`register-local-source --no-copy`)されたfileは解決済みの実体を対象にする。
+- fingerprintが一致したfileのみ`tarfile`でtar構造を列挙し、`.ndjson`で終わるmemberを検出してbounded byte数・件数でJSON行をsample・parseする(`readline(N+1)`で1行あたりのメモリを上限管理)。
+- 不正なtar・不正なNDJSON行・不在file・lock自体の破損を明確な`InspectError`として拒否する。
+- `src/wikiepwing/cli.py`に`wikiepwing inspect-source --lock-path --sample-lines`コマンドを追加した。JSON結果を出力し、不一致があれば終了コード1を返す。完全にオフラインで動作する。
+- `tests/test_source_inspect.py`に14件、`tests/test_cli.py`に2件(`--help`とregister→inspectのend-to-end)のテストを追加した。
+- format-check、ruff lint、mypy strict、標準スイート254件、`git diff --check`が成功した。
+- 実credentialsで`acquire`→`inspect-source`をend-to-endで実行し(project=aawiki)、`ok: true`、tar member `chunk_0.ndjson`、NDJSON sample1件を正しく取得できることを実データで確認した。sample内容から実際のWME記事レコード全フィールド(`article_body.html`、`license`、`redirects`、`version`等)が判明し、将来のEPIC E(Raw ingest)実装の参考情報として有用だった。
 
 **判断・注意点**
 
-- `metadata_response_sha256`をローカル登録用に合成する設計は一次資料が無いための小さな仮定であり、明示的に記録した(WMEの実応答ハッシュとは異なる性質だが、フィールドの目的(このlockを生成した入力の再現可能な指紋)は保っている)。
-- `source.provider`設定値自体の検証・切替は対象外とした(既存`config.py`のスキーマ範囲外)。
+- `tarfile.getmembers()`はtar形式の性質上、archive全体を順次スキャンする(central directoryが無いため)。bytes-in-memoryは境界内(streaming)だが、大きなchunk(実測300MB超)ではtar構造列挙に時間がかかる。これは「開発者による手動inspect」用途として許容範囲と判断した。
+- HTML/Wikitextの内容検証自体は対象外とし、単にNDJSON行がJSON objectとしてparseできることのみ確認する。

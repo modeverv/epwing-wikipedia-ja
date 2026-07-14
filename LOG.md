@@ -1561,3 +1561,42 @@ git diff --check
 **次タスク**
 
 - TASK-D009 Source inspect command
+
+### 2026-07-14 03:40 UTC — TASK-D009
+
+**目的**
+
+- `source.lock.json`を読み、記録済みfingerprintとの再検証(file)、tar構造の列挙(tar)、NDJSON内容のbounded sample(NDJSON)を行うinspectコマンドを実装する。
+
+**変更**
+
+- `src/wikiepwing/source/inspect.py`に`inspect_source`、`SourceInspection`、`FileInspection`、`TarMember`、`NdjsonSample`、`InspectError`を実装した。
+- 各fileを`compute_fingerprint`で再検証し、一致した場合のみ`tarfile`でtar構造を列挙、`.ndjson`で終わるmemberを`readline(N+1)`でbounded sample・parseする。symlink登録されたfileは解決済み実体を対象にする。
+- `src/wikiepwing/cli.py`に`wikiepwing inspect-source --lock-path --sample-lines`を追加した。JSON結果を出力し、不一致時は終了コード1を返す。完全オフライン動作。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_source_inspect.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**実データ検証**
+
+- 実credentialsで`acquire`(project=aawiki)→`inspect-source`をend-to-endで実行し、`ok: true`、tar member `chunk_0.ndjson`、NDJSON sample1件を正しく取得した。
+- sample内容から実際のWME記事レコードの全フィールド構造(`article_body.html`、`license`、`redirects`、`version`、`main_entity`等)が判明し、今後のEPIC E(Raw ingest)設計の参考情報として記録した。
+
+**結果**
+
+- 標準スイート254件(新規16件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `tarfile.getmembers()`はtar形式の性質上archive全体を順次スキャンする。bytes-in-memoryは境界内だが、大きなchunkでは時間がかかる。手動inspect用途として許容範囲とした。
+- HTML/Wikitextの内容検証自体は対象外とし、NDJSON行がJSON objectとしてparseできることのみ確認する。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D010 Build sanitized NDJSON fixtures
