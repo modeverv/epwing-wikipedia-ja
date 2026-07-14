@@ -12,10 +12,7 @@ and "graphic/gaiji登録" responsibilities).
 
 from __future__ import annotations
 
-import json
-import os
 import sqlite3
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,6 +21,12 @@ from pathlib import Path
 from wikiepwing.ingest.zstd_codec import decompress
 from wikiepwing.model.canonical import decode_article
 from wikiepwing.model.database import connect_model_database
+from wikiepwing.pipeline.stage_manifest import StageManifestError
+from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
+from wikiepwing.pipeline.stage_manifest import read_manifest_payload as _read_manifest_payload
+from wikiepwing.pipeline.stage_manifest import (
+    write_stage_manifest_payload as _write_stage_manifest_payload,
+)
 from wikiepwing.render.freepwing_source import write_entries_jsonl
 from wikiepwing.render.mini_layout import render_article_to_entry
 from wikiepwing.render.rendered_entry import RenderedEntry
@@ -99,16 +102,16 @@ class GenerateResult:
 
 def read_manifest_status(manifest_path: Path) -> str | None:
     """Return a manifest's `status` field, or None if no manifest exists yet."""
-    if not manifest_path.is_file():
+    try:
+        payload = _read_manifest_payload(manifest_path)
+    except StageManifestError as error:
+        raise GenerateError(str(error)) from error
+    if payload is None:
         return None
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise GenerateError(f"cannot read existing manifest {manifest_path}: {error}") from error
-    status = payload.get("status") if isinstance(payload, dict) else None
-    if not isinstance(status, str) or not status:
-        raise GenerateError(f"existing manifest {manifest_path} has no valid status field")
-    return status
+        return _extract_manifest_status(payload, manifest_path)
+    except StageManifestError as error:
+        raise GenerateError(str(error)) from error
 
 
 def run_generate(
@@ -236,16 +239,4 @@ def _build_manifest(
 
 
 def _write_manifest(manifest: GenerateManifest, destination: Path) -> None:
-    payload = json.dumps(manifest.payload(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(
-        dir=destination.parent, prefix=f".{destination.name}.", delete=False
-    )
-    try:
-        temp_path = Path(handle.name)
-        handle.write(payload.encode("utf-8"))
-        handle.flush()
-        os.fsync(handle.fileno())
-    finally:
-        handle.close()
-    os.replace(temp_path, destination)
+    _write_stage_manifest_payload(manifest.payload(), destination)

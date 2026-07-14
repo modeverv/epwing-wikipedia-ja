@@ -475,7 +475,7 @@
 
 ## EPIC I — Pipeline resume
 
-### TASK-I001 [ ] Stage manifest schema
+### TASK-I001 [x] Stage manifest schema
 
 **依存:** E008,G012,H010
 

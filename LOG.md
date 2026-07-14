@@ -3113,3 +3113,37 @@ git diff --check
 **次タスク**
 
 - TASK-I001 Stage manifest schema(依存: E008,G012,H010)
+
+### 2026-07-14 20:10 UTC — TASK-I001
+
+**目的**
+
+- `DATA_CONTRACTS.md` 3節(Stage manifest contract)を形式化した共有モジュールを実装し、`ingest/orchestrate.py`・`normalize/orchestrate.py`・`render/generate.py`に重複していたmanifest読み込み・atomic書き込みロジックを集約する。
+
+**変更**
+
+- `src/wikiepwing/pipeline/__init__.py`(新規パッケージ)、`src/wikiepwing/pipeline/stage_manifest.py`に`validate_stage_manifest_payload`(envelope必須field・status enum検証)/`read_manifest_payload`/`extract_status`/`write_stage_manifest_payload`(atomic書き込み)を実装した。
+- `ingest/orchestrate.py`・`normalize/orchestrate.py`・`render/generate.py`の`read_manifest_status`/`_write_manifest`を共有実装を呼び出す薄いwrapperへリファクタし、重複していたJSON parse/atomic write処理を削除した。各モジュール固有の例外型(`IngestError`/`NormalizeError`/`GenerateError`)とエラーメッセージ文言は保持し、既存テストの後方互換性を維持した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_pipeline_stage_manifest.py tests/test_ingest_orchestrate.py tests/test_normalize_orchestrate.py tests/test_render_generate.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `validate_stage_manifest_payload`の必須field検証・status enum全値受理・不正値拒否、read/write往復、atomic書き込みのJSON妥当性を25件のテストで確認した。
+- リファクタ中に実際のバグを発見した: `read_manifest_payload`に`validate_stage_manifest_payload`のフル検証を組み込んだ結果、既存テストが使う最小限の`{"schema_version":1,"status":"running"}`形式のmanifest(running中かどうかのチェック専用、fullなenvelopeを意図的に持たない)が「missing required field」で拒否されるようになり、2件のテストが壊れた。`read_manifest_payload`はstatus読み取り専用の緩い検証(dictであることのみ)に留め、フル検証は`write_stage_manifest_payload`(書き込み時)のみに適用するよう設計を修正した。
+- 既存3モジュールのテスト(ingest/normalize/generate orchestrate)がすべて変更無しで成功することを確認した。標準スイート739件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- Fingerprint計算(I002)・Stage lock(I003)・Atomic stage output(I004、本タスクは既存のatomic書き込みパターンを集約したのみ)・Resume判定・`--from-stage`/`--force-stage`(I005-I006)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-I002 Fingerprint calculation(依存: I001)

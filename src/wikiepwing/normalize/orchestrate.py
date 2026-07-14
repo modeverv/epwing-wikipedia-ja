@@ -6,10 +6,7 @@ failed, `--force`) for the normalize stage (TASK-G012).
 
 from __future__ import annotations
 
-import json
-import os
 import sqlite3
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -36,6 +33,12 @@ from wikiepwing.model.logical_hash import compute_logical_hash
 from wikiepwing.model.repository import ModelRepository
 from wikiepwing.model.validate import ModelValidationLimits, validate_article
 from wikiepwing.normalize.pipeline import NormalizeOptions, normalize_html
+from wikiepwing.pipeline.stage_manifest import StageManifestError
+from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
+from wikiepwing.pipeline.stage_manifest import read_manifest_payload as _read_manifest_payload
+from wikiepwing.pipeline.stage_manifest import (
+    write_stage_manifest_payload as _write_stage_manifest_payload,
+)
 from wikiepwing.source.checksums import compute_fingerprint
 
 SCHEMA_VERSION = 1
@@ -115,16 +118,16 @@ class NormalizeResult:
 
 def read_manifest_status(manifest_path: Path) -> str | None:
     """Return a manifest's `status` field, or None if no manifest exists yet."""
-    if not manifest_path.is_file():
+    try:
+        payload = _read_manifest_payload(manifest_path)
+    except StageManifestError as error:
+        raise NormalizeError(str(error)) from error
+    if payload is None:
         return None
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise NormalizeError(f"cannot read existing manifest {manifest_path}: {error}") from error
-    status = payload.get("status") if isinstance(payload, dict) else None
-    if not isinstance(status, str) or not status:
-        raise NormalizeError(f"existing manifest {manifest_path} has no valid status field")
-    return status
+        return _extract_manifest_status(payload, manifest_path)
+    except StageManifestError as error:
+        raise NormalizeError(str(error)) from error
 
 
 def run_normalize(
@@ -455,16 +458,4 @@ def _read_license_ids(connection: sqlite3.Connection, page_id: int) -> tuple[str
 
 
 def _write_manifest(manifest: NormalizeManifest, destination: Path) -> None:
-    payload = json.dumps(manifest.payload(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(
-        dir=destination.parent, prefix=f".{destination.name}.", delete=False
-    )
-    try:
-        temp_path = Path(handle.name)
-        handle.write(payload.encode("utf-8"))
-        handle.flush()
-        os.fsync(handle.fileno())
-    finally:
-        handle.close()
-    os.replace(temp_path, destination)
+    _write_stage_manifest_payload(manifest.payload(), destination)
