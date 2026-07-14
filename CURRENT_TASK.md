@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-G013
+TASK-H001
 
 ## 目的
 
-`PLAN.md` Phase 6出口条件"10記事golden一致"を実装する。`ARCHITECTURE.md`のディレクトリ構成で予告されている`tests/golden/`配下に、Phase 6の初期対応範囲(headings/paragraphs/bold-italic/ordered-unordered list/definition list/pre-code/line break/simple quote/horizontal rule/HTML entities/section anchors)を1つずつ代表する10個のHTML入力+期待Block JSON出力のペアを配置し、`normalize_html`の出力が固定的に一致し続けることをregression testとして保証する。internal/external link(Epic H範囲、未実装)は対象外とする。
+`ARCHITECTURE.md` 12.5(内部リンク解決)の手順1-4(URL decode/fragment分離/project base URL確認/namespace-title抽出)を実装する。page ID解決(手順6、TASK-H002)・redirect扱い(手順7)・EPWING entry ID変換(手順8)は対象外とする。`/wiki/Emacs`・`https://ja.wikipedia.org/wiki/Emacs`・`./Emacs`という3種の対象URL例に対応する。
 
 ## 事前条件
 
@@ -14,16 +14,15 @@ TASK-G013
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-G013(依存: G012)を読んだ
-- [x] `PLAN.md` Phase 6(初期対応一覧・出口条件"10記事golden一致")を確認した
-- [x] `ARCHITECTURE.md`のディレクトリ構成(`tests/golden/`)を確認した
-- [x] `normalize/pipeline.py`の`normalize_html`と`model/blocks.py`の`block_payload`を再利用する
+- [x] `TASKS.md`のTASK-H001(依存: G006)を読んだ
+- [x] `ARCHITECTURE.md` 12.5(対象URL例、処理手順1-8、"外部サイトへのリンクはplain URLまたは注記として残します")を確認した
+- [x] MediaWikiの一般的なnamespace prefix(Category/Template/File/Talk/User/Wikipedia/Help/Portal/Module/MediaWiki/Special)とtitle中のunderscoreがspaceを表す慣行をdocumented assumptionとして採用する
 
 ## 変更予定ファイル
 
-- `tests/golden/normalize/*.html`(10ファイル)
-- `tests/golden/normalize/*.json`(10ファイル、対応する期待Block JSON配列)
-- `tests/test_golden_normalize.py`
+- `src/wikiepwing/links/__init__.py`
+- `src/wikiepwing/links/url_parser.py`
+- `tests/test_links_url_parser.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,28 +30,35 @@ TASK-G013
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_golden_normalize.py
+uv run pytest tests/test_links_url_parser.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] 10個のgolden fixture(heading/paragraph/bold-italic/ordered list/unordered list(nested)/definition list/preformatted-code/line break/blockquote/horizontal rule+HTML entities+section anchor)を用意する
-- [x] 各fixtureについて`normalize_html`の出力(`block_payload`でJSON化したもの)が保存済みの期待JSONと完全一致する
+- [x] `parse_internal_url(url, *, project_base_urls) -> ParsedInternalUrl | None`が`/wiki/Title`形式(project base URLからの相対path)を解析する
+- [x] 完全URL(`https://ja.wikipedia.org/wiki/Title`)が`project_base_urls`のいずれかと一致すれば内部linkとして解析する
+- [x] 相対path(`./Title`、`../Title`)を解析する
+- [x] fragment(`#section`)を分離する
+- [x] percent-encodingをdecodeし、underscoreをspaceへ変換したtitleを返す
+- [x] 既知のnamespace prefix(`Category:`等)を検出する。それ以外のcolonを含むtitleはnamespace無しとして扱う
+- [x] `project_base_urls`のいずれにも一致しない・`/wiki/`形式でない場合は`None`(外部link)を返す
 - [x] `make check`が成功する
 
 ## 非対象
 
-- internal/external linkを含むgolden fixture(Epic H未実装のため)
-- Table/Infobox/Image/Math/Referencesを含むgolden fixture(Epic K/L/N/O未実装のため)
+- raw DBでのpage ID解決(TASK-H002)
+- redirect targetの扱い(TASK-H002)
+- EPWING entry IDへの変換(後続epic)
 
 ## 実施結果
 
-- `tests/golden/normalize/`に10組のHTML/JSON goldenペアを作成した。
-- `tests/test_golden_normalize.py`に11件のテスト(存在確認+10 fixtureの完全一致検証)を追加。
-- `uv run pytest tests/test_golden_normalize.py`: 11 passed。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート620件)すべて成功。
+- `src/wikiepwing/links/__init__.py`(新規パッケージ)、`src/wikiepwing/links/url_parser.py`に`parse_internal_url`/`ParsedInternalUrl`/`UrlParseError`を実装した。
+- `tests/test_links_url_parser.py`に12件のテストを追加。
+- `uv run pytest tests/test_links_url_parser.py`: 12 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート632件)すべて成功。
 - `git diff --check`: 問題なし。
-- `TASKS.md`(G013チェック)、`LOG.md`(新規エントリ)を更新した。
-- Epic G(HTML normalization baseline)完了。次はEpic H(Links and Mini rendering)。
+- `TASKS.md`(H001チェック)、`LOG.md`(新規エントリ)を更新した。
+- 既知namespace prefix一覧はMediaWikiの一般的な慣行に基づくdocumented assumption。
+- 次タスク: TASK-H002 Internal target resolver。

@@ -419,7 +419,7 @@
 
 ## EPIC H — Links and Mini rendering
 
-### TASK-H001 [ ] URL-to-title parser
+### TASK-H001 [x] URL-to-title parser
 
 **依存:** G006
 

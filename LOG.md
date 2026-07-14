@@ -2674,3 +2674,36 @@ git diff --check
 **次タスク**
 
 - Epic H(Links and Mini rendering)へ進む。
+
+### 2026-07-14 15:05 UTC — TASK-H001
+
+**目的**
+
+- `ARCHITECTURE.md` 12.5(内部リンク解決)の手順1-4(URL decode/fragment分離/project base URL確認/namespace-title抽出)を実装する。
+
+**変更**
+
+- `src/wikiepwing/links/__init__.py`(新規パッケージ)、`src/wikiepwing/links/url_parser.py`に`parse_internal_url`/`ParsedInternalUrl`/`UrlParseError`を実装した。`/wiki/Title`(site-relative)・project base URLに一致する完全URL・`./Title`(document-relative)の3形状を解析し、fragment分離、percent-decoding、underscore→space変換、既知namespace prefix(Category等)検出を行う。該当しないURLは外部linkとして`None`を返す。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_links_url_parser.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 3種のURL形状の解析、fragment分離、percent-encoding+underscore decode(実データ由来の`GNU%E3%83%97...`→`GNUプロジェクト`を含む)、既知/未知namespace prefixの判別、外部URL・非wikiパス・空URLでの拒否を12件のテストで確認した。
+- 標準スイート632件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 既知namespace prefix一覧(Category/Template/File/Talk/User/Wikipedia/Help/Portal/Module/MediaWiki/Special、及びtalk派生)はMediaWikiの一般的な慣行に基づくdocumented assumption。
+- page ID解決(手順6)・redirect扱い(手順7)・EPWING entry ID変換(手順8)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H002 Internal target resolver(依存: H001,E008)
