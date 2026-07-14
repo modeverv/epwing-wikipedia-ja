@@ -3250,3 +3250,36 @@ git diff --check
 **次タスク**
 
 - TASK-I005 Resume decision(依存: I002-I004)
+
+### 2026-07-14 21:45 UTC — TASK-I005
+
+**目的**
+
+- `ARCHITECTURE.md` 7.2(Orchestratorの責務"manifest比較"・"resume判定")を実装する。既存3 orchestrateモジュールは直前manifestの`status`が`running`かどうかしか見ておらず、`status: complete`な直前実行を再利用してstageを丸ごとskipする判定ロジックが存在しなかった。
+
+**変更**
+
+- `src/wikiepwing/pipeline/resume.py`を新規実装した。`decide_resume(previous_manifest, *, stage_version, current_inputs) -> ResumeDecision`は、(1)manifestが存在しない、(2)`status`が`complete`でない、(3)`stage_version`が異なる、(4)`inputs`が異なる、のいずれかに該当すれば`should_skip=False`+理由を返し、すべて一致すれば`should_skip=True`を返す純粋関数。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_pipeline_resume.py
+make check
+git diff --check
+```
+
+**結果**
+
+- manifest無し・各status(failed/running)・stage_version不一致・inputs不一致(欠落/追加/変更)・完全一致の7パターンを確認するテストを実装し、全件成功した。
+- 標準スイート763件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 本タスクは判定ロジックのみを実装し、既存orchestrateモジュール(ingest/normalize/generate)への実配線は、`--from-stage`/`--force-stage`と合わせてTASK-I006で行う方針とした(CLIフラグの意味論と一体で設計した方が手戻りが少ないため)。
+- outputsファイルの実在性・sha256一致チェックは対象外とした(manifestの`inputs`/`stage_version`/`status`比較のみ)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-I006 `--from-stage`/`--force-stage`(依存: I005)

@@ -491,7 +491,7 @@
 
 **依存:** I001
 
-### TASK-I005 [ ] Resume decision
+### TASK-I005 [x] Resume decision
 
 **依存:** I002-I004
 
