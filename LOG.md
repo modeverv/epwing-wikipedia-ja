@@ -3639,3 +3639,36 @@ git diff --check
 **次タスク**
 
 - TASK-K002 Row/col span normalization(依存: K001)
+
+### 2026-07-15 03:10 UTC — TASK-K002
+
+**目的**
+
+- `ARCHITECTURE.md` 11.5(TableBlock/TableCellがspan値を保持したままの設計)を踏まえ、TASK-K001の`RawTable`の各セルが実際にどのグリッド位置(行・列)に属するかを計算する。複雑度分類(K003)・レンダラ(K004-K005)が必要とする中間計算であり、モデル自体には保存しない。
+
+**変更**
+
+- `src/wikiepwing/normalize/table_grid.py`に`PositionedCell`・`NormalizedTable`・`normalize_table_spans()`を実装した。HTML仕様の"table grid formation algorithm"相当: 前の行からのrowspanが占有する列をスキップしながら各セルの開始列を決定し、rowspan+colspanの組み合わせは矩形領域として占有記録し、残り行数が尽きたら解放する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_table_grid.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 単純グリッド・colspanによる列ずれ・rowspanによる次行の列スキップ・rowspan+colspan組み合わせ・rowspanの期限切れ・最大幅による列数計算・空テーブル・caption/class名の保持を8件のテストで確認した。
+- 標準スイート858件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 列数(`column_count`)は各セルの`col_index + col_span`の最大値として計算した。当初トレイリングのアクティブスパン追跡で計算しようとしたが、後続行のセルが占有列と無関係な位置にある場合に誤った値になりうるバグに気づき、シンプルなセル単位の最大値計算に修正した。
+- 現実のWikipediaテーブルを想定し、仕様上の完全なedge case(重複・不正なspan宣言)への対応は行っていない(素直な逐次占有列スキップで十分と判断)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-K003 Table complexity classifier(依存: K002)

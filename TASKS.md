@@ -543,7 +543,7 @@
 
 **依存:** G001,F003
 
-### TASK-K002 [ ] Row/col span normalization
+### TASK-K002 [x] Row/col span normalization
 
 **依存:** K001
 
