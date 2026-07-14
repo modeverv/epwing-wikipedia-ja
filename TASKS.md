@@ -639,7 +639,7 @@
 
 **依存:** M002
 
-### TASK-M009 [ ] Unicode report
+### TASK-M009 [x] Unicode report
 
 **依存:** M003-M008
 

@@ -4406,3 +4406,36 @@ git diff --check
 **次タスク**
 
 - TASK-M009 Unicode report(依存: M003-M008)
+
+### 2026-07-15 11:50 UTC — TASK-M009
+
+**目的**
+
+- `ARCHITECTURE.md` 18.5("件数・頻出順・記事例をreportへ出す")を完成させ、Epic M(Unicode and gaiji)を締めくくる。
+
+**変更**
+
+- `src/wikiepwing/gaiji/report.py`に`UnicodeReport`・`build_unicode_report()`・`write_unicode_report()`を実装した。TASK-M008の`UnrepresentableTracker.most_frequent()`から総出現数・distinct文字数・文字ごとの統計(character/code_point/count/examples)を組み立て、JSONとしてTASK-I004の`atomic_write_text`で原子的に書き出す。`reference/report.py`ほどの規模(JSON+HTML+Markdown)は要求されていないと判断し、単一のJSON reportに絞った。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_report.py
+make check
+git diff --check
+```
+
+**結果**
+
+- report組み立て・頻出順ソート・code_point/examples含有・空trackerでの挙動・JSON書き込みの妥当性・親ディレクトリ自動作成を6件のテストで確認した。
+- 標準スイート1022件(新規6件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実際のCLIコマンドへの配線(`wikiepwing`のサブコマンドとしての公開)は本タスクの対象外とし、将来のタスクへ委ねた。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+- Epic M(Unicode and gaiji、TASK-M001-M009)が全て完了した。TASK-M004実装時に`DATA_CONTRACTS.md`の既存スキーマ定義を確認せず独自設計してしまうミスがあったが、TASK-M006着手時に発見し訂正した(この教訓を今後のスキーマ設計作業に活かす)。
+
+**次タスク**
+
+- EPIC N(Math、依存: G001)

@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-M008
+TASK-M009
 
 ## 目的
 
-`ARCHITECTURE.md` 18.5(D分類の文字はreplacement markerだけで済ませず、コードポイント表記をfallbackにする。例: `[U+1Fxxx]`。件数・頻出順・記事例をreportへ出す)を実装する。(1)コードポイント表記fallback文字列を生成する関数、(2)出現をcharacterごとに集計し、頻出順・記事例(件数上限付き)を取得できる`UnrepresentableTracker`を実装する。実際のreport出力フォーマット自体はTASK-M009(依存: M003-M008)の対象とする。
+`ARCHITECTURE.md` 18.5("件数・頻出順・記事例をreportへ出す")を完成させ、Epic M(Unicode and gaiji)を締めくくる。TASK-M008の`UnrepresentableTracker`から、JSON形式のUnicode reportを組み立てて原子的に書き出す`build_unicode_report()`/`write_unicode_report()`を実装する。既存の`reference/report.py`(JSON+HTML+Markdownの本格的なreport生成)ほど大掛かりな成果物は要求されていないため、`ARCHITECTURE.md` 18.5が明示する3項目(件数・頻出順・記事例)を持つ単一のJSON reportに絞る。書き込みはTASK-I004の`atomic_write_text`を再利用する。
 
 ## 事前条件
 
@@ -14,14 +14,15 @@ TASK-M008
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-M008(依存: M002)を読んだ
-- [x] `ARCHITECTURE.md` 18.5(fallback例`[U+1Fxxx]`、件数・頻出順・記事例)を再確認した
-- [x] `DATA_CONTRACTS.md` 11(Diagnostic details contract、詳細サイズに上限を設ける慣習)を確認し、記事例の保持数にも上限を設ける根拠とした
+- [x] `TASKS.md`のTASK-M009(依存: M003-M008)を読んだ
+- [x] `ARCHITECTURE.md` 18.5(件数・頻出順・記事例)を再確認した
+- [x] TASK-M008の`UnrepresentableTracker`/`most_frequent()`を確認した
+- [x] `wikiepwing.pipeline.atomic_write.atomic_write_text`(TASK-I004)を確認し、report書き込みに再利用する
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/gaiji/unrepresentable.py`(新規: `unrepresentable_fallback()`, `UnrepresentableTracker`, `UnrepresentableStat`)
-- `tests/test_gaiji_unrepresentable.py`(新規)
+- `src/wikiepwing/gaiji/report.py`(新規: `UnicodeReport`, `build_unicode_report()`, `write_unicode_report()`)
+- `tests/test_gaiji_report.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -29,26 +30,24 @@ TASK-M008
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_gaiji_unrepresentable.py
+uv run pytest tests/test_gaiji_report.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `unrepresentable_fallback(character)`が`"[U+XXXX]"`形式(大文字hex、4桁以上、上位面は桁数を拡張)を返す
-- [x] `UnrepresentableTracker.record()`が文字ごとの出現回数を集計する
-- [x] `UnrepresentableTracker.most_frequent()`が頻出順(降順、同数はコードポイント順で安定)にソートされた統計を返す
-- [x] 記事例(page_id/title)の保持数に上限があり、上限を超えても件数カウント自体は正しく増え続ける
+- [x] `build_unicode_report(tracker)`が、総出現数・distinct文字数・頻出順にソートされた文字ごとの統計(件数・記事例)を持つ`UnicodeReport`を組み立てる
+- [x] `write_unicode_report(report, destination)`が、JSON reportを原子的に書き出す
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際のreportファイル出力・フォーマット(TASK-M009)
+- HTML/Markdown形式のreport(`reference/report.py`ほどの規模は要求されていないと判断)
+- 実際のCLIコマンドへの配線(将来のタスク)
 
 ## 実施結果
 
-- `src/wikiepwing/gaiji/unrepresentable.py`に`unrepresentable_fallback()`・`UnrepresentableExample`・`UnrepresentableStat`・`UnrepresentableTracker`を実装した。fallbackは`"[U+XXXX]"`(4桁以上、必要に応じ桁数拡張)。Trackerは文字ごとの出現回数を無制限にカウントしつつ、記事例(page_id/title)の保持数だけ上限(デフォルト5件)を設ける設計にした。
-- mypy strictで`sorted()`が`list`を返しタプル型注釈と不一致になるエラーを検出し、`tuple()`で包んで修正した。
-- `tests/test_gaiji_unrepresentable.py`(新規13件)で、fallback形式(BMP/補助面)・出現回数集計・頻出順ソート・同数時のコードポイント順tie-break・limit・記事例上限とカウントの独立性・page_id/titleの保持・総出現数・distinct文字一覧・不正なmax_examples・0件上限時の挙動を確認した。
-- `make check`(format-check/lint/mypy/pytest 1016件)と`git diff --check`が成功した。
+- `src/wikiepwing/gaiji/report.py`に`UnicodeReport`・`build_unicode_report()`・`write_unicode_report()`を実装した。`UnrepresentableTracker.most_frequent()`から総出現数・distinct文字数・文字ごとの統計(character/code_point/count/examples)を組み立て、JSONとして原子的に書き出す(TASK-I004の`atomic_write_text`を再利用)。
+- `tests/test_gaiji_report.py`(新規6件)で、report組み立て・頻出順ソート・code_point/examples含有・空trackerでの挙動・JSON書き込みの妥当性・親ディレクトリ自動作成を確認した。
+- `make check`(format-check/lint/mypy/pytest 1022件)と`git diff --check`が成功した。これでEpic M(Unicode and gaiji、M001-M009)が完了した。
