@@ -1386,3 +1386,29 @@ git diff --check
 **次タスク**
 
 - ユーザーがWikimedia Enterpriseアカウントのプラン・ダウンロード権限を確認した後、TASK-D005 Resumable downloaderを再開する。
+
+### 2026-07-14 02:15 UTC — Chunk downloadエンドポイントの訂正
+
+**目的**
+
+- ユーザーが提示した公式APIリファレンス(login/snapshots/chunks/download)と照合し、前回の404がアカウント権限ではなくendpoint pathの誤りだったことを確認する。
+
+**発見事項**
+
+- 正しいchunk download pathは`GET /v2/snapshots/{snapshot_identifier}/chunks/{identifier}/download`であり、chunkはsnapshotと同列の`/v2/snapshots/{chunk_identifier}/download`ではなく子resourceだった。前回の疎通確認はこの誤ったpathを叩いていた。
+- 正しいpathで実際にダウンロードが成功した: `jawiki_namespace_0`の`jawiki_namespace_0_chunk_0`に対し`Range: bytes=0-63`で`206 Partial Content`、`Content-Range: bytes 0-63/331920287`(chunk単体で約316 MB)、応答先頭はgzip magic numberで有効なtar.gzだった。Rangeが機能するため、resumable downloadは実現可能と確認した。
+- S3 redirect先のkey構造は`chunks/{snapshot_identifier}/chunk_{N}_group_{M}.tar.gz`(前回誤って想定した`{chunk_identifier}_group_1.tar.gz`とは異なる)。
+- Structured Contents Snapshot(`/v2/snapshots/structured-contents`)は9project(jawiki含まず)のみ対応という公式記載を確認し、ADR-002の判断が引き続き妥当であることを再確認した。
+
+**変更**
+
+- `SOURCES.md`のChunk download API節を、誤ったpathの記録から正しいpath・実測結果へ差し替えた。
+
+**判断・注意点**
+
+- アカウントのプラン・権限は問題ではなく、こちらのendpoint pathの誤りだった。ユーザーへの前回の説明(プラン起因の可能性)は誤りだったため訂正する。
+- credentialsは引き続き一切ログ・文書へ出力していない。一時検証スクリプトはリポジトリ外に置き、コミットしていない。
+
+**次タスク**
+
+- TASK-D005 Resumable downloaderを、正しいchunk download endpointで実装する。

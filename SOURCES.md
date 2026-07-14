@@ -85,12 +85,20 @@ Snapshot documentationの2026-07-13表示では、Structured Contents Betaの対
   - `chunks`: 文字列配列。**jawiki namespace 0は2026-07-14時点で81個のchunk(`jawiki_namespace_0_chunk_0`〜`_80`)に分割**されている。単一tar.gzという当初の`ARCHITECTURE.md`例示は簡略化であり、実際のdownloaderはchunk単位の取得を前提に設計する必要がある(TASK-D005への申し送り)。
 - jawiki namespace 0のSnapshotは実際に列挙され、`is_part_of.identifier == "jawiki"`かつ`namespace.identifier == 0`のentryが1件存在することを確認した(2026-07-14時点でサイズ約30,896 MB)。
 
-**Chunk download API(`https://api.enterprise.wikimedia.com/v2/snapshots/{chunk_identifier}/download`、2026-07-14実測、TASK-D005着手前の疎通確認)**
+**Chunk download API — 訂正版(2026-07-14、公式APIリファレンスとの照合・実測で確定)**
 
-- `GET .../{chunk_identifier}/download`(Bearer認証)はHTTP 307で署名付きS3 URL(`https://wme-eks-data-pr.s3.amazonaws.com/snapshots/{chunk_identifier}_group_1.tar.gz?X-Amz-...`)へredirectする。
-- 署名は`X-Amz-Expires=60`(60秒)で失効する。大きなfileのdownloaderは途中で署名を再取得できる設計が必要。
-- redirect先のS3 URLへ`Authorization`headerを転送すると`400 InvalidArgument: Only one auth mechanism allowed`になる。素朴なurllibの自動redirect追従はこのheaderを保持したまま転送するため使えず、redirectを手動処理し、S3への実request自体は素のGET(`Authorization`無し、必要なら`Range`のみ)で送る必要がある。
-- **2026-07-14時点で、`aawiki_namespace_0_chunk_0`(約1 KB相当の最小規模)を含め、確認した全chunkでS3側が`404 NoSuchKey`を返した。** 署名検証自体は通っている(`AccessDenied`/`SignatureDoesNotMatch`ではない)ため、request形式の誤りではなく対象objectがbucketに実在しないことを示す。アカウントのプラン起因(metadata閲覧のみでSnapshot本体のdownload権限が無い等)の可能性がある。ユーザーがWikimedia Enterpriseのアカウントプランを確認中。TASK-D005再開時に本状況を再確認すること。
+初回の疎通確認では`GET /v2/snapshots/{chunk_identifier}/download`を誤って叩き(chunkをsnapshotと同列のresourceとして扱った)、redirect自体は成功するがS3側で`404 NoSuchKey`になっていた。ユーザーが提示した公式APIリファレンスにより、chunkはsnapshotの子resourceとして次のURLで扱うことが判明し、実データ取得に成功した。
+
+- 正しいendpoint: `GET https://api.enterprise.wikimedia.com/v2/snapshots/{snapshot_identifier}/chunks/{identifier}/download`
+  - `snapshot_identifier`: 例 `jawiki_namespace_0`(metadata一覧の`identifier`と同じ)
+  - `identifier`: chunk identifier(例 `jawiki_namespace_0_chunk_0`)またはindex
+  - `Range` headerを直接この一次endpointへ渡せる(`GET /v2/snapshots/{snapshot_identifier}/chunks`でchunk一覧も取得可能)
+- `HEAD`も同じpathで利用可能(`GET /v2/snapshots/{identifier}/download`と`.../chunks/{identifier}/download`の両方にHEAD variantがある)。
+- Bearer認証のGETはHTTP 307で署名付きS3 URLへredirectする。実測でのS3 key構造は`https://wme-eks-data-pr.s3.amazonaws.com/chunks/{snapshot_identifier}/chunk_{N}_group_{M}.tar.gz`(snapshot単体の場合は`snapshots/{snapshot_identifier}_group_{M}.tar.gz`)。
+- 署名は短時間(前回計測で`X-Amz-Expires=60`)で失効するため、resumable downloaderは長時間かかるfileの途中で署名を再取得できる設計にする。
+- redirect先のS3 URLへ`Authorization`headerを転送すると`400 InvalidArgument: Only one auth mechanism allowed`になる。素朴なurllibの自動redirect追従はこのheaderを保持したまま転送するため使えず、redirectを手動処理し、S3への実requestは素のGET(`Authorization`無し、`Range`のみ)で送る必要がある。
+- 実測(2026-07-14、`jawiki_namespace_0`の`jawiki_namespace_0_chunk_0`、`Range: bytes=0-63`): `206 Partial Content`、`Content-Range: bytes 0-63/331920287`(このchunk単体で約316 MB)、応答先頭bytesはgzip magic number(`1f8b0800`)で有効なtar.gzストリームだった。Rangeが機能することを確認済みなので、resumable downloadは実現可能。
+- Structured Contents Snapshot(`/v2/snapshots/structured-contents`)は`enwiki`/`dewiki`/`frwiki`/`eswiki`/`ptwiki`/`itwiki`/`nlwiki`/`cywiki`/`idwiki`の9projectのみ対応というAPIリファレンス記載を確認した。jawikiは対象外であり、`ARCHITECTURE.md`のADR-002(Structured Contentsをjawiki必須経路にしない)は引き続き妥当。
 
 ---
 
