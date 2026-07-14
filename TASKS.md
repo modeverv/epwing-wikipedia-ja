@@ -443,7 +443,7 @@
 
 **依存:** H005
 
-### TASK-H007 [ ] Mini layout renderer
+### TASK-H007 [x] Mini layout renderer
 
 **依存:** H006,G012
 

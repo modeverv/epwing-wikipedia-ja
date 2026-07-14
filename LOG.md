@@ -2872,3 +2872,36 @@ git diff --check
 **次タスク**
 
 - TASK-H007 Mini layout renderer(依存: H006,G012)
+
+### 2026-07-14 17:10 UTC — TASK-H007
+
+**目的**
+
+- `ARCHITECTURE.md` 16.2(標準レイアウト)を実装する。ArticleをRenderedEntryへ変換する。
+
+**変更**
+
+- `src/wikiepwing/render/mini_layout.py`に`render_article_to_entry`を実装した。title/別名/更新日/導入文/見出し番号付き本文(`_HeadingNumberer`によるsibling連番・nesting復帰)/カテゴリ/出典情報をplain textへ変換する。paragraph/list/definition list/quote/preformatted/code/horizontal rule/unsupportedの各blockに対応する。`internal_targets`は`InternalLinkInline`(resolution="resolved")をblock木から収集し`compute_entry_id`で変換する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_mini_layout.py
+make check
+git diff --check
+```
+
+**結果**
+
+- entry_id一致、title/更新日/導入文の本文出力、headwords(title+aliases)、見出し番号付け(兄弟連番・深いネストからの復帰)、カテゴリ/出典情報、list/horizontal rule/preformatted/unsupported fallback_textの出力、estimated_sizeのUTF-8バイト数一致、diagnostics引き継ぎ、internal_targetsの抽出(resolved/missing双方)を12件のテストで確認した。
+- 標準スイート672件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- Table render policy(16.3)・Entry size budget超過時の分割(16.4)は対象外とした。現状Table/InfoboxBlockを生成する変換器が無く(Epic K/L未実装)発生しない。
+- `RenderNode`は現時点で単一の`TextRenderNode`にレイアウト全体を格納する形とした(構造化が必要になればH007以降で見直す)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H008 SearchTerm model and title terms(依存: H004,H006)

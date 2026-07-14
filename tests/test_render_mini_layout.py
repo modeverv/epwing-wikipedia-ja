@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from wikiepwing.model.article import Alias, Article
+from wikiepwing.model.blocks import (
+    HeadingBlock,
+    HorizontalRuleBlock,
+    ListItem,
+    ParagraphBlock,
+    PreformattedBlock,
+    UnorderedListBlock,
+    UnsupportedBlock,
+)
+from wikiepwing.model.inline import InternalLinkInline, TextInline
+from wikiepwing.render.entry_id import compute_entry_id
+from wikiepwing.render.mini_layout import render_article_to_entry
+from wikiepwing.render.render_node import TextRenderNode
+
+
+def _make_article(**overrides: object) -> Article:
+    defaults: dict[str, object] = {
+        "page_id": 1,
+        "revision_id": 100,
+        "title": "Emacs",
+        "normalized_title": "Emacs",
+        "source_url": "https://ja.wikipedia.org/wiki/Emacs",
+        "source_date_modified": datetime(2026, 6, 1, tzinfo=UTC),
+        "abstract": "An extensible editor.",
+        "blocks": (),
+        "aliases": (),
+        "categories": (),
+        "media": (),
+        "diagnostics": (),
+        "source_license_ids": (),
+    }
+    defaults.update(overrides)
+    return Article(**defaults)  # type: ignore[arg-type]
+
+
+def test_entry_id_matches_compute_entry_id() -> None:
+    article = _make_article()
+
+    entry = render_article_to_entry(article)
+
+    assert entry.entry_id == compute_entry_id(1)
+    assert entry.page_id == 1
+
+
+def test_body_includes_title_update_date_and_abstract() -> None:
+    article = _make_article()
+
+    entry = render_article_to_entry(article)
+
+    assert len(entry.body) == 1
+    body_node = entry.body[0]
+    assert isinstance(body_node, TextRenderNode)
+    lines = body_node.text.split("\n")
+    assert lines[0] == "Emacs"
+    assert lines[1] == "更新: 2026-06-01"
+    assert "An extensible editor." in lines
+
+
+def test_headwords_include_title_and_aliases() -> None:
+    article = _make_article(aliases=(Alias(title="GNU Emacs", source="redirect", confidence=1.0),))
+
+    entry = render_article_to_entry(article)
+
+    assert entry.headwords == ("Emacs", "GNU Emacs")
+    body_node = entry.body[0]
+    assert isinstance(body_node, TextRenderNode)
+    assert "別名: GNU Emacs" in body_node.text
+
+
+def test_headings_are_numbered_with_sibling_and_nesting_rules() -> None:
+    article = _make_article(
+        blocks=(
+            HeadingBlock(level=2, anchor="a", inlines=(TextInline(value="History"),)),
+            HeadingBlock(level=3, anchor="b", inlines=(TextInline(value="Early"),)),
+            HeadingBlock(level=3, anchor="c", inlines=(TextInline(value="Later"),)),
+            HeadingBlock(level=2, anchor="d", inlines=(TextInline(value="Legacy"),)),
+        )
+    )
+
+    entry = render_article_to_entry(article)
+
+    body_node = entry.body[0]
+    assert isinstance(body_node, TextRenderNode)
+    text = body_node.text
+    assert "1 History" in text
+    assert "1.1 Early" in text
+    assert "1.2 Later" in text
+    assert "2 Legacy" in text
+
+
+def test_categories_and_source_license_ids_are_included() -> None:
+    article = _make_article(categories=("Text editors",), source_license_ids=("CC-BY-SA-3.0",))
+
+    entry = render_article_to_entry(article)
+
+    body_node = entry.body[0]
+    assert isinstance(body_node, TextRenderNode)
+    assert "カテゴリ" in body_node.text
+    assert "Text editors" in body_node.text
+    assert "出典情報" in body_node.text
+    assert "CC-BY-SA-3.0" in body_node.text
+
+
+def test_unordered_list_and_horizontal_rule_render() -> None:
+    article = _make_article(
+        blocks=(
+            UnorderedListBlock(
+                items=(ListItem(blocks=(ParagraphBlock(inlines=(TextInline(value="item"),)),)),)
+            ),
+            HorizontalRuleBlock(),
+        )
+    )
+
+    entry = render_article_to_entry(article)
+
+    body_node = entry.body[0]
+    assert isinstance(body_node, TextRenderNode)
+    assert "- item" in body_node.text
+    assert "----" in body_node.text
+
+
+def test_preformatted_block_preserves_lines() -> None:
+    article = _make_article(blocks=(PreformattedBlock(text="line one\nline two"),))
+
+    entry = render_article_to_entry(article)
+
+    body_node = entry.body[0]
+    assert isinstance(body_node, TextRenderNode)
+    assert "line one" in body_node.text
+    assert "line two" in body_node.text
+
+
+def test_unsupported_block_fallback_text_is_included() -> None:
+    article = _make_article(
+        blocks=(
+            UnsupportedBlock(
+                element_name="table", fallback_text="cell content", diagnostic_code="X"
+            ),
+        )
+    )
+
+    entry = render_article_to_entry(article)
+
+    body_node = entry.body[0]
+    assert isinstance(body_node, TextRenderNode)
+    assert "cell content" in body_node.text
+
+
+def test_estimated_size_matches_utf8_byte_length() -> None:
+    article = _make_article()
+
+    entry = render_article_to_entry(article)
+
+    body_node = entry.body[0]
+    assert isinstance(body_node, TextRenderNode)
+    assert entry.estimated_size == len(body_node.text.encode("utf-8"))
+
+
+def test_diagnostics_pass_through_unchanged() -> None:
+    from wikiepwing.model.diagnostics import Diagnostic
+
+    diagnostic = Diagnostic(
+        code="X",
+        severity="info",
+        stage="test",
+        page_id=1,
+        title="Emacs",
+        message="msg",
+        source_path=None,
+        source_excerpt=None,
+        details={},
+    )
+    article = _make_article(diagnostics=(diagnostic,))
+
+    entry = render_article_to_entry(article)
+
+    assert entry.diagnostics == (diagnostic,)
+
+
+def test_internal_targets_extracted_from_resolved_links() -> None:
+    article = _make_article(
+        blocks=(
+            ParagraphBlock(
+                inlines=(
+                    InternalLinkInline(
+                        label=(TextInline(value="GNU"),),
+                        target_title="GNU Project",
+                        target_normalized_title="GNU Project",
+                        target_fragment=None,
+                        target_page_id=42,
+                        resolution="resolved",
+                    ),
+                )
+            ),
+        )
+    )
+
+    entry = render_article_to_entry(article)
+
+    assert entry.internal_targets == (compute_entry_id(42),)
+
+
+def test_internal_targets_exclude_missing_links() -> None:
+    article = _make_article(
+        blocks=(
+            ParagraphBlock(
+                inlines=(
+                    InternalLinkInline(
+                        label=(TextInline(value="Ghost"),),
+                        target_title="Ghost",
+                        target_normalized_title="Ghost",
+                        target_fragment=None,
+                        target_page_id=None,
+                        resolution="missing",
+                    ),
+                )
+            ),
+        )
+    )
+
+    entry = render_article_to_entry(article)
+
+    assert entry.internal_targets == ()
