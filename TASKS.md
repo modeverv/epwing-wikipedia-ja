@@ -339,7 +339,7 @@
 
 **依存:** F003
 
-### TASK-F005 [ ] Model validator
+### TASK-F005 [x] Model validator
 
 **依存:** F004
 

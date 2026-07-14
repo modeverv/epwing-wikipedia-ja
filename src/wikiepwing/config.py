@@ -99,6 +99,9 @@ _SCHEMA: dict[str, _SchemaNode] = {
         "zstd_level": _Kind.INTEGER,
         "strict_required_fields": _Kind.BOOLEAN,
     },
+    "model": {
+        "max_block_nesting_depth": _Kind.INTEGER,
+    },
     "normalize": {
         "workers": _Kind.INTEGER,
         "queue_depth": _Kind.INTEGER,

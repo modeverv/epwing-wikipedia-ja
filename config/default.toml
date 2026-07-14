@@ -39,6 +39,9 @@ max_wikitext_bytes = 67108864
 zstd_level = 6
 strict_required_fields = true
 
+[model]
+max_block_nesting_depth = 32
+
 [normalize]
 workers = 8
 queue_depth = 64

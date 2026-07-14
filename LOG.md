@@ -2101,3 +2101,37 @@ git diff --check
 **次タスク**
 
 - TASK-F005 Model validator(依存: F004)
+
+### 2026-07-14 08:45 UTC — TASK-F005
+
+**目的**
+
+- `ARCHITECTURE.md` 24.3(Model verification)と`PLAN.md` Phase 5出口条件に基づき、Articleの意味的検証(`validate_article`)を実装する。dataclass構築時に検出できない不変条件(nesting深さ、internal linkのresolution/target_page_id整合性、埋め込みDiagnosticの一貫性)を対象とする。
+
+**変更**
+
+- `src/wikiepwing/model/validate.py`に`ModelValidationLimits`(`from_config`付き)と`validate_article`を実装した。block/list/quote/table/infobox/definition-listを横断するnesting深さ計算、`InternalLinkInline`のresolution⇔target_page_id整合性チェック、埋め込み`Diagnostic`のpage_id/title整合性チェックを行う。
+- `src/wikiepwing/config.py`の`_SCHEMA`と`config/default.toml`に`[model]`セクション(`max_block_nesting_depth = 32`)を新設した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_model_validate.py tests/test_config.py
+make check
+git diff --check
+```
+
+**結果**
+
+- nesting超過検出、link resolution/page_id不整合の両方向、diagnostic page_id/title不整合、妥当なArticleでの空diagnostics、config読み込みを11件のテストで確認した。
+- 標準スイート461件(新規11件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- corpus全体でのpage_id一意性検証(`ARCHITECTURE.md` 24.3記載)は単一Articleのみを扱う本バリデータの範囲外とし、将来のcorpus組み立てstageに委ねる。
+- serialization roundtripは既存のpayload/parse往復テストで担保済みのため、実行時チェックとしては実装していない。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-F006 Canonical JSON codec(依存: F004-F005)
