@@ -4338,3 +4338,37 @@ git diff --check
 **次タスク**
 
 - TASK-M007 FreePWING gaiji integration(依存: M006,H009)
+
+### 2026-07-15 11:10 UTC — TASK-M007
+
+**目的**
+
+- `ARCHITECTURE.md` 17.2/18.3/18.4を完成させる。TASK-M005(bitmap生成)・TASK-M006(決定論的code割当)の出力を、実際の`fpwmake`が読み込むgaiji build入力(`halfchars.txt`/`fullchars.txt`+個別XBMファイル)へ変換する。
+
+**変更**
+
+- `src/wikiepwing/gaiji/freepwing_gaiji.py`に`FreePwingGaijiError`・`GaijiBuildEntry`・`xbm_bytes_from_image()`・`render_glyph_as_xbm()`・`write_gaiji_build_files()`を実装した。XBMのビット詰め順(LSB-first、bit=1が前景/黒)を、実際にDockerで動作確認済みの`tests/fixtures/handcrafted/generate_gaiji.pl`の既知バイト列を手動デコードして確認した上で実装した。
+- `render_glyph_as_xbm`はnarrow(8x16)/wide(16x16)の寸法でフォントからラスタライズし、`write_gaiji_build_files`は各gaijiのXBMファイルと`halfchars.txt`/`fullchars.txt`(`<name> <xbmファイル名>`形式)を書き出す。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_freepwing_gaiji.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 実fixtureパターン(`generate_gaiji.pl`が生成する既知バイト列)とのバイト完全一致を含む7件のテストで、XBM生成・寸法・build files書き出しを確認した。
+- 標準スイート1003件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- mypy strictで`Image.load()`の戻り値型(`PixelAccess | None`)に関するエラーを検出し、Noneチェックを追加して修正した。
+- gaiji.sqlite3への実際の書き込み配線・normalize/renderパイプラインへの実配線、および実際のDocker/`fpwmake`実行による統合確認は対象外とした(このセッションではDocker実行環境が無いため、既存fixtureとのバイト形式一致をユニットテストで確認するに留めた)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M008 Unrepresentable fallback(依存: M002)

@@ -631,7 +631,7 @@
 
 **依存:** M005
 
-### TASK-M007 [ ] FreePWING gaiji integration
+### TASK-M007 [x] FreePWING gaiji integration
 
 **依存:** M006,H009
 
