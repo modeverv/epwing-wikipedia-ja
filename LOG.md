@@ -4102,3 +4102,35 @@ git diff --check
 **次タスク**
 
 - EPIC M(Unicode and gaiji、依存: B009)
+
+### 2026-07-15 08:45 UTC — TASK-M001
+
+**目的**
+
+- `ARCHITECTURE.md` 18.1(文字分類categoryA: backend標準文字として表現可能)の基礎となる、backend representability判定を実装する。
+
+**変更**
+
+- 新規パッケージ`src/wikiepwing/gaiji/`を作成し、`representability.py`に`is_backend_representable()`・`unrepresentable_characters()`を実装した。TASK-H009で確立した「EUC-JPエンコードがFPWParserへの必須前処理」という事実に基づき、EUC-JPへ符号化可能かどうかをbackend representabilityの判定基準として採用した。Pythonの標準`codecs`実装(JIS X 0201/0208相当の repertoire)をそのまま利用し、独自の巨大なlookup tableを再実装しない設計にした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_representability.py
+make check
+git diff --check
+```
+
+**結果**
+
+- ASCII・常用漢字・ひらがな・全角カタカナの表現可能性、絵文字・CJK拡張面文字の表現不能性、文字列中の表現不能文字の出現順抽出、全表現可能文字列での空タプルを8件のテストで確認した。
+- 標準スイート947件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ARCHITECTURE.md`は"backend representability table"の具体的なデータ構造を規定していないため、実際のFreePWINGツールチェーンが要求するEUC-JPエンコード可否をそのまま判定基準として採用した(Python標準ライブラリのcodec実装を「表」として再利用する設計)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M002 Unicode classifier(依存: M001)

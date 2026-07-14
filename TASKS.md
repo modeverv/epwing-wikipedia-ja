@@ -607,7 +607,7 @@
 
 ## EPIC M — Unicode and gaiji
 
-### TASK-M001 [ ] Backend representability table
+### TASK-M001 [x] Backend representability table
 
 **依存:** B009
 
