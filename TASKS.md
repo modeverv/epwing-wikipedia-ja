@@ -523,7 +523,7 @@
 
 **依存:** J001
 
-### TASK-J005 [ ] Alias priorities
+### TASK-J005 [x] Alias priorities
 
 **依存:** J002-J004
 

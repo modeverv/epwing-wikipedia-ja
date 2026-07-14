@@ -5,7 +5,12 @@ from datetime import UTC, datetime
 import pytest
 
 from wikiepwing.model.article import Alias, Article
-from wikiepwing.search.search_term import SearchTerm, SearchTermError, title_terms_for_article
+from wikiepwing.search.search_term import (
+    SearchTerm,
+    SearchTermError,
+    sort_search_terms,
+    title_terms_for_article,
+)
 
 
 def _make_article(**overrides: object) -> Article:
@@ -95,7 +100,7 @@ def test_title_priority_is_higher_than_redirect_priority() -> None:
 
     terms = title_terms_for_article(article)
 
-    assert terms[0].priority < terms[1].priority
+    assert terms[0].priority > terms[1].priority
 
 
 def test_multi_word_title_gets_a_space_removed_alias_variant() -> None:
@@ -176,3 +181,45 @@ def test_title_without_punctuation_gets_no_punctuation_variant() -> None:
     terms = title_terms_for_article(article)
 
     assert not any(term.source == "punctuation_variant" for term in terms)
+
+
+def test_priorities_follow_data_contracts_scale() -> None:
+    article = _make_article(
+        title="GNU Emacs",
+        normalized_title="GNU Emacs",
+        aliases=(Alias(title="ひらがな エディタ", source="redirect", confidence=1.0),),
+    )
+
+    terms = title_terms_for_article(article)
+    by_source = {term.source: term.priority for term in terms}
+
+    assert by_source["normalize"] == 1000
+    assert by_source["redirect"] == 900
+    assert by_source["nfkc_case_space_variant"] == 800
+    assert by_source["kana_variant"] == 600
+
+
+def _term(priority: int, normalized_key: str, page_id: int = 1, source: str = "s") -> SearchTerm:
+    return SearchTerm(
+        key=normalized_key,
+        normalized_key=normalized_key,
+        target_page_id=page_id,
+        kind="alias",
+        priority=priority,
+        source=source,
+    )
+
+
+def test_sort_search_terms_orders_by_priority_descending() -> None:
+    low = _term(100, "a")
+    high = _term(900, "b")
+
+    assert sort_search_terms([low, high]) == (high, low)
+
+
+def test_sort_search_terms_tie_breaks_by_normalized_key_then_page_id_then_source() -> None:
+    a = _term(500, "b", page_id=2, source="z")
+    b = _term(500, "a", page_id=1, source="a")
+    c = _term(500, "a", page_id=1, source="b")
+
+    assert sort_search_terms([a, b, c]) == (b, c, a)

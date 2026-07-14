@@ -1,4 +1,4 @@
-"""SearchTerm model and title/redirect term generation (TASK-H008/J002-J004, ARCHITECTURE.md 14.1).
+"""SearchTerm model and title/redirect term generation (TASK-H008/J002-J005, ARCHITECTURE.md 14.1).
 
 `title_terms_for_article` covers the article's own title (`kind="title"`),
 its redirect-sourced aliases (`kind="redirect"`, TASK-H004), and three
@@ -6,13 +6,18 @@ variants of each (`kind="alias"`): space-removed (TASK-J002, see
 `wikiepwing.search.space_variant`), hiragana/katakana-swapped (TASK-J003,
 see `wikiepwing.search.kana_variant`), and punctuation-removed (TASK-J004,
 see `wikiepwing.search.punctuation_variant`). reading/category/keyword/
-cross_component terms are separate, later work, as are the collision rules
-(14.2) and per-profile indexing (14.3).
+cross_component terms are separate, later work (no code generates them
+yet), as is the collision repository/report (TASK-J006).
+
+Priorities (TASK-J005) follow DATA_CONTRACTS.md 8's proposal, where a
+*higher* number wins. `sort_search_terms` applies its priority-descending
+order plus the specified `normalized_key`/`target_page_id`/`source`
+stable tie-break for same-priority collisions (14.2).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -27,13 +32,19 @@ SearchTermKind = Literal[
 ]
 _KINDS = ("title", "redirect", "alias", "reading", "category", "keyword", "cross_component")
 
-_TITLE_PRIORITY = 0
-_REDIRECT_PRIORITY = 10
+# DATA_CONTRACTS.md 8 priority proposal (higher wins): 1000 exact title,
+# 900 original redirect, 800 normalized title variant, 700 explicit alias,
+# 600 kana variant, 500 category, 400 heading keyword, 300 infobox keyword,
+# 200 lead term, 100 cross component.
+_TITLE_PRIORITY = 1000
+_REDIRECT_PRIORITY = 900
+_NORMALIZED_TITLE_VARIANT_PRIORITY = 800
+_KANA_VARIANT_PRIORITY = 600
 
 _VARIANT_GENERATORS: tuple[tuple[Callable[[str], str | None], int, str], ...] = (
-    (space_removed_variant, 20, "nfkc_case_space_variant"),
-    (kana_variant, 30, "kana_variant"),
-    (punctuation_removed_variant, 40, "punctuation_variant"),
+    (space_removed_variant, _NORMALIZED_TITLE_VARIANT_PRIORITY, "nfkc_case_space_variant"),
+    (kana_variant, _KANA_VARIANT_PRIORITY, "kana_variant"),
+    (punctuation_removed_variant, _NORMALIZED_TITLE_VARIANT_PRIORITY, "punctuation_variant"),
 )
 
 
@@ -95,6 +106,25 @@ def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
         )
         terms.extend(_variant_terms(alias_normalized_key, article.page_id))
     return tuple(terms)
+
+
+def sort_search_terms(terms: Iterable[SearchTerm]) -> tuple[SearchTerm, ...]:
+    """Order SearchTerms by priority (highest first), tie-broken per DATA_CONTRACTS.md 8.
+
+    Same-priority collisions are broken by `normalized_key`, then
+    `target_page_id`, then `source`, all ascending, for a deterministic order.
+    """
+    return tuple(
+        sorted(
+            terms,
+            key=lambda term: (
+                -term.priority,
+                term.normalized_key,
+                term.target_page_id,
+                term.source,
+            ),
+        )
+    )
 
 
 def _variant_terms(normalized_key: str, page_id: int) -> tuple[SearchTerm, ...]:

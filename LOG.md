@@ -3501,3 +3501,39 @@ git diff --check
 **次タスク**
 
 - TASK-J005 Alias priorities(依存: J002-J004)
+
+### 2026-07-15 01:30 UTC — TASK-J005
+
+**目的**
+
+- `DATA_CONTRACTS.md` 8(SearchTerm contract)のpriority proposal(1000 exact title 〜 100 cross component)と、衝突時の安定sort規則(`normalized_key`, `target_entry_id`, `source`)を実装する。TASK-H008/J002-J004で導入した優先度定数(0/10/20/30/40、小さいほど優先)を正式スケールへ置き換える。
+
+**変更**
+
+- `search_term.py`の優先度定数をDATA_CONTRACTS.mdスケールへ置き換えた: title=1000、redirect=900、space/punctuation variant=800(normalized title variant)、kana variant=600(DATA_CONTRACTS.mdの明示値)。
+- `sort_search_terms(terms)`を実装した。priority降順、同priority内は`normalized_key`→`target_page_id`→`source`の昇順で安定sort。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 優先度スケールの向き反転により、既存の`test_title_priority_is_higher_than_redirect_priority`のassertionを`<`から`>`へ修正した(意味的には変わらず、"titleの方がredirectより優先度が高い"という主張のまま)。
+- 優先度値そのもの(title=1000/redirect=900/space=800/kana=600)を確認するテストと、`sort_search_terms`のpriority降順・tie-break挙動を確認するテスト3件を追加した。
+- 標準スイート824件(新規4件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- DATA_CONTRACTS.mdは`target_entry_id`という呼称を使っているが、既存の`SearchTerm`データクラス(ARCHITECTURE.md 14.1のPython定義)は`target_page_id`を正としているため、フィールド名自体は変更しなかった(ARCHITECTURE.mdの型定義を実装の正本として扱う既存方針を維持)。
+- space variantとpunctuation variantは共に"800 normalized title variant"の枠として扱った(どちらも正規化由来の派生キーであり、ユーザー入力由来の"700 explicit alias"とは性質が異なるため)。
+- alias(700)/category(500)/heading keyword(400)/infobox keyword(300)/lead term(200)/cross_component(100)はまだどのコードも生成していないため、対応する定数は未定義のまま(将来生成コードを実装するタスクで追加する)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-J006 Collision repository/report(依存: J005)
