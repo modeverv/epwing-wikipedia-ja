@@ -1801,3 +1801,36 @@ git diff --check
 **次タスク**
 
 - TASK-E006 Duplicate resolver
+
+### 2026-07-14 05:35 UTC — TASK-E006
+
+**目的**
+
+- 同一page_idの重複記事を`ARCHITECTURE.md` 10.5の規則(revision ID優先、同revision同hashは無視、同revision異hashはfatal診断候補)で解決する。
+
+**変更**
+
+- `src/wikiepwing/ingest/deduplicate.py`に`ResolutionAction`、`ExistingArticleState`、`DuplicateRecord`、`Resolution`、`resolve_duplicate`を実装した。5種の決定(`FIRST_SEEN`/`REPLACED_BY_NEWER_REVISION`/`KEPT_EXISTING_NEWER_REVISION`/`IGNORED_IDENTICAL_DUPLICATE`/`CONFLICT_KEPT_EXISTING`)をrevision ID比較とhash比較のみで行い、titleは一切参照しない。
+- conflict時は既存を安全側に維持しつつ`REC_REVISION_HASH_CONFLICT`診断(severity=error)を発行する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_deduplicate.py
+make check
+git diff --check
+```
+
+**結果**
+
+- TASK-D010の3つのedge case(同page ID別revision、同revision同hash重複、同revision異hash)すべてが期待通りに解決されることを確認した。
+- 標準スイート338件(新規6件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実際のDB状態取得・`ingest_duplicates`書込はTASK-E007の責務とし、本タスクは純粋な決定ロジックのみとした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E007 Batch repository writer

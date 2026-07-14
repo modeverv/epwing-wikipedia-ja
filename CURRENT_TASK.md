@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-E005
+TASK-E006
 
 ## 目的
 
-parseされた`RawArticle`に対し、field length・URL形式・namespace一致・HTML/wikitext sizeを検証し、記事単位で受理/拒否と構造化診断を返す安全性検証を実装する。
+同一page_idの重複記事を、`ARCHITECTURE.md` 10.5の重複処理rule(revision ID優先、同revision同hashは無視、同revision異hashはfatal診断候補)に従って解決する。
 
 ## 事前条件
 
@@ -14,16 +14,16 @@ parseされた`RawArticle`に対し、field length・URL形式・namespace一致
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-E005を読んだ(依存: E004完了済み)
-- [x] `AGENTS.md` 2.6(記事単位の回復可能な失敗は構造化診断として保存、ステージ全体を壊す失敗のみ停止)を確認した
-- [x] `CONFIG_REFERENCE.md` 8節・`config/default.toml`の`[ingest]`(`max_title_bytes`/`max_url_bytes`/`max_html_bytes`/`max_wikitext_bytes`)を確認した
-- [x] `DATA_CONTRACTS.md`の`diagnostics`table列(code/severity/stage/page_id/title/message/details_json)を確認した
-- [x] TASK-E004の`RawArticle`を確認した
+- [x] `TASKS.md`のTASK-E006を読んだ(依存: E004完了済み)
+- [x] `ARCHITECTURE.md` 10.5(重複処理)を確認した
+- [x] `DATA_CONTRACTS.md`の`ingest_duplicates`table列(page_id/kept_revision_id/dropped_revision_id/kept_hash/dropped_hash/reason/source_sequence)を確認した
+- [x] TASK-E004の`RawArticle`、TASK-E005の`Diagnostic`を確認した
+- [x] TASK-D010のedge case(同page ID別revision、同revision同hash重複、同revision異hash)を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/ingest/validate.py`
-- `tests/test_ingest_validate.py`
+- `src/wikiepwing/ingest/deduplicate.py`
+- `tests/test_deduplicate.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,35 +31,35 @@ parseされた`RawArticle`に対し、field length・URL形式・namespace一致
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_ingest_validate.py
+uv run pytest tests/test_deduplicate.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `ValidationLimits.from_config`が`config/default.toml`の`[ingest]`値を読み取れる
-- [x] title/urlのbyte長超過、html/wikitextのbyte長超過、宣言namespaceと期待値の不一致、非https URLを検出し診断化する
-- [x] 診断は`code`/`severity`/`message`/`details`を持ち、`DATA_CONTRACTS.md`の`diagnostics`table列へ素直に対応付けられる
-- [x] error以上の診断が1件でもあれば`accepted=False`、無ければ`accepted=True`を返す
-- [x] TASK-D010のtitle長すぎ/invalid URL edge caseが正しく拒否され、正常な10記事は全件受理されることを確認する
+- [x] 既存recordが無ければ新規採用(`first_seen`)
+- [x] revision IDが大きい方を採用する(到着順に関わらず、新方が大きければ置換、小さければ既存を維持)
+- [x] 同revision・同hashは重複として無視しつつ`ingest_duplicates`へ記録する
+- [x] 同revision・異hashはconflictとして診断(`Diagnostic`, severity=error)を伴い、既存を維持したまま安全側に倒す
+- [x] すべての決定が`ingest_duplicates`table列にそのまま対応する`DuplicateRecord`を返す
+- [x] TASK-D010の3つのedge case(同page ID別revision、同revision同hash重複、同revision異hash)が期待通りに解決されることを確認する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 重複解決(TASK-E006)
-- DBへの実書込・diagnosticsテーブルへの永続化(TASK-E007)
+- 実際のDBへの読み書き(既存stateの取得・`ingest_duplicates`への書込はTASK-E007)
+- titleによる同一性判定(`ARCHITECTURE.md`が明示的に禁止)
 
 ## 実施結果
 
-- `src/wikiepwing/ingest/validate.py`に`ValidationLimits`(`from_config`で`[ingest]`section読取)、`Diagnostic`、`ValidationResult`、`validate_article`を実装した。
-- title/url/html/wikitextのbyte長超過(`REC_TITLE_TOO_LONG`/`REC_URL_TOO_LONG`/`REC_HTML_TOO_LARGE`/`REC_WIKITEXT_TOO_LARGE`)、非httpsまたは不正なURL(`REC_INVALID_URL`)、宣言namespaceと期待値の不一致(`REC_UNEXPECTED_NAMESPACE`)を検出し、`error`重大度の診断が1件でもあれば`accepted=False`とする。
-- 診断は`code`/`severity`/`message`/`details`(dict)を持ち、`DATA_CONTRACTS.md`の`diagnostics`table列(code/severity/message/details_json + page_id等はdetails内)へ素直に対応付けられる形にした。
-- TASK-D010のtitle長すぎ/invalid URL edge caseが正しく拒否され、正常な10記事は全件受理されることを確認した。large article edge caseはdefault設定(64 MiB上限)では受理され、tightな上限では拒否されることを確認した。
-- **fixture修正**: TASK-D010で作成した`title_too_long` edge caseが実際には3549 bytesしかなく、`config/default.toml`の実際の既定`max_title_bytes=4096`を超えていなかったため、5250 bytesへ拡張し実際にdefault設定下で拒否されることを確認した。
-- `tests/test_ingest_validate.py`に15件のテストを追加した。
-- format-check、ruff lint、mypy strict、標準スイート332件、`git diff --check`が成功した。
+- `src/wikiepwing/ingest/deduplicate.py`に`ResolutionAction`(enum)、`ExistingArticleState`、`DuplicateRecord`(`ingest_duplicates`table列に対応)、`Resolution`、`resolve_duplicate`を実装した。
+- `ARCHITECTURE.md` 10.5の規則通り: 既存recordが無ければ`FIRST_SEEN`、revision IDが大きい方を`REPLACED_BY_NEWER_REVISION`/`KEPT_EXISTING_NEWER_REVISION`として採用(到着順に依存しない)、同revision同hashは`IGNORED_IDENTICAL_DUPLICATE`として無視しつつ記録、同revision異hashは`CONFLICT_KEPT_EXISTING`として既存を維持しつつ`REC_REVISION_HASH_CONFLICT`診断(severity=error)を伴わせた。
+- titleによる同一性判定は一切行わない(`ARCHITECTURE.md`の明示的禁止に従う)。
+- TASK-D010の3つのedge case(同page ID別revision、同revision同hash重複、同revision異hash)すべてを実際に解決し、期待通りの`action`/`duplicate_record`/`diagnostic`になることを確認した。
+- `tests/test_deduplicate.py`に6件のテストを追加した。
+- format-check、ruff lint、mypy strict、標準スイート338件、`git diff --check`が成功した。
 
 **判断・注意点**
 
-- `config/default.toml`の`ingest.strict_required_fields`はE004(NDJSON record parser)の必須field強制と関連する設定だが、現時点ではどこにも配線されていない。必須field欠落時に記事単位skipへ倒す(diagnostic化)か、記事全体を即fatalにするかの選択はTASK-E007/E008で検討する。
+- 実際のDBからの既存state取得・`ingest_duplicates`への書込はTASK-E007(Batch repository writer)の責務とし、本タスクは純粋な決定ロジックのみを提供した(page_idごとにDB row 1件を都度SELECTすることで、bounded memoryのまま重複解決を行える設計を想定)。

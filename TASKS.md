@@ -289,7 +289,7 @@
 
 **実装:** field lengths、URL、namespace、HTML size。
 
-### TASK-E006 [ ] Duplicate resolver
+### TASK-E006 [x] Duplicate resolver
 
 **依存:** E004
 
