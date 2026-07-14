@@ -8,3 +8,4 @@ output/
 reports/
 data/
 .env
+.DS_Store
