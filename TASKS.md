@@ -231,7 +231,7 @@
 
 **実装:** streaming SHA-256、size verify。
 
-### TASK-D007 [ ] Acquire command
+### TASK-D007 [x] Acquire command
 
 **依存:** D004-D006
 

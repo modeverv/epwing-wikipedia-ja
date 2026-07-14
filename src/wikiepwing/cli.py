@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from collections.abc import Sequence
+import re
+import subprocess
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -19,6 +21,13 @@ from wikiepwing.reference.inventory import (
 )
 from wikiepwing.reference.report import write_reference_report
 from wikiepwing.reference.searches import EbSearchAdapter, run_reference_searches
+from wikiepwing.secrets import load_enterprise_secrets
+from wikiepwing.source.acquire import acquire_snapshot
+from wikiepwing.source.auth import EnterpriseAuthClient, HttpAuthTransport
+from wikiepwing.source.downloader import HttpChunkTransport, ResumableChunkDownloader
+from wikiepwing.source.enterprise import HttpSnapshotMetadataTransport, SnapshotMetadataClient
+
+_GIT_COMMIT = re.compile(r"^[0-9a-f]{4,64}$")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -142,6 +151,31 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="report directory (default: paths.reports)",
     )
+    acquire = subparsers.add_parser(
+        "acquire", help="resolve, download, verify, and lock a Wikimedia Enterprise Snapshot"
+    )
+    acquire.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    acquire.add_argument(
+        "--namespace",
+        type=int,
+        help="override configured source.namespace",
+    )
+    acquire.add_argument(
+        "--snapshot-version",
+        type=str,
+        help="override configured source.snapshot ('latest' or a concrete version)",
+    )
+    acquire.add_argument(
+        "--git-commit",
+        type=str,
+        help="git commit recorded in source.lock.json (default: `git rev-parse HEAD`)",
+    )
     return parser
 
 
@@ -222,6 +256,51 @@ def main(argv: Sequence[str] | None = None) -> int:
         for path in write_reference_report(database, output):
             print(path)
         return 0
+    if command == "acquire":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+        secrets = load_enterprise_secrets(os.environ)
+        source_section = config.section("source")
+        enterprise_section = cast(Mapping[str, object], source_section["enterprise"])
+        namespace = cast(int | None, arguments.namespace)
+        if namespace is None:
+            namespace = cast(int, source_section["namespace"])
+        requested_version = cast(str | None, arguments.snapshot_version) or cast(
+            str, source_section["snapshot"]
+        )
+        git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+        request_timeout_seconds = float(cast(int, enterprise_section["request_timeout_seconds"]))
+        auth_client = EnterpriseAuthClient(
+            HttpAuthTransport(cast(str, enterprise_section["auth_base"])),
+            timeout_seconds=request_timeout_seconds,
+        )
+        metadata_client = SnapshotMetadataClient(
+            HttpSnapshotMetadataTransport(cast(str, enterprise_section["api_base"])),
+            timeout_seconds=request_timeout_seconds,
+        )
+        downloader = ResumableChunkDownloader(
+            HttpChunkTransport(cast(str, enterprise_section["api_base"])),
+            timeout_seconds=float(cast(int, enterprise_section["download_timeout_seconds"])),
+            max_retries=int(cast(int, enterprise_section["max_retries"])),
+        )
+        result = acquire_snapshot(
+            secrets,
+            auth_client=auth_client,
+            metadata_client=metadata_client,
+            downloader=downloader,
+            project=config.project,
+            namespace=namespace,
+            requested_version=requested_version,
+            sources_root=config.paths.sources,
+            acquirer_name="wikiepwing",
+            acquirer_version=__version__,
+            acquirer_git_commit=git_commit,
+        )
+        print(result.lock_path)
+        return 0
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0
@@ -235,6 +314,27 @@ def _default_config_path() -> Path:
 def _default_query_set_path() -> Path:
     candidates = (Path.cwd() / "config/query-set.toml", Path("/app/config/query-set.toml"))
     return next((path for path in candidates if path.is_file()), candidates[0])
+
+
+def _resolve_git_commit() -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SystemExit(
+            f"cannot resolve git commit automatically; pass --git-commit explicitly ({error})"
+        ) from error
+    commit = completed.stdout.strip()
+    if not _GIT_COMMIT.fullmatch(commit):
+        raise SystemExit(
+            "`git rev-parse HEAD` returned an unexpected value; pass --git-commit explicitly"
+        )
+    return commit
 
 
 if __name__ == "__main__":

@@ -82,6 +82,14 @@ class CliTest(unittest.TestCase):
         self.assertIn("--database", result.stdout)
         self.assertIn("--output-directory", result.stdout)
 
+    def test_acquire_help(self) -> None:
+        result = self.run_cli("acquire", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--namespace", result.stdout)
+        self.assertIn("--snapshot-version", result.stdout)
+        self.assertIn("--git-commit", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

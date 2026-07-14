@@ -36,7 +36,7 @@ Required JSON:
   "downloaded_at": "RFC3339",
   "files": [
     {
-      "relative_path": "jawiki_namespace_0_chunk_0.ndjson.gz",
+      "relative_path": "jawiki_namespace_0_chunk_0.tar.gz",
       "chunk_identifier": "jawiki_namespace_0_chunk_0",
       "size_bytes": 1,
       "sha256": "64 lowercase hex chars",

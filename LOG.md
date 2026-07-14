@@ -1484,3 +1484,44 @@ git diff --check
 **次タスク**
 
 - TASK-D007 Acquire command
+
+### 2026-07-14 03:00 UTC — TASK-D007
+
+**目的**
+
+- metadata解決→chunk download→verify→source.lock.json書込を1つのacquireオーケストレーションとCLIコマンドへ組み上げる。
+
+**変更**
+
+- `src/wikiepwing/source/acquire.py`に`acquire_snapshot`、`AcquireResult`、`AuthResolver`/`MetadataResolver`/`ChunkDownloader` Protocolを実装した。
+- 既にdestinationが存在するchunkは再downloadせず`compute_fingerprint`で再計算し、新規downloadしたchunkは`verify_fingerprint`で再検証する。`snapshot_directory`・chunk destination・`sources_root`の絶対path/symlink検証を行う。
+- `src/wikiepwing/cli.py`に`wikiepwing acquire`コマンドを追加した。`--namespace`/`--snapshot-version`/`--git-commit`のoverrideと、configからのendpoint/timeout/retry組み立て、`git rev-parse HEAD`によるgit commit自動解決(失敗時は`--git-commit`を明示要求)を実装した。
+- `DATA_CONTRACTS.md`のsource lock例の拡張子を実データに合わせ`.ndjson.gz`から`.tar.gz`へ訂正した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_acquire.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**実データ検証**
+
+- 一時configで`project=aawiki`へ差し替え、実credentialsで`wikiepwing acquire --namespace 0 --snapshot-version latest`を実行した。
+- 認証→metadata解決→chunk download→verify→`source.lock.json`書込までend-to-endで成功し、生成された`source.lock.json`は`DATA_CONTRACTS.md`契約通りの構造だった。SHA-256(`49b4b126e0831c71e6c83b2ddaba14607a4650d11bdb20cb7efad7acb7e1034b`)は前回セッションの手動疎通確認と一致した。
+- 検証に使った一時スクリプトはリポジトリ外に置き、コミットしていない。credentialsは一切出力していない。
+
+**結果**
+
+- 標準スイート224件(新規7+1件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- disk空き容量事前確認はdoctorコマンド側の対象として残した。
+- ローカル既存source登録(コピー無しのpredownloaded file利用)はTASK-D008の対象とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D008 Register local source
