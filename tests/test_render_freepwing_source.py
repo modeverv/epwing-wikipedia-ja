@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from wikiepwing.render.freepwing_source import write_entries_jsonl
 from wikiepwing.render.render_node import TextRenderNode
 from wikiepwing.render.rendered_entry import RenderedEntry
@@ -83,3 +85,20 @@ def test_write_entries_jsonl_preserves_multiline_body(tmp_path: Path) -> None:
 
     record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
     assert record["body"] == "a\nb\nc"
+
+
+def test_write_entries_jsonl_does_not_touch_destination_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "entries.jsonl"
+    destination.write_text("original\n", encoding="utf-8")
+
+    def _broken_replace(*_args: object, **_kwargs: object) -> None:
+        raise OSError("simulated failure")
+
+    monkeypatch.setattr("os.replace", _broken_replace)
+
+    with pytest.raises(OSError, match="simulated failure"):
+        write_entries_jsonl((_make_entry(),), destination)
+
+    assert destination.read_text(encoding="utf-8") == "original\n"

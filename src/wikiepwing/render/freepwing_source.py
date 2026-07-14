@@ -16,17 +16,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from wikiepwing.pipeline.atomic_write import atomic_write_text
 from wikiepwing.render.render_node import TextRenderNode
 from wikiepwing.render.rendered_entry import RenderedEntry
 
 
 def write_entries_jsonl(entries: tuple[RenderedEntry, ...], destination: Path) -> None:
-    """Write `entries` as FreePWING build input: one JSON object per line."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("w", encoding="utf-8") as handle:
-        for entry in entries:
-            handle.write(json.dumps(_entry_record(entry), ensure_ascii=False))
-            handle.write("\n")
+    """Write `entries` as FreePWING build input: one JSON object per line, atomically."""
+    lines = (json.dumps(_entry_record(entry), ensure_ascii=False) for entry in entries)
+    text = "".join(f"{line}\n" for line in lines)
+    atomic_write_text(destination, text)
 
 
 def _entry_record(entry: RenderedEntry) -> dict[str, object]:

@@ -3215,3 +3215,38 @@ git diff --check
 **次タスク**
 
 - TASK-I004 Atomic stage output(依存: I001)
+
+### 2026-07-14 21:20 UTC — TASK-I004
+
+**目的**
+
+- `ARCHITECTURE.md` 7.3(Stage出力はcrash時にも部分書き込みを残さない)を満たす、汎用atomic-write処理を実装する。TASK-I001実装時点で`write_stage_manifest_payload`はtempfile+`os.replace`のatomic書き込みを個別実装していたが、`write_entries_jsonl`(TASK-H009)は開いたファイルハンドルへ直接行単位で書き込んでおり、クラッシュ時にentries.jsonlが不完全な状態で残るリスクがあった。
+
+**変更**
+
+- `src/wikiepwing/pipeline/atomic_write.py`を新規実装した。`atomic_write_bytes`/`atomic_write_text`はtempfile書き込み→`fsync`→`os.replace`による原子的な置き換えを行う共通処理。
+- `src/wikiepwing/render/freepwing_source.py`の`write_entries_jsonl`を、全文をメモリ上で組み立ててから`atomic_write_text`を1回呼ぶ形にリファクタリングした(従来は開いたファイルハンドルへ直接行単位で書き込んでいた)。
+- `src/wikiepwing/pipeline/stage_manifest.py`の`write_stage_manifest_payload`が持っていた重複したtempfile+`os.replace`実装を、新しい`atomic_write_text`呼び出しに置き換えた(未使用となった`os`/`tempfile` importを削除)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_pipeline_atomic_write.py tests/test_render_freepwing_source.py tests/test_pipeline_stage_manifest.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `atomic_write`の正常書き込み・親ディレクトリ自動作成・上書き・temp fileの残留無し・`os.replace`失敗時に宛先ファイルが元のまま保持されることを6件のテストで確認した。
+- `write_entries_jsonl`について、`os.replace`失敗をシミュレートしても宛先の既存内容が変更されないことを新規テストで確認した。
+- 標準スイート756件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- raw.sqlite3/model.sqlite3のようにトランザクションで逐次更新されるファイルは対象外とし、entries.jsonlやstage manifestのような単発生成・置き換え型の出力にのみ適用する方針をモジュールのdocstringに明記した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-I005 Resume decision(依存: I002-I004)

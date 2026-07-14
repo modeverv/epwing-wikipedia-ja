@@ -16,10 +16,10 @@ delegates the actual file I/O and validation to this module.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Literal, cast
+
+from wikiepwing.pipeline.atomic_write import atomic_write_text
 
 STAGE_MANIFEST_SCHEMA_VERSION = 1
 
@@ -104,15 +104,4 @@ def write_stage_manifest_payload(payload: dict[str, object], destination: Path) 
     """Validate and atomically write a manifest payload to `destination`."""
     validate_stage_manifest_payload(payload)
     text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(
-        dir=destination.parent, prefix=f".{destination.name}.", delete=False
-    )
-    try:
-        temp_path = Path(handle.name)
-        handle.write(text.encode("utf-8"))
-        handle.flush()
-        os.fsync(handle.fileno())
-    finally:
-        handle.close()
-    os.replace(temp_path, destination)
+    atomic_write_text(destination, text)

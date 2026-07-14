@@ -487,7 +487,7 @@
 
 **依存:** I001
 
-### TASK-I004 [ ] Atomic stage output
+### TASK-I004 [x] Atomic stage output
 
 **依存:** I001
 
