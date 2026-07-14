@@ -297,6 +297,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="git commit recorded in the manifest (default: `git rev-parse HEAD`)",
     )
+    ingest.add_argument(
+        "--force",
+        action="store_true",
+        help="proceed even if the manifest shows a previous run still 'running'",
+    )
     verify_raw = subparsers.add_parser(
         "verify-raw", help="verify a raw.sqlite3: integrity, foreign keys, counts, samples"
     )
@@ -514,6 +519,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             zstd_level=cast(int, ingest_section["zstd_level"]),
             batch_size=batch_size,
             git_commit=git_commit,
+            force=cast(bool, arguments.force),
             on_progress=lambda metrics: print(
                 f"records_read={metrics.records_read} "
                 f"records_written={metrics.records_written} "

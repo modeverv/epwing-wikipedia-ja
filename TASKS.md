@@ -313,7 +313,7 @@
 
 **実装:** integrity_check、FK、counts、sample decompression。
 
-### TASK-E010 [ ] Interrupted ingest recovery
+### TASK-E010 [x] Interrupted ingest recovery
 
 **依存:** E008-E009
 

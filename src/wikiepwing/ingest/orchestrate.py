@@ -95,6 +95,24 @@ class IngestResult:
     raw_database_path: Path
 
 
+def read_manifest_status(manifest_path: Path) -> str | None:
+    """Return a manifest's `status` field, or None if no manifest exists yet.
+
+    Raises IngestError if the file exists but cannot be parsed as a valid manifest
+    (treated the same as the "invalid" status in DATA_CONTRACTS.md's status enum).
+    """
+    if not manifest_path.is_file():
+        return None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise IngestError(f"cannot read existing manifest {manifest_path}: {error}") from error
+    status = payload.get("status") if isinstance(payload, dict) else None
+    if not isinstance(status, str) or not status:
+        raise IngestError(f"existing manifest {manifest_path} has no valid status field")
+    return status
+
+
 def run_ingest(
     lock: SourceLock,
     *,
@@ -107,11 +125,28 @@ def run_ingest(
     zstd_level: int = 6,
     batch_size: int = DEFAULT_BATCH_SIZE,
     git_commit: str | None = None,
+    force: bool = False,
     on_progress: Callable[[IngestMetrics], None] | None = None,
 ) -> IngestResult:
-    """Verify chunk files, then stream/parse/validate/dedupe/write each into raw.sqlite3."""
+    """Verify chunk files, then stream/parse/validate/dedupe/write each into raw.sqlite3.
+
+    If a prior run at `manifest_path` was interrupted (its manifest is still marked
+    "running"), this refuses to start a new run unless `force=True` is passed, since
+    an ingest into the same raw.sqlite3 may already be in progress. Accepted/rejected
+    article writes are idempotent per page_id (revision/hash based), so re-running
+    after a confirmed-dead interrupted run is safe for article data; however,
+    `diagnostics` and `ingest_duplicates` are append-only and are not run-scoped in
+    the current schema, so a rerun may duplicate audit rows for records processed in
+    both the interrupted and the rerun attempt.
+    """
     if batch_size < 1:
         raise IngestError("batch_size must be positive")
+    previous_status = read_manifest_status(manifest_path)
+    if previous_status == "running" and not force:
+        raise IngestError(
+            f"manifest {manifest_path} shows a previous run still 'running'; "
+            "pass force=True to proceed after confirming that run is dead"
+        )
     started_at = datetime.now(UTC)
 
     for file in lock.files:
@@ -125,29 +160,81 @@ def run_ingest(
                 f"chunk verification failed for {file.relative_path}: {error}"
             ) from error
 
-    database_path = initialize_raw_database(raw_database_path, migrations_path)
     metrics = IngestMetrics()
-    status = "failed"
-    connection = connect_raw_database(database_path)
-    try:
-        repository = RawRepository(connection, zstd_level=zstd_level)
-        for file in lock.files:
-            chunk_path = snapshot_directory / file.relative_path
-            _ingest_chunk(
-                chunk_path,
-                repository=repository,
-                metrics=metrics,
-                validation_limits=validation_limits,
-                batch_size=batch_size,
-                on_progress=on_progress,
-            )
-        status = "complete"
-    finally:
-        connection.close()
+    _write_manifest(
+        _build_manifest(
+            status="running",
+            run_id=run_id,
+            started_at=started_at,
+            completed_at=None,
+            lock=lock,
+            database_path=None,
+            metrics=metrics,
+            git_commit=git_commit,
+        ),
+        manifest_path,
+    )
 
-    completed_at = datetime.now(UTC)
-    fingerprint = compute_fingerprint(database_path)
-    manifest = IngestManifest(
+    database_path = initialize_raw_database(raw_database_path, migrations_path)
+    status = "failed"
+    try:
+        connection = connect_raw_database(database_path)
+        try:
+            repository = RawRepository(connection, zstd_level=zstd_level)
+            for file in lock.files:
+                chunk_path = snapshot_directory / file.relative_path
+                _ingest_chunk(
+                    chunk_path,
+                    repository=repository,
+                    metrics=metrics,
+                    validation_limits=validation_limits,
+                    batch_size=batch_size,
+                    on_progress=on_progress,
+                )
+            status = "complete"
+        finally:
+            connection.close()
+    finally:
+        manifest = _build_manifest(
+            status=status,
+            run_id=run_id,
+            started_at=started_at,
+            completed_at=datetime.now(UTC),
+            lock=lock,
+            database_path=database_path,
+            metrics=metrics,
+            git_commit=git_commit,
+        )
+        _write_manifest(manifest, manifest_path)
+
+    return IngestResult(
+        manifest=manifest, manifest_path=manifest_path, raw_database_path=database_path
+    )
+
+
+def _build_manifest(
+    *,
+    status: str,
+    run_id: str,
+    started_at: datetime,
+    completed_at: datetime | None,
+    lock: SourceLock,
+    database_path: Path | None,
+    metrics: IngestMetrics,
+    git_commit: str | None,
+) -> IngestManifest:
+    outputs: tuple[dict[str, object], ...] = ()
+    if database_path is not None and database_path.is_file():
+        fingerprint = compute_fingerprint(database_path)
+        outputs = (
+            {
+                "relative_path": database_path.name,
+                "size_bytes": fingerprint.size_bytes,
+                "sha256": fingerprint.sha256,
+                "logical_hash": None,
+            },
+        )
+    return IngestManifest(
         schema_version=SCHEMA_VERSION,
         stage=STAGE_NAME,
         stage_version=STAGE_VERSION,
@@ -156,24 +243,13 @@ def run_ingest(
         started_at=started_at,
         completed_at=completed_at,
         inputs={"metadata_response_sha256": lock.metadata_response_sha256},
-        outputs=(
-            {
-                "relative_path": database_path.name,
-                "size_bytes": fingerprint.size_bytes,
-                "sha256": fingerprint.sha256,
-                "logical_hash": None,
-            },
-        ),
+        outputs=outputs,
         metrics=metrics,
         software={
             "git_commit": git_commit,
             "app_image_digest": None,
             "toolchain_image_digest": None,
         },
-    )
-    _write_manifest(manifest, manifest_path)
-    return IngestResult(
-        manifest=manifest, manifest_path=manifest_path, raw_database_path=database_path
     )
 
 

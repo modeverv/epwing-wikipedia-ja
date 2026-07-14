@@ -193,6 +193,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("--lock-path", result.stdout)
         self.assertIn("--batch-size", result.stdout)
         self.assertIn("--raw-database", result.stdout)
+        self.assertIn("--force", result.stdout)
 
     def test_ingest_writes_manifest_and_raw_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

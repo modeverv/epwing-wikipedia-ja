@@ -10,7 +10,8 @@ import pytest
 
 from wikiepwing.config import load_config
 from wikiepwing.ingest.database import connect_raw_database
-from wikiepwing.ingest.orchestrate import IngestError, run_ingest
+from wikiepwing.ingest.orchestrate import IngestError, read_manifest_status, run_ingest
+from wikiepwing.ingest.tar_reader import TarStreamError
 from wikiepwing.ingest.validate import ValidationLimits
 from wikiepwing.source.register import LocalSourceFile, register_local_source
 
@@ -181,3 +182,173 @@ def test_on_progress_callback_is_invoked(tmp_path: Path) -> None:
     assert len(calls) > 1
     assert calls[-1] == 21
     assert calls == sorted(calls)
+
+
+def test_read_manifest_status_returns_none_when_missing(tmp_path: Path) -> None:
+    assert read_manifest_status(tmp_path / "missing.json") is None
+
+
+def test_read_manifest_status_rejects_unparseable_file(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "broken.json"
+    manifest_path.write_text("not json", encoding="utf-8")
+
+    with pytest.raises(IngestError, match="cannot read existing manifest"):
+        read_manifest_status(manifest_path)
+
+
+def test_running_manifest_written_immediately_and_updated_to_complete(tmp_path: Path) -> None:
+    acquired = _register(tmp_path)
+    manifest_path = tmp_path / "manifests" / "30-ingest.json"
+
+    run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=tmp_path / "work" / "raw.sqlite3",
+        migrations_path=MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="test-run",
+        validation_limits=_limits(),
+    )
+
+    assert read_manifest_status(manifest_path) == "complete"
+
+
+def test_rerun_is_refused_while_manifest_shows_running(tmp_path: Path) -> None:
+    acquired = _register(tmp_path)
+    manifest_path = tmp_path / "manifests" / "30-ingest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps({"schema_version": 1, "status": "running"}), encoding="utf-8"
+    )
+
+    with pytest.raises(IngestError, match="still 'running'"):
+        run_ingest(
+            acquired.lock,
+            snapshot_directory=acquired.snapshot_directory,
+            raw_database_path=tmp_path / "work" / "raw.sqlite3",
+            migrations_path=MIGRATIONS,
+            manifest_path=manifest_path,
+            run_id="test-run",
+            validation_limits=_limits(),
+        )
+
+
+def test_force_allows_rerun_despite_running_manifest(tmp_path: Path) -> None:
+    acquired = _register(tmp_path)
+    manifest_path = tmp_path / "manifests" / "30-ingest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps({"schema_version": 1, "status": "running"}), encoding="utf-8"
+    )
+
+    result = run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=tmp_path / "work" / "raw.sqlite3",
+        migrations_path=MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="test-run",
+        validation_limits=_limits(),
+        force=True,
+    )
+
+    assert result.manifest.status == "complete"
+
+
+def test_rerun_over_completed_articles_is_idempotent(tmp_path: Path) -> None:
+    acquired = _register(tmp_path)
+    raw_database_path = tmp_path / "work" / "raw.sqlite3"
+    manifest_path = tmp_path / "manifests" / "30-ingest.json"
+
+    first = run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=raw_database_path,
+        migrations_path=MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="test-run",
+        validation_limits=_limits(),
+        force=True,
+    )
+    second = run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=raw_database_path,
+        migrations_path=MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="test-run-2",
+        validation_limits=_limits(),
+        force=True,
+    )
+
+    connection = connect_raw_database(second.raw_database_path)
+    accepted_count = connection.execute(
+        "SELECT COUNT(*) FROM articles WHERE ingest_status = 'accepted'"
+    ).fetchone()[0]
+    # article rows converge to the same accepted state; identical resubmissions are
+    # recognized as duplicates and ignored rather than corrupting existing rows.
+    assert accepted_count == 16
+    assert first.manifest.status == "complete"
+    assert second.manifest.status == "complete"
+    assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_manifest_status_is_failed_when_a_chunk_fails_mid_run(tmp_path: Path) -> None:
+    acquired = _register(tmp_path)
+    # replace the second chunk with a validly-sized-and-hashed archive that has a
+    # tar member name the reader rejects, so verify_fingerprint passes but streaming
+    # fails once the ingest loop actually reaches this chunk.
+    bad_tar = tmp_path / "bad.tar.gz"
+    with tarfile.open(bad_tar, mode="w:gz") as archive:
+        info = tarfile.TarInfo(name="not-ndjson.txt")
+        info.size = 3
+        archive.addfile(info, io.BytesIO(b"abc"))
+    target = acquired.snapshot_directory / "jawiki_namespace_0_chunk_1.tar.gz"
+    target.unlink()
+    bad_tar.rename(target)
+    # rebuild the lock to match the replacement file's real fingerprint
+    from wikiepwing.source.checksums import compute_fingerprint
+    from wikiepwing.source.lockfile import (
+        SourceLockFile,
+        build_source_lock,
+        write_source_lock,
+    )
+
+    fingerprint = compute_fingerprint(target)
+    files = [
+        acquired.lock.files[0],
+        SourceLockFile(
+            relative_path="jawiki_namespace_0_chunk_1.tar.gz",
+            chunk_identifier="jawiki_namespace_0_chunk_1",
+            size_bytes=fingerprint.size_bytes,
+            sha256=fingerprint.sha256,
+            media_type="application/gzip",
+        ),
+    ]
+    patched_lock = build_source_lock(
+        provider=acquired.lock.provider,
+        project=acquired.lock.project,
+        namespace=acquired.lock.namespace,
+        snapshot_identifier=acquired.lock.snapshot_identifier,
+        snapshot_version=acquired.lock.snapshot_version,
+        date_modified=acquired.lock.date_modified,
+        downloaded_at=acquired.lock.downloaded_at,
+        files=files,
+        metadata_response_sha256=acquired.lock.metadata_response_sha256,
+        acquirer=acquired.lock.acquirer,
+    )
+    write_source_lock(patched_lock, acquired.lock_path)
+
+    manifest_path = tmp_path / "manifests" / "30-ingest.json"
+    with pytest.raises(TarStreamError):
+        run_ingest(
+            patched_lock,
+            snapshot_directory=acquired.snapshot_directory,
+            raw_database_path=tmp_path / "work" / "raw.sqlite3",
+            migrations_path=MIGRATIONS,
+            manifest_path=manifest_path,
+            run_id="test-run",
+            validation_limits=_limits(),
+        )
+
+    assert read_manifest_status(manifest_path) == "failed"

@@ -1936,3 +1936,39 @@ git diff --check
 **次タスク**
 
 - TASK-E010 Interrupted ingest recovery
+
+### 2026-07-14 06:40 UTC — TASK-E010
+
+**目的**
+
+- ingest実行が中断された場合の検出(`status="running"`のまま残るmanifest)と、再実行時の安全性を実装する。
+
+**変更**
+
+- `run_ingest`を、開始直後に`status="running"`のmanifestをatomic書込し、`finally`で成功時"complete"・例外時"failed"を必ず書き込んで例外を再raiseする構造へ変更した。
+- `read_manifest_status`を追加した。既存manifestが`status="running"`のまま残っていれば`force=True`が無い限り新規実行を拒否し、壊れたmanifestも明確に拒否する。
+- `run_ingest`/CLIへ`--force`を追加した。
+- articles tableへの書込が重複解決ロジックにより冪等であることを、同じsource.lock.jsonへの2回連続実行(force=True)で確認した。diagnostics/ingest_duplicatesは現schemaでrun単位追跡が無く監査ログが重複しうることを既知の制約として文書化した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_ingest_orchestrate.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- chunk streaming中の失敗でmanifestが正しく"failed"になり例外が伝播すること、runningのまま残ったmanifestが新規実行を拒否すること、forceで上書きできることをすべてテストで確認した。
+- 標準スイート369件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 汎用的なstage lock・resume判定はEPIC Iの対象として残し、本タスクはingest専用の最小実装に留めた。
+- diagnostics/ingest_duplicatesへのrun_id列追加はschema変更を伴うため対象外とし、既知の制約として文書化した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- EPIC F(Model)のTASK-F001 Diagnostic model(依存: E001は完了済み)
