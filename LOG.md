@@ -1363,3 +1363,26 @@ git diff --check
 **次タスク**
 
 - TASK-D005 Resumable downloader(ADR-016のchunk単位取得を前提に設計する)
+
+### 2026-07-14 02:00 UTC — TASK-D005着手前の実ダウンロード疎通確認とセッション一時停止
+
+**目的**
+
+- TASK-D005(Resumable downloader)の実装前に、実credentialsでchunkダウンロードendpointの形状を確認する。TASK-D003で「Snapshot metadata形状の仮定が実データと異なっていた」ことを踏まえ、ダウンロード経路も先に実疎通確認する。
+
+**発見事項**
+
+- `GET https://api.enterprise.wikimedia.com/v2/snapshots/{chunk_identifier}/download` (Bearer認証)は307で署名付きS3 URLへredirectする。redirect先key名は`{chunk_identifier}_group_1.tar.gz`だった。
+- 署名(`X-Amz-Expires=60`)は60秒で失効するため、resumable downloaderは大きなfileの途中で署名を再取得する設計が必要になる。
+- redirect先S3 URLへは`Authorization`headerを転送してはいけない(転送すると`InvalidArgument: Only one auth mechanism allowed`)。素朴なurllibの自動redirect追従はこのheaderを保持するため使えず、redirectを手動処理してから素のGETを送る必要がある。
+- 実際にS3 URLへRangeリクエストすると、jawiki namespace 0のchunkだけでなく最も小さい`aawiki_namespace_0_chunk_0`(約1 KB)でも一貫して`404 NoSuchKey`が返った。署名検証自体は通っている(`AccessDenied`や`SignatureDoesNotMatch`ではない)ため、リクエスト形式の誤りではなく、対象オブジェクトがバケットに実在しないことを示す。
+
+**判断**
+
+- ユーザーへ状況を説明し、TASK-D005の実装をコードのみ(モック/テストダブル)で進めるか、先にWikimedia Enterpriseアカウントのプラン・ダウンロード権限を確認するかを尋ねた。
+- ユーザーは先にアカウントのプラン・権限を確認することを選択した。TASK-D005の実装はここで保留する。
+- 探索に使った一時スクリプトはリポジトリ外のスクラッチパッドに置き、コミットしていない。credentialsは一切ログ・文書へ出力していない。
+
+**次タスク**
+
+- ユーザーがWikimedia Enterpriseアカウントのプラン・ダウンロード権限を確認した後、TASK-D005 Resumable downloaderを再開する。
