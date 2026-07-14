@@ -507,7 +507,7 @@
 
 ## EPIC J — Japanese search
 
-### TASK-J001 [ ] Index normalization contract
+### TASK-J001 [x] Index normalization contract
 
 **依存:** H008
 

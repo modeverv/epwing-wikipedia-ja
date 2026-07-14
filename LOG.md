@@ -3361,3 +3361,37 @@ git diff --check
 **次タスク**
 
 - EPIC J(日本語検索、依存: H008)
+
+### 2026-07-14 23:55 UTC — TASK-J001
+
+**目的**
+
+- `ARCHITECTURE.md` 14と`DATA_CONTRACTS.md` 8(SearchTerm contract、`"Ｅｍａｃｓ"` -> `"normalized_key": "emacs"`の例)が要求する索引キー正規化を、単一の正本関数として明文化する。既存`search_term.py`は`ingest.repository.normalize_title`(NFKC+strip、case-fold無し)を流用しており、全角`Ｅｍａｃｓ`は`Emacs`にはなるが`emacs`にはならず、DATA_CONTRACTS.mdの例と食い違っていたことに気づいた。
+
+**変更**
+
+- `src/wikiepwing/search/normalize_key.py`に`normalize_index_key()`/`NormalizeKeyError`を実装した。NFKC正規化→`str.casefold()`→空白ランの畳み込み→trimを行う。
+- `search_term.py`の`title_terms_for_article`を`normalize_index_key`を使うよう変更した。ingest側の重複解決に使う`ingest.repository.normalize_title`自体は別の関心事として据え置いた。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_normalize_key.py tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 全角→半角小文字化・大文字小文字畳み込み・空白畳み込み・日本語保持・空文字列エラーを8件のテストで確認した。既存`test_search_term.py`は変更無しで成功した。
+- 標準スイート794件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ingest.repository.normalize_title`(raw ingest時の重複解決用、case-preserving)と検索索引用の`normalize_index_key`(case-fold有り)を意図的に分離した。両者を混同すると、ingest側の重複判定基準が検索要件に引きずられて変わってしまうため。
+- 優先度定数(`_TITLE_PRIORITY`/`_REDIRECT_PRIORITY`)はDATA_CONTRACTS.md 8のpriority proposal(1000〜100スケール)とまだ整合していないが、これはTASK-J005(alias priorities)の対象として据え置いた。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-J002 NFKC/case/space variants(依存: J001)

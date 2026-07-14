@@ -12,8 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from wikiepwing.ingest.repository import normalize_title
 from wikiepwing.model.article import Article
+from wikiepwing.search.normalize_key import normalize_index_key
 
 SearchTermKind = Literal[
     "title", "redirect", "alias", "reading", "category", "keyword", "cross_component"
@@ -57,7 +57,7 @@ def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
     terms = [
         SearchTerm(
             key=article.title,
-            normalized_key=normalize_title(article.title),
+            normalized_key=normalize_index_key(article.title),
             target_page_id=article.page_id,
             kind="title",
             priority=_TITLE_PRIORITY,
@@ -70,7 +70,7 @@ def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
         terms.append(
             SearchTerm(
                 key=alias.title,
-                normalized_key=normalize_title(alias.title),
+                normalized_key=normalize_index_key(alias.title),
                 target_page_id=article.page_id,
                 kind="redirect",
                 priority=_REDIRECT_PRIORITY,
