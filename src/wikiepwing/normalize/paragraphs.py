@@ -1,19 +1,28 @@
-"""Paragraph and generic inline conversion (TASK-G005, ARCHITECTURE.md 12.2 pass N50).
+"""Paragraph and generic inline conversion (TASK-G005/G006, ARCHITECTURE.md 12.2 pass N50).
 
 `convert_inline_nodes` is the shared entry point every inline-bearing block
-(paragraphs now, headings/list items/etc. later) will use. It currently only
-recognizes text nodes; any element it doesn't recognize is treated as a
-transparent wrapper and its children are recursed into rather than dropped.
-TASK-G006 extends this same dispatch with `<b>`/`<strong>`/`<i>`/`<em>`/
-`<code>`/`<br>` handlers.
+(paragraphs now, headings/list items/etc. later) will use. Text nodes become
+`TextInline`; `<b>`/`<strong>`, `<i>`/`<em>`, `<code>`, and `<br>` are
+recognized (TASK-G006); any other element is treated as a transparent
+wrapper and its children are recursed into rather than dropped.
 """
 
 from __future__ import annotations
 
 from wikiepwing.model.blocks import ParagraphBlock
 from wikiepwing.model.diagnostics import Diagnostic
-from wikiepwing.model.inline import Inline, TextInline
+from wikiepwing.model.inline import (
+    CodeInline,
+    EmphasisInline,
+    Inline,
+    LineBreakInline,
+    StrongInline,
+    TextInline,
+)
 from wikiepwing.normalize.html_parser import ElementNode, Node, TextNode
+
+_STRONG_TAGS = frozenset({"b", "strong"})
+_EMPHASIS_TAGS = frozenset({"i", "em"})
 
 
 def convert_inline_nodes(nodes: tuple[Node, ...]) -> tuple[Inline, ...]:
@@ -27,7 +36,26 @@ def convert_inline_nodes(nodes: tuple[Node, ...]) -> tuple[Inline, ...]:
 def _convert_one(node: Node) -> tuple[Inline, ...]:
     if isinstance(node, TextNode):
         return (TextInline(value=node.text),) if node.text else ()
+    if node.tag in _STRONG_TAGS:
+        return (StrongInline(inlines=convert_inline_nodes(node.children)),)
+    if node.tag in _EMPHASIS_TAGS:
+        return (EmphasisInline(inlines=convert_inline_nodes(node.children)),)
+    if node.tag == "code":
+        text = _flatten_text(node)
+        return (CodeInline(value=text),) if text else ()
+    if node.tag == "br":
+        return (LineBreakInline(),)
     return convert_inline_nodes(node.children)
+
+
+def _flatten_text(node: ElementNode) -> str:
+    parts: list[str] = []
+    for child in node.children:
+        if isinstance(child, TextNode):
+            parts.append(child.text)
+        elif isinstance(child, ElementNode):
+            parts.append(_flatten_text(child))
+    return "".join(parts)
 
 
 def is_paragraph(node: Node) -> bool:

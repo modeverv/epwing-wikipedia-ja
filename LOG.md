@@ -2406,3 +2406,37 @@ git diff --check
 **次タスク**
 
 - TASK-G006 Strong/emphasis/code/line break(依存: G005)
+
+### 2026-07-14 12:05 UTC — TASK-G006
+
+**目的**
+
+- `normalize/paragraphs.py`の`_convert_one`ディスパッチへ`<b>`/`<strong>`/`<i>`/`<em>`/`<code>`/`<br>`ハンドラを追加する。
+
+**変更**
+
+- `src/wikiepwing/normalize/paragraphs.py`を拡張し、`<b>`/`<strong>`→`StrongInline`(子要素を再帰変換)、`<i>`/`<em>`→`EmphasisInline`(同様)、`<code>`→`CodeInline`(子要素のテキストを平坦化、空なら省略)、`<br>`→`LineBreakInline`を実装した。
+- `tests/test_normalize_paragraphs.py`の既存テストのうち、`<b>`が透過的に処理されることを前提にしていた1件を、真に未知の要素(`<span>`)を使うよう更新した(挙動が正当に変わったため)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_inline_markup.py tests/test_normalize_paragraphs.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 各tagの変換、`<code>`のテキスト平坦化と空要素の省略、`<b><i>...</i></b>`のネスト保持、未知要素との混在時の透過的な再帰を9件の新規テスト(`tests/test_normalize_inline_markup.py`)で確認した。
+- 標準スイート540件(新規9件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- internal/external linkのinline変換は本タスクの対象外(内部リンク解決は`ARCHITECTURE.md` 12.5に別途規定があり、実装タイミングは未定)。
+- リスト/定義リスト/引用/preformatted等の他ブロック変換(G007以降)は対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G007 Ordered/unordered lists(依存: G005)

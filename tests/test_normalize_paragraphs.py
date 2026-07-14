@@ -70,7 +70,9 @@ def test_convert_inline_nodes_recurses_transparently_through_unknown_elements() 
 
 
 def test_convert_inline_nodes_preserves_order_across_nested_unknown_wrappers() -> None:
-    p = _first_body_child("<html><body><p>one <a><b>two</b></a> three</p></body></html>")
+    p = _first_body_child(
+        '<html><body><p>one <a><span class="x">two</span></a> three</p></body></html>'
+    )
 
     block, _ = convert_paragraph(p)
 

@@ -383,7 +383,7 @@
 
 **依存:** G003
 
-### TASK-G006 [ ] Strong/emphasis/code/line break
+### TASK-G006 [x] Strong/emphasis/code/line break
 
 **依存:** G005
 
