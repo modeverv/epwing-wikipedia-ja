@@ -379,7 +379,7 @@
 
 **依存:** G003
 
-### TASK-G005 [ ] Paragraph and text conversion
+### TASK-G005 [x] Paragraph and text conversion
 
 **依存:** G003
 

@@ -2373,3 +2373,36 @@ git diff --check
 **次タスク**
 
 - TASK-G005 Paragraph and text conversion(依存: G003)
+
+### 2026-07-14 11:45 UTC — TASK-G005
+
+**目的**
+
+- `ARCHITECTURE.md` 12.2のpass `N50 Convert paragraphs and inline markup`の基礎(`<p>`要素の`ParagraphBlock`変換と、汎用的なinlineノード変換)を実装する。
+
+**変更**
+
+- `src/wikiepwing/normalize/paragraphs.py`に`convert_inline_nodes`/`is_paragraph`/`convert_paragraph`を実装した。テキストノードは`TextInline`へ変換し、未知のinline要素(現時点では全て)は透過的に子要素を再帰変換することで内容を失わない。TASK-G006はこの同じdispatchへ`<b>`/`<strong>`/`<i>`/`<em>`/`<code>`/`<br>`ハンドラを追加する形で拡張する設計とした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_paragraphs.py
+make check
+git diff --check
+```
+
+**結果**
+
+- テキスト変換、未知要素の透過的な再帰(順序保持、複数のnested wrapperをまたぐ場合を含む)、空段落、非`<p>`要素での`ValueError`を8件のテストで確認した。
+- 標準スイート531件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 太字/斜体/code/line break等の具体的なinline要素認識は`TASK-G006`に委ねた。
+- リスト/定義リスト/引用/preformatted等の他ブロック変換(G007以降)と、文書全体の組み立て(G010/G012)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G006 Strong/emphasis/code/line break(依存: G005)
