@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-M009
+TASK-N001
 
 ## 目的
 
-`ARCHITECTURE.md` 18.5("件数・頻出順・記事例をreportへ出す")を完成させ、Epic M(Unicode and gaiji)を締めくくる。TASK-M008の`UnrepresentableTracker`から、JSON形式のUnicode reportを組み立てて原子的に書き出す`build_unicode_report()`/`write_unicode_report()`を実装する。既存の`reference/report.py`(JSON+HTML+Markdownの本格的なreport生成)ほど大掛かりな成果物は要求されていないため、`ARCHITECTURE.md` 18.5が明示する3項目(件数・頻出順・記事例)を持つ単一のJSON reportに絞る。書き込みはTASK-I004の`atomic_write_text`を再利用する。
+`ARCHITECTURE.md` 15.7(数式: 1.テキスト代替を保存 2.TeX sourceがあればcache keyに使用...)の最初の段階として、記事HTML中の数式ノード(`<math>`要素、MathML)を検出し、TeX source・テキスト代替・block/inline区分を抽出する。MediaWikiのMath拡張は`<math>`要素にMathML標準の`alttext`属性(TeX風の代替テキスト)と`display`属性(`"block"`/`"inline"`)を付与し、`<annotation encoding="application/x-tex">`子要素に元のTeX sourceを保持するという安定した標準に基づく(MediaWiki固有のwrapper class名の詳細ではなく、MathML仕様自体の属性に依拠することで、確認できないHTML実例への依存を避ける)。
 
 ## 事前条件
 
@@ -14,15 +14,15 @@ TASK-M009
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-M009(依存: M003-M008)を読んだ
-- [x] `ARCHITECTURE.md` 18.5(件数・頻出順・記事例)を再確認した
-- [x] TASK-M008の`UnrepresentableTracker`/`most_frequent()`を確認した
-- [x] `wikiepwing.pipeline.atomic_write.atomic_write_text`(TASK-I004)を確認し、report書き込みに再利用する
+- [x] `TASKS.md`のTASK-N001(依存: G001)を読んだ
+- [x] `ARCHITECTURE.md` 15.7(数式の優先順位)を再確認した
+- [x] `model/blocks.py`の`MathBlock`(`source`/`source_format`)を確認した(HTML変換はTASK-N002以降)
+- [x] MathML標準の`<math alttext="..." display="block|inline">`属性と`<annotation encoding="application/x-tex">`子要素という安定した規約を判断根拠として採用した(MediaWiki固有のwrapper HTML構造の詳細確認はできないため)
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/gaiji/report.py`(新規: `UnicodeReport`, `build_unicode_report()`, `write_unicode_report()`)
-- `tests/test_gaiji_report.py`(新規)
+- `src/wikiepwing/normalize/math_node.py`(新規: `RawMathNode`, `is_math_node()`, `parse_math_node()`)
+- `tests/test_normalize_math_node.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,24 +30,25 @@ TASK-M009
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_gaiji_report.py
+uv run pytest tests/test_normalize_math_node.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `build_unicode_report(tracker)`が、総出現数・distinct文字数・頻出順にソートされた文字ごとの統計(件数・記事例)を持つ`UnicodeReport`を組み立てる
-- [x] `write_unicode_report(report, destination)`が、JSON reportを原子的に書き出す
+- [x] `is_math_node(node)`が`<math>`要素を検出する
+- [x] `parse_math_node(node)`が、`<annotation encoding="application/x-tex">`からTeX sourceを、`alttext`属性からテキスト代替を、`display`属性からblock/inline区分を抽出する
+- [x] TeX source・alttextが無い場合はNoneを返す(データを失わない、Noneのまま保持)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- HTML/Markdown形式のreport(`reference/report.py`ほどの規模は要求されていないと判断)
-- 実際のCLIコマンドへの配線(将来のタスク)
+- 実際の`MathBlock`/`MathInline`モデルへの変換(TASK-N002以降)
+- レンダリング・cache・fallback(TASK-N003-N007)
 
 ## 実施結果
 
-- `src/wikiepwing/gaiji/report.py`に`UnicodeReport`・`build_unicode_report()`・`write_unicode_report()`を実装した。`UnrepresentableTracker.most_frequent()`から総出現数・distinct文字数・文字ごとの統計(character/code_point/count/examples)を組み立て、JSONとして原子的に書き出す(TASK-I004の`atomic_write_text`を再利用)。
-- `tests/test_gaiji_report.py`(新規6件)で、report組み立て・頻出順ソート・code_point/examples含有・空trackerでの挙動・JSON書き込みの妥当性・親ディレクトリ自動作成を確認した。
-- `make check`(format-check/lint/mypy/pytest 1022件)と`git diff --check`が成功した。これでEpic M(Unicode and gaiji、M001-M009)が完了した。
+- `src/wikiepwing/normalize/math_node.py`に`RawMathNode`・`is_math_node()`・`parse_math_node()`を実装した。MathML標準の`alttext`/`display`属性と`<annotation encoding="application/x-tex">`子要素(ネストの深さに依らず再帰探索)からTeX source・テキスト代替・block/inline区分を抽出する。
+- `tests/test_normalize_math_node.py`(新規11件)で、math要素の検出・非検出・TeX source抽出・alttext抽出・display=block/inline/欠落の判定・TeX source欠落時のNone・alttext欠落時のNone・異なるencodingのannotationの無視・深くネストしたannotationの探索・非math要素へのエラーを確認した。
+- `make check`(format-check/lint/mypy/pytest 1033件)と`git diff --check`が成功した。

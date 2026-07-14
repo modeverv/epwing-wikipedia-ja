@@ -4439,3 +4439,35 @@ git diff --check
 **次タスク**
 
 - EPIC N(Math、依存: G001)
+
+### 2026-07-15 12:10 UTC — TASK-N001
+
+**目的**
+
+- `ARCHITECTURE.md` 15.7(数式: 1.テキスト代替を保存 2.TeX sourceがあればcache keyに使用)の最初の段階として、記事HTML中の数式ノード(`<math>`要素、MathML)を検出しTeX source・テキスト代替・block/inline区分を抽出する。
+
+**変更**
+
+- `src/wikiepwing/normalize/math_node.py`に`RawMathNode`・`is_math_node()`・`parse_math_node()`を実装した。MediaWiki固有のwrapper HTML構造(確認できない)ではなく、MathML標準自体の`alttext`/`display`属性と`<annotation encoding="application/x-tex">`子要素(ネスト探索)という安定した規約に依拠した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_math_node.py
+make check
+git diff --check
+```
+
+**結果**
+
+- math要素の検出・非検出・TeX source抽出・alttext抽出・display=block/inline/欠落の判定・各種欠落時のNone・異なるencodingのannotationの無視・深いネストでの探索・非math要素へのエラーを11件のテストで確認した。
+- 標準スイート1033件(新規11件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- MediaWikiの実際のMath拡張出力HTML(`mwe-math-element`等のwrapper class名)は生のHTML実例を確認できないため、MathML仕様自体が定める標準属性(`alttext`/`display`)・要素(`annotation`)にのみ依拠する設計にした。これによりMediaWiki固有の変更に影響されにくくなる一方、実際の出力に`alttext`/`display`が無いケースがあれば別途対応が必要になる可能性がある。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-N002 Canonical math source(依存: N001)

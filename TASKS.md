@@ -647,7 +647,7 @@
 
 ## EPIC N — Math
 
-### TASK-N001 [ ] Math node extraction
+### TASK-N001 [x] Math node extraction
 
 **依存:** G001
 
