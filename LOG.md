@@ -2035,3 +2035,36 @@ git diff --check
 **次タスク**
 
 - TASK-F003 Block model(`PLAN.md` Phase 5の初期対応block: Heading/Paragraph/List/DefinitionList/Quote/Preformatted/各種placeholder/Unsupported)
+
+### 2026-07-14 07:45 UTC — TASK-F003
+
+**目的**
+
+- `ARCHITECTURE.md` 11.2のBlock unionのうち`PLAN.md` Phase 5/6の初期対応範囲を実装する。Table/InfoboxはARCHITECTURE.md 11.5/11.6の完全なfield構成を今のうちに定義する。
+
+**変更**
+
+- `src/wikiepwing/model/blocks.py`に15種のBlock型(paragraph/heading/unordered_list/ordered_list/definition_list/quote/preformatted/code/horizontal_rule/table/infobox/image/math/references/unsupported)と補助型(`ListItem`/`DefinitionEntry`/`TableCell`/`InfoboxField`)、`Block` union、`block_payload`/`parse_block`を実装した。`TableBlock`/`InfoboxBlock`は`ARCHITECTURE.md` 11.5/11.6通りのfieldを持つ。`ImageBlock`/`MathBlock`/`ReferencesBlock`は明文化された仕様が無いため、最小限のplaceholder形状とした(documented assumption)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_model_blocks.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 全15種のroundtrip(list/quote/table cell/infobox fieldのnested block、definition listのnested inline+blockを含む)、未知typeの拒否、`complexity`/`row_span`/`col_span`等のバリデーションを32件のテストで確認した。
+- 標準スイート431件(新規32件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `NoticeBlock`は`PLAN.md`の初期rollout対象に無いため今回は実装しなかった。将来必要になった場合もunion拡張のみで既存コードへの破壊的変更は生じない設計。
+- `ImageBlock`/`MathBlock`/`ReferencesBlock`のfield構成はARCHITECTURE.mdに明文化されていないため、最小限の仮設計とした。HTMLからの実際の変換(Epic G/K/L/N/O)実装時に必要に応じて拡張する。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-F004 Article model(依存: F003)

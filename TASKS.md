@@ -331,7 +331,7 @@
 
 **依存:** F001
 
-### TASK-F003 [ ] Block model
+### TASK-F003 [x] Block model
 
 **依存:** F002
 

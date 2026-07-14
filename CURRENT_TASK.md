@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-F002
+TASK-F003
 
 ## 目的
 
-`ARCHITECTURE.md` 11.3/11.4のInline unionのうち、`PLAN.md` Phase 6が「最初に対応する」と定めた種別(text、bold/italic、internal/external link、code、line break)を実装し、それ以外は`UnsupportedInline`へ落とすJSON codecを持つ。
+`ARCHITECTURE.md` 11.2のBlock unionのうち、`PLAN.md` Phase 5/6が「最初に対応する」と定めた種別を実装する。Table/Infoboxは`ARCHITECTURE.md` 11.5/11.6の完全な型を今のうちに定義しつつ、HTML変換自体はEpic K以降まで行わない。Image/Math/Referencesは最小限のplaceholder型とする。
 
 ## 事前条件
 
@@ -14,16 +14,16 @@ TASK-F002
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-F002を読んだ(依存: F001完了済み。詳細実装列は無く`ARCHITECTURE.md`/`PLAN.md`が正本)
-- [x] `ARCHITECTURE.md` 11.3(Inline union)・11.4(InternalLinkInline)を確認した
-- [x] `DATA_CONTRACTS.md` 6節のInline JSON例(text/internal_link)を確認した
-- [x] `PLAN.md` Phase 6「初期対応」(headings、paragraphs、bold/italic、internal/external links、...)を確認し、ruby/math inlineは対象外(将来epicへ委譲)とした
-- [x] TASK-F001の`model/diagnostics.py`の実装スタイル(frozen dataclass、`__post_init__`検証、`payload`/`parse_*`往復)を踏襲する
+- [x] `TASKS.md`のTASK-F003を読んだ(依存: F002完了済み。詳細実装列は無く`ARCHITECTURE.md`/`PLAN.md`/`DATA_CONTRACTS.md`が正本)
+- [x] `ARCHITECTURE.md` 11.2(Block union一覧)・11.5(Table)・11.6(Infobox)を確認した
+- [x] `DATA_CONTRACTS.md` 6節のBlock JSON例(paragraph/heading/unordered_list/table/unsupported)を確認した
+- [x] `PLAN.md` Phase 5(最初に対応するblock: Heading/Paragraph/List/DefinitionList/Quote/Preformatted/各種placeholder/Unsupported)とPhase 6(pre/code、horizontal rule)を確認した
+- [x] TASK-F002の`model/inline.py`の実装スタイルを踏襲する
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/model/inline.py`
-- `tests/test_model_inline.py`
+- `src/wikiepwing/model/blocks.py`
+- `tests/test_model_blocks.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,35 +31,33 @@ TASK-F002
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_model_inline.py
+uv run pytest tests/test_model_blocks.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `TextInline`/`StrongInline`/`EmphasisInline`/`CodeInline`/`LineBreakInline`/`InternalLinkInline`/`ExternalLinkInline`/`UnsupportedInline`を実装する
-- [x] `InternalLinkInline`が`ARCHITECTURE.md` 11.4のfield(label/target_title/target_normalized_title/target_fragment/target_page_id/resolution)を持つ
-- [x] `payload()`/`parse_inline()`が全種別で相互に往復可能である(strong/emphasis/linkのlabelなどnested inlineを含む)
-- [x] 未知の`type`をcodec errorとして拒否する(`DATA_CONTRACTS.md`の規定通り)
-- [x] `resolution`が`resolved`/`missing`/`externalized`以外を拒否する
+- [x] `ParagraphBlock`/`HeadingBlock`/`UnorderedListBlock`/`OrderedListBlock`/`DefinitionListBlock`/`QuoteBlock`/`PreformattedBlock`/`CodeBlock`/`HorizontalRuleBlock`/`TableBlock`/`InfoboxBlock`/`ImageBlock`/`MathBlock`/`ReferencesBlock`/`UnsupportedBlock`を実装する
+- [x] `TableBlock`/`TableCell`が`ARCHITECTURE.md` 11.5、`InfoboxBlock`/`InfoboxField`が11.6のfieldを持つ
+- [x] `payload()`/`parse_block()`が全種別で相互に往復可能である(list/quoteのnested block、table cellのnested blockを含む)
+- [x] 未知の`type`をcodec errorとして拒否する
+- [x] `complexity`(table)が`simple`/`wide`/`complex`/`unsupported`以外を拒否する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Block model(TASK-F003)
-- HTMLからInlineへの実際の変換(Epic G)
-- math/ruby inline(将来epic)
+- Article model(TASK-F004)
+- HTMLからBlockへの実際の変換(Epic G/K/L/N/O)
+- `NoticeBlock`(PLAN初期scopeに無いため今回は対象外、将来追加時もunion拡張のみで済む設計)
 
 ## 実施結果
 
-- `src/wikiepwing/model/inline.py`に`TextInline`/`StrongInline`/`EmphasisInline`/`CodeInline`/`LineBreakInline`/`InternalLinkInline`/`ExternalLinkInline`/`UnsupportedInline`と`Inline` union型、`inline_payload`/`parse_inline`を実装した。
-- `InternalLinkInline`は`ARCHITECTURE.md` 11.4通りのfield(label/target_title/target_normalized_title/target_fragment/target_page_id/resolution)を持ち、`resolution`は`resolved`/`missing`/`externalized`以外を拒否する。
-- 全種別で`payload()`/`parse_inline()`が相互に往復可能であることを、strong内emphasis等のnestingを含め確認した。
-- 未知の`type`は`InlineError`として拒否した(`DATA_CONTRACTS.md`の規定通り)。
-- `tests/test_model_inline.py`に18件のテストを追加した。
-- format-check、ruff lint、mypy strict、標準スイート399件、`git diff --check`が成功した。
-
-**判断・注意点**
-
-- `PLAN.md` Phase 6の初期対応範囲に無いmath/ruby inlineは対象外とし、将来該当epicで追加する(それまでは`UnsupportedInline`が受け皿になる)。
+- `src/wikiepwing/model/blocks.py`に15種のBlock型と補助型(`ListItem`/`DefinitionEntry`/`TableCell`/`InfoboxField`)、`Block` union、`block_payload`/`parse_block`を実装した。
+- `tests/test_model_blocks.py`に32件のテストを追加(全種別roundtrip、nested block/inline、バリデーション、未知type拒否)。
+- `uv run pytest tests/test_model_blocks.py`: 32 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート431件)すべて成功。
+- `git diff --check`: 問題なし。
+- `TASKS.md`(F003チェック)、`LOG.md`(新規エントリ)を更新した。
+- `NoticeBlock`は`PLAN.md`初期scope外のため未実装。`ImageBlock`/`MathBlock`/`ReferencesBlock`は仕様未確定のためplaceholder形状とした。
+- 次タスク: TASK-F004 Article model。
