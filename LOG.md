@@ -2838,3 +2838,37 @@ git diff --check
 **次タスク**
 
 - TASK-H006 RenderedEntry model(依存: H005)
+
+### 2026-07-14 16:40 UTC — TASK-H006
+
+**目的**
+
+- `ARCHITECTURE.md` 16(RenderedEntry)を実装する。型定義のみを対象とし、ArticleからRenderedEntryへの実際の変換はTASK-H007の範囲とする。
+
+**変更**
+
+- `src/wikiepwing/render/render_node.py`に`TextRenderNode`/`LineBreakRenderNode`/`RenderNode`を実装した(`ARCHITECTURE.md`にRenderNodeの詳細仕様が無いため、H007が拡張できる最小限のtext/line break表現とした)。
+- `src/wikiepwing/render/rendered_entry.py`に`RenderedEntry`(`entry_id`/`page_id`/`title`/`headwords`/`body`/`internal_targets`/`graphics`/`estimated_size`/`diagnostics`)と`RenderedEntryError`を実装した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_render_node.py tests/test_render_rendered_entry.py
+make check
+git diff --check
+```
+
+**結果**
+
+- RenderNode2種の構築、RenderedEntryの構築とfield保持、entry_id/page_id/title/estimated_sizeのバリデーション拒否を8件のテストで確認した。
+- 標準スイート660件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `RenderNode`の具体的な形状は`ARCHITECTURE.md`に明文化が無いため、text/line breakのみの最小限のdocumented assumptionとした。Table/Infobox等の表現が必要になれば、H007以降で拡張する。
+- ArticleからRenderedEntryへの実際の変換(H007)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H007 Mini layout renderer(依存: H006,G012)

@@ -439,7 +439,7 @@
 
 **依存:** F004
 
-### TASK-H006 [ ] RenderedEntry model
+### TASK-H006 [x] RenderedEntry model
 
 **依存:** H005
 
