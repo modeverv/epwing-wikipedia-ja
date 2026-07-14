@@ -2237,3 +2237,38 @@ git diff --check
 **次タスク**
 
 - Epic F完了。TASK-G001以降(HTML normalization baseline)へ進む。
+
+### 2026-07-14 10:25 UTC — TASK-G001
+
+**目的**
+
+- `TASKS.md` TASK-G001の実装要件("no network/entities、malformed recovery policy")を満たす安全なHTMLパーサーを実装する。
+
+**変更**
+
+- `src/wikiepwing/normalize/__init__.py`(新規パッケージ)を作成した。
+- `src/wikiepwing/normalize/html_parser.py`に`parse_html`/`HtmlParseResult`/`ElementNode`/`TextNode`/`HtmlParseError`を実装した。標準ライブラリ`html.parser.HTMLParser`(`convert_charrefs=True`)を用い、外部ネットワークアクセスも外部entity解決も行わない。コメント/DOCTYPE/processing instructionは無視、void要素とself-closing要素を判定し、`max_dom_depth`を超えた要素はdiagnosticを記録した上で子要素として追加しない(それ以降の子孫は追加のdiagnosticなしで暗黙的に除外)。未対応の閉じタグ・EOF時の未クローズタグは`html_recover`設定に応じてdiagnostic記録または`HtmlParseError`送出のいずれかを行う。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_html_parser.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 要素木構築、属性保持、void/self-closing要素、コメント/DOCTYPE無視、entity/文字参照の安全なデコード、未対応閉じタグ・未クローズタグ・depth超過それぞれのrecover/raise両モード、空文書を15件のテストで確認した。
+- 標準スイート502件(新規15件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- HTMLパーサーとして`lxml`等の新規依存を追加せず、標準ライブラリの`html.parser.HTMLParser`を採用した。ネットワークI/Oを一切行わずentityは組み込みテーブルのみで解決するため、XXE相当のリスクが構造的に存在しない。
+- `max_dom_depth`超過時、境界を跨いだ要素についてのみdiagnosticを1件記録し、その配下の子孫については個別のdiagnosticを重複記録しない設計とした(病的に深い入力でdiagnostics件数が爆発しないようにするため)。
+- Root content選択(G002)・unsafe/UI node除去(G003)・Block/Inlineへの実際の変換(G004以降)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G002 Root content selection(依存: G001)

@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-F008
+TASK-G001
 
 ## 目的
 
-`TASKS.md`のTASK-F008完了条件("order-independent sources yield deterministic canonical output where contract permits")を満たす、Articleの論理hash(logical hash)計算を実装する。TASK-F006のcanonical JSON codecの上に構築し、抽出順序が非決定的なcollection(aliases/categories/media/diagnostics/source_license_ids)を安定した順序に正規化してからhashすることで、意味的に同じ内容なら抽出順序に関わらず同一hashになるようにする。block配列(本文の出現順序)は意味を持つため並べ替えない。
+`TASKS.md` TASK-G001の実装要件("no network/entities、malformed recovery policy")を満たす、安全なHTMLパーサーを実装する。標準ライブラリの`html.parser.HTMLParser`を用い、外部ネットワークアクセスや外部entity解決を一切行わない(stdlibパーサー自体がI/Oを行わないためXXE相当のリスクが構造的に存在しない)最小限のDOM木を構築する。不正なHTML(未対応の閉じタグ、閉じられていないタグ、`max_dom_depth`超過)は`[normalize] html_recover`設定に従い、回復してdiagnosticを記録するか、明示的にエラーとするかを切り替える。
 
 ## 事前条件
 
@@ -14,14 +14,16 @@ TASK-F008
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-F008(依存: F006、完了条件: order-independent sources yield deterministic canonical output where contract permits)を読んだ
-- [x] `ARCHITECTURE.md` 26.1(physical SHA-256 vs logical hashの区別、ただしEPWINGパッケージ出力の文脈)を確認し、Article/model層でのlogical hashの算出方法自体は明文化されていないことを確認した(documented assumptionとして設計する)
-- [x] `src/wikiepwing/model/canonical.py`(`encode_article`のkey順ソート済みJSON出力)を確認した
+- [x] `TASKS.md`のTASK-G001(依存: F004,D010、実装要件: no network/entities、malformed recovery policy)を読んだ
+- [x] `config/default.toml`の`[normalize]`セクション(`html_recover`/`preserve_unknown_text`/`max_dom_depth`)を確認した
+- [x] `tests/fixtures/enterprise/edge_case_articles.ndjson`(D010で作成済みの実データ由来fixture、HTML本文を含む)を確認した
+- [x] `model/diagnostics.py`のDiagnostic型を確認し、DOM関連diagnostic codeの命名は`ARCHITECTURE.md` 11.7の例(`DOM_INVALID_NESTING`/`DOM_UNKNOWN_ELEMENT`)に倣う
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/model/logical_hash.py`
-- `tests/test_model_logical_hash.py`
+- `src/wikiepwing/normalize/__init__.py`
+- `src/wikiepwing/normalize/html_parser.py`
+- `tests/test_normalize_html_parser.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -29,32 +31,35 @@ TASK-F008
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_model_logical_hash.py
+uv run pytest tests/test_normalize_html_parser.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `compute_logical_hash(article) -> str`が64文字16進のsha256 hex digestを返す
-- [x] `aliases`/`categories`/`media`/`diagnostics`/`source_license_ids`のtuple順序を入れ替えても同一Articleに対して同一hashを返す(order-independent)
-- [x] `blocks`の順序を入れ替えると異なるhashになる(本文順序は意味を持つため正規化しない)
-- [x] 内容が異なるArticleは異なるhashになる
-- [x] 同一入力に対して複数回呼び出しても同一hashを返す(決定的)
+- [x] `parse_html(html, *, max_dom_depth, html_recover) -> HtmlParseResult`が正常なHTMLから`ElementNode`/`TextNode`のDOM木を構築する
+- [x] コメント・processing instruction・DOCTYPE宣言を無視する
+- [x] 名前付き/数値文字参照(entity)を安全にデコードする(外部DTD/ネットワーク参照なし)
+- [x] 未対応の閉じタグ(開始タグが無い)を`html_recover=True`では無視してdiagnosticを記録し、`False`では`HtmlParseError`を送出する
+- [x] EOF時に閉じられていないタグを自動クローズし、`html_recover=True`ではdiagnosticを記録、`False`では`HtmlParseError`を送出する
+- [x] `max_dom_depth`超過時にそれ以上の子要素を追加しない(切り捨て)でdiagnosticを記録する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- EPWINGパッケージ出力のphysical/logical hash(`ARCHITECTURE.md` 26.1、別epic)
-- model DBへのhash書き込み(TASK-G012)
+- Root content選択(TASK-G002)
+- Unsafe/UI node除去(TASK-G003)
+- Block/Inlineへの実際の変換(TASK-G004以降)
+- HTML entity以外のsanitization(script/style除去等はG003で扱う)
 
 ## 実施結果
 
-- `src/wikiepwing/model/logical_hash.py`に`compute_logical_hash`を実装した。
-- `tests/test_model_logical_hash.py`に9件のテストを追加。
-- `uv run pytest tests/test_model_logical_hash.py`: 9 passed。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート487件)すべて成功。
+- `src/wikiepwing/normalize/__init__.py`(新規パッケージ)、`src/wikiepwing/normalize/html_parser.py`に`parse_html`/`HtmlParseResult`/`ElementNode`/`TextNode`/`HtmlParseError`を実装した。
+- `tests/test_normalize_html_parser.py`に15件のテストを追加。
+- `uv run pytest tests/test_normalize_html_parser.py`: 15 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート502件)すべて成功。
 - `git diff --check`: 問題なし。
-- `TASKS.md`(F008チェック)、`LOG.md`(新規エントリ)を更新した。
-- "order-independent"とみなすcollectionの選定(aliases/categories/media/diagnostics/source_license_idsのみ、blocksは対象外)はdocumented assumption。
-- Epic F(Model)完了。次はEpic G(HTML normalization baseline)。
+- `TASKS.md`(G001チェック)、`LOG.md`(新規エントリ)を更新した。
+- 新規依存追加を避け標準ライブラリ`html.parser.HTMLParser`を採用(ネットワークI/O・外部entity解決なし)。
+- 次タスク: TASK-G002 Root content selection。

@@ -361,7 +361,7 @@
 
 ## EPIC G — HTML normalization baseline
 
-### TASK-G001 [ ] Safe HTML parser
+### TASK-G001 [x] Safe HTML parser
 
 **依存:** F004,D010
 
