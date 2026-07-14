@@ -2977,3 +2977,36 @@ git diff --check
 **次タスク**
 
 - TASK-H010 EPWING generate command(依存: H009)
+
+### 2026-07-14 18:40 UTC — TASK-H010
+
+**目的**
+
+- `ARCHITECTURE.md` 17.1/17.2に基づき`wikiepwing generate` CLIコマンドを実装する。model.sqlite3の`normalize_status != 'rejected'`な記事を`RenderedEntry`へ変換し`entries.jsonl`へ書き出す。実際の`fpwmake`実行・catalog/subbook動的生成・実運用gaiji管理は対象外(未実装の前提subsystemが必要なため)。
+
+**変更**
+
+- `src/wikiepwing/render/generate.py`に`run_generate`/`GenerateMetrics`/`GenerateManifest`/`GenerateResult`/`read_manifest_status`を実装した(`ingest`/`normalize`と同じmanifest lifecycle)。model.sqlite3の各記事をzstd展開+`decode_article`でArticle化し、`render_article_to_entry`でRenderedEntry化、`rejected`をスキップしてカウントし、`write_entries_jsonl`で書き出す。
+- `src/wikiepwing/cli.py`に`generate`サブコマンドを追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_generate.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- rejected記事の除外、manifestのrunning/complete/failed lifecycle、`--force`挙動、CLI `generate`サブコマンド(register-local-source→ingest→normalize→generateの実end-to-end連鎖含む)を22件のテスト(新規)で確認した。
+- 標準スイート695件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実際の`fpwmake`実行によるEPWINGバイナリ生成・catalog/subbook設定の動的生成・実運用gaiji文字集合管理は、これらのsubsystem自体が未実装のため対象外とした。TASK-H009で構築済みの`freepwing_build_entries.pl`は本コマンドが生成する`entries.jsonl`をそのまま読めるため、手動運用としては既に接続可能。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H011 EPWING verifier baseline(依存: H010)

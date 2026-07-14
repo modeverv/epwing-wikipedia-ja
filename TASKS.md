@@ -455,7 +455,7 @@
 
 **依存:** B009,H007-H008
 
-### TASK-H010 [ ] EPWING generate command
+### TASK-H010 [x] EPWING generate command
 
 **依存:** H009
 

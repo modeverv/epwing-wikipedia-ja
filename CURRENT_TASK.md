@@ -2,11 +2,13 @@
 
 ## Task ID
 
-TASK-H009
+TASK-H010
 
 ## 目的
 
-`ARCHITECTURE.md` 17.2(FreePWING adapterの責務: "FreePWING source file生成")を実装する。任意件数の`RenderedEntry`(alias数・internal target数も可変)をFreePWINGの`FPWUtils::FPWParser` Perl APIへ渡し、`fpwmake`が消費するsource(`work/text`/`work/heading`/`work/word2`等)を生成する仕組みを作る。既存の`tests/fixtures/handcrafted/build_fixture.pl`はentry数3・alias数2に固定されたsmoke test専用スクリプトであり、本タスクではこれを一般化する。Python側はentryを中間形式(JSON Lines)へ書き出すのみとし、実際のFPWParser呼び出しはPerlスクリプト(Docker toolchain image内で実行)が担う(`ARCHITECTURE.md` 17.2の非責務"HTML解析"等はPythonに残す設計と整合)。
+`ARCHITECTURE.md` 17.1(`EpwingBackend` Protocol)・17.2(FreePWING adapterの責務)に基づき、`wikiepwing generate` CLIコマンドを実装する。model.sqlite3の`normalize_status != 'rejected'`な記事を読み、`RenderedEntry`(TASK-H007)へ変換し、`write_entries_jsonl`(TASK-H009)でFreePWINGビルド入力(entries.jsonl)へ書き出す。`ingest`/`normalize`と同じmanifest lifecycleパターンに従う。
+
+実際の`fpwmake`実行によるEPWINGバイナリ生成(catalog/subbook設定の動的生成、実運用gaiji文字集合の管理を含む)は、これらの生成ロジック自体がまだ未実装(Epic後半、gaiji font pipeline等)であるため、本タスクでは対象外とする。TASK-H009で構築済みの`docker/toolchain/freepwing_build_entries.pl`は本コマンドが生成する`entries.jsonl`をそのまま読めるため、既存のfixture向けMakefile/catalogs.txt等を使い続ければ手動でのtoolchain実行は可能だが、これを自動化する部分は将来のtaskへ委ねる。
 
 ## 事前条件
 
@@ -14,18 +16,18 @@ TASK-H009
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-H009(依存: B009,H007-H008)を読んだ
-- [x] `ARCHITECTURE.md` 17.1(`EpwingBackend` Protocol)・17.2(FreePWING adapterの責務/非責務)を確認した
-- [x] `tests/fixtures/handcrafted/build_fixture.pl`・`entries.tsv`・`Makefile`・`docker/toolchain/handcrafted-three-entry-smoke.sh`を読み、実際のFPWParser呼び出しパターン(`initialize_fpwparser`/`text`/`heading`/`word2`/`add_tag`/`add_text`/`add_reference_start-end`/`finalize_fpwparser`)を確認した
-- [x] `wikiepwing-toolchain:dev` Dockerイメージがローカルに存在し、`perl -MJSON::PP`が利用可能であることを確認した(実機検証環境あり)
+- [x] `TASKS.md`のTASK-H010(依存: H009)を読んだ
+- [x] `ARCHITECTURE.md` 17.1(`EpwingBackend` Protocol)・17.2(FreePWING adapterの責務: "FreePWING source file生成"/"catalog/subbook設定"/"index登録"等、後者2つは本タスク非対象)を確認した
+- [x] `migrations/model/001_initial.sql`の`articles`テーブル(`article_json_zstd`/`normalize_status`)を確認した
+- [x] `model/canonical.py`(`decode_article`)・`ingest/zstd_codec.py`(`decompress`)・`render/mini_layout.py`(`render_article_to_entry`)・`render/freepwing_source.py`(`write_entries_jsonl`)を再利用する
+- [x] `ingest/orchestrate.py`/`normalize/orchestrate.py`のmanifest lifecycleパターン(running/complete/failed、`--force`)を踏襲する
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/render/freepwing_source.py`(RenderedEntry列 → JSON Lines書き出し)
-- `docker/toolchain/freepwing_build_entries.pl`(汎用Perl driver、entry数・alias数・target数を任意にする)
-- `tests/test_render_freepwing_source.py`(Python側の単体テスト)
-- `docker/toolchain/freepwing-build-entries-smoke.sh`(実Dockerでの end-to-end smoke test、可変件数のentryで検証)
-- `tests/test_freepwing_build_entries_smoke.py`(smoke scriptの存在・Makefile配線確認、実行はmanual markerで別途)
+- `src/wikiepwing/render/generate.py`
+- `src/wikiepwing/cli.py`(`generate`サブコマンド追加)
+- `tests/test_render_generate.py`
+- `tests/test_cli.py`(generateサブコマンドの確認を追加)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -33,35 +35,34 @@ TASK-H009
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_render_freepwing_source.py tests/test_freepwing_build_entries_smoke.py
-sh docker/toolchain/freepwing-build-entries-smoke.sh wikiepwing-toolchain:dev
+uv run pytest tests/test_render_generate.py tests/test_cli.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `write_entries_jsonl(entries, destination)`が`RenderedEntry`列をtag/title/aliases/body/targetsのJSON Linesへ書き出す
-- [x] `docker/toolchain/freepwing_build_entries.pl`が任意件数・可変alias数・可変target数のentryを処理し、`fpwmake`で`honmon`/`work/cgr`等を生成できる(実Dockerで検証)
-- [x] 同一entry内の重複headwordは吸収し、entry間の重複headwordはエラーとする
-- [x] 未知のlink targetを参照するとエラーとする
+- [x] `run_generate`がmodel.sqlite3の`normalize_status != 'rejected'`な記事を読み、`RenderedEntry`へ変換し、`entries.jsonl`へ書き出す
+- [x] `rejected`な記事は除外される
+- [x] manifestのrunning/complete/failed lifecycleと`--force`挙動が既存パターンと同様に動作する
+- [x] `wikiepwing generate`サブコマンドが動作する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- graphic/gaijiの実際の登録内容の一般化(既存のhandcrafted fixtureのcgraphs.txt等をそのまま利用、TASK-H009では拡張しない)
-- EPWING generate command全体の配線(TASK-H010)
-- catalog/subbook設定の動的生成(既存のcatalogs.txt固定運用のまま)
+- 実際の`fpwmake`実行によるEPWINGバイナリ生成の自動化
+- catalog/subbook設定の動的生成(TASK-H009までのfixtureベースの手動運用のまま)
+- 実運用gaiji文字集合・font pipelineの管理
+- EPWING verifier baseline(TASK-H011)
 
 ## 実施結果
 
-- `src/wikiepwing/render/freepwing_source.py`に`write_entries_jsonl`を実装した。
-- `docker/toolchain/freepwing_build_entries.pl`(汎用Perl driver)、`docker/toolchain/freepwing-build-entries-smoke.sh`(実Docker end-to-end smoke test)を実装した。`Makefile`に`test-freepwing-build-entries`ターゲットを追加した。
-- `tests/test_render_freepwing_source.py`(5件)、`tests/test_freepwing_build_entries_smoke.py`(5件)を追加。
-- `uv run pytest tests/test_render_freepwing_source.py tests/test_freepwing_build_entries_smoke.py`: 10 passed。
-- `sh docker/toolchain/freepwing-build-entries-smoke.sh wikiepwing-toolchain:dev`: 実機で成功(`wikiepwing-eb-search`によるtitle/alias headwordの実検索・解決を確認)。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート689件)すべて成功。
+- `src/wikiepwing/render/generate.py`に`run_generate`/`GenerateMetrics`/`GenerateManifest`/`GenerateResult`/`read_manifest_status`を実装した。
+- `src/wikiepwing/cli.py`に`generate`サブコマンドを追加した。
+- `tests/test_render_generate.py`(4件)を追加、`tests/test_cli.py`にgenerateサブコマンドのend-to-endテスト(2件)を追加。
+- `uv run pytest tests/test_render_generate.py tests/test_cli.py`: 22 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート695件)すべて成功。
 - `git diff --check`: 問題なし。
-- `TASKS.md`(H009チェック)、`LOG.md`(新規エントリ)を更新した。
-- 実装中に発見したUTF-8→EUC-JP変換漏れのバグを修正した(Perlスクリプト内で`Encode::encode('euc-jp', ...)`を明示適用)。
-- 次タスク: TASK-H010 EPWING generate command。
+- `TASKS.md`(H010チェック)、`LOG.md`(新規エントリ)を更新した。
+- 実際の`fpwmake`実行・catalog/subbook動的生成・実運用gaiji管理は非対象(前提subsystem未実装)。
+- 次タスク: TASK-H011 EPWING verifier baseline。

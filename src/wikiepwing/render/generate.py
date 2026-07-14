@@ -1,0 +1,251 @@
+"""EPWING generate command: model.sqlite3 -> RenderedEntry -> entries.jsonl (TASK-H010).
+
+Mirrors `wikiepwing.ingest.orchestrate`/`wikiepwing.normalize.orchestrate`'s
+manifest lifecycle (running/complete/failed, `--force`) for the generate
+stage. This produces the FreePWING build input
+(`wikiepwing.render.freepwing_source.write_entries_jsonl`); actually
+invoking `fpwmake` to build and package the EPWING binary is a later task
+(it needs catalog/subbook generation and a real gaiji character set/font
+pipeline that don't exist yet -- ARCHITECTURE.md 17.2's "catalog/subbook設定"
+and "graphic/gaiji登録" responsibilities).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import tempfile
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from wikiepwing.ingest.zstd_codec import decompress
+from wikiepwing.model.canonical import decode_article
+from wikiepwing.model.database import connect_model_database
+from wikiepwing.render.freepwing_source import write_entries_jsonl
+from wikiepwing.render.mini_layout import render_article_to_entry
+from wikiepwing.render.rendered_entry import RenderedEntry
+from wikiepwing.source.checksums import compute_fingerprint
+
+SCHEMA_VERSION = 1
+STAGE_NAME = "50-generate"
+STAGE_VERSION = 1
+
+
+class GenerateError(RuntimeError):
+    """Raised when a generate run cannot complete safely."""
+
+
+@dataclass(slots=True)
+class GenerateMetrics:
+    """Running counters matching the stage manifest's `metrics` object."""
+
+    articles_read: int = 0
+    entries_written: int = 0
+    articles_skipped: int = 0
+
+    def payload(self) -> dict[str, object]:
+        """Return this counter set as a JSON-serializable mapping."""
+        return {
+            "articles_read": self.articles_read,
+            "entries_written": self.entries_written,
+            "articles_skipped": self.articles_skipped,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class GenerateManifest:
+    """A stage manifest for one generate run (DATA_CONTRACTS.md section 3)."""
+
+    schema_version: int
+    stage: str
+    stage_version: int
+    status: str
+    run_id: str
+    started_at: datetime
+    completed_at: datetime | None
+    inputs: dict[str, str]
+    outputs: tuple[dict[str, object], ...]
+    metrics: GenerateMetrics
+    software: dict[str, str | None]
+
+    def payload(self) -> dict[str, object]:
+        """Return this manifest as a JSON-serializable mapping."""
+        return {
+            "schema_version": self.schema_version,
+            "stage": self.stage,
+            "stage_version": self.stage_version,
+            "status": self.status,
+            "run_id": self.run_id,
+            "started_at": self.started_at.isoformat(),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "inputs": self.inputs,
+            "outputs": list(self.outputs),
+            "metrics": self.metrics.payload(),
+            "software": self.software,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class GenerateResult:
+    """What one generate run produced."""
+
+    manifest: GenerateManifest
+    manifest_path: Path
+    entries_path: Path
+
+
+def read_manifest_status(manifest_path: Path) -> str | None:
+    """Return a manifest's `status` field, or None if no manifest exists yet."""
+    if not manifest_path.is_file():
+        return None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise GenerateError(f"cannot read existing manifest {manifest_path}: {error}") from error
+    status = payload.get("status") if isinstance(payload, dict) else None
+    if not isinstance(status, str) or not status:
+        raise GenerateError(f"existing manifest {manifest_path} has no valid status field")
+    return status
+
+
+def run_generate(
+    *,
+    model_database_path: Path,
+    entries_path: Path,
+    manifest_path: Path,
+    run_id: str,
+    git_commit: str | None = None,
+    force: bool = False,
+    on_progress: Callable[[GenerateMetrics], None] | None = None,
+) -> GenerateResult:
+    """Render every non-rejected model article into entries.jsonl."""
+    previous_status = read_manifest_status(manifest_path)
+    if previous_status == "running" and not force:
+        raise GenerateError(
+            f"manifest {manifest_path} shows a previous run still 'running'; "
+            "pass force=True to proceed after confirming that run is dead"
+        )
+    started_at = datetime.now(UTC)
+
+    metrics = GenerateMetrics()
+    _write_manifest(
+        _build_manifest(
+            status="running",
+            run_id=run_id,
+            started_at=started_at,
+            completed_at=None,
+            model_database_path=model_database_path,
+            entries_path=None,
+            metrics=metrics,
+            git_commit=git_commit,
+        ),
+        manifest_path,
+    )
+
+    status = "failed"
+    try:
+        connection = connect_model_database(model_database_path)
+        try:
+            entries = _render_all(connection, metrics=metrics, on_progress=on_progress)
+        finally:
+            connection.close()
+        write_entries_jsonl(entries, entries_path)
+        status = "complete"
+    finally:
+        manifest = _build_manifest(
+            status=status,
+            run_id=run_id,
+            started_at=started_at,
+            completed_at=datetime.now(UTC),
+            model_database_path=model_database_path,
+            entries_path=entries_path if status == "complete" else None,
+            metrics=metrics,
+            git_commit=git_commit,
+        )
+        _write_manifest(manifest, manifest_path)
+
+    return GenerateResult(manifest=manifest, manifest_path=manifest_path, entries_path=entries_path)
+
+
+def _render_all(
+    connection: sqlite3.Connection,
+    *,
+    metrics: GenerateMetrics,
+    on_progress: Callable[[GenerateMetrics], None] | None,
+) -> tuple[RenderedEntry, ...]:
+    rows = connection.execute(
+        "SELECT page_id, article_json_zstd, normalize_status FROM articles ORDER BY page_id"
+    ).fetchall()
+    entries: list[RenderedEntry] = []
+    for row in rows:
+        metrics.articles_read += 1
+        if row["normalize_status"] == "rejected":
+            metrics.articles_skipped += 1
+            continue
+        canonical_json = decompress(row["article_json_zstd"])
+        article = decode_article(canonical_json)
+        entries.append(render_article_to_entry(article))
+        metrics.entries_written += 1
+        if on_progress is not None:
+            on_progress(metrics)
+    return tuple(entries)
+
+
+def _build_manifest(
+    *,
+    status: str,
+    run_id: str,
+    started_at: datetime,
+    completed_at: datetime | None,
+    model_database_path: Path,
+    entries_path: Path | None,
+    metrics: GenerateMetrics,
+    git_commit: str | None,
+) -> GenerateManifest:
+    outputs: tuple[dict[str, object], ...] = ()
+    if entries_path is not None and entries_path.is_file():
+        fingerprint = compute_fingerprint(entries_path)
+        outputs = (
+            {
+                "relative_path": entries_path.name,
+                "size_bytes": fingerprint.size_bytes,
+                "sha256": fingerprint.sha256,
+                "logical_hash": None,
+            },
+        )
+    return GenerateManifest(
+        schema_version=SCHEMA_VERSION,
+        stage=STAGE_NAME,
+        stage_version=STAGE_VERSION,
+        status=status,
+        run_id=run_id,
+        started_at=started_at,
+        completed_at=completed_at,
+        inputs={"model_database_path": str(model_database_path)},
+        outputs=outputs,
+        metrics=metrics,
+        software={
+            "git_commit": git_commit,
+            "app_image_digest": None,
+            "toolchain_image_digest": None,
+        },
+    )
+
+
+def _write_manifest(manifest: GenerateManifest, destination: Path) -> None:
+    payload = json.dumps(manifest.payload(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        dir=destination.parent, prefix=f".{destination.name}.", delete=False
+    )
+    try:
+        temp_path = Path(handle.name)
+        handle.write(payload.encode("utf-8"))
+        handle.flush()
+        os.fsync(handle.fileno())
+    finally:
+        handle.close()
+    os.replace(temp_path, destination)

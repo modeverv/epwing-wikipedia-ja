@@ -30,6 +30,7 @@ from wikiepwing.reference.inventory import (
 )
 from wikiepwing.reference.report import write_reference_report
 from wikiepwing.reference.searches import EbSearchAdapter, run_reference_searches
+from wikiepwing.render.generate import run_generate
 from wikiepwing.secrets import load_enterprise_secrets
 from wikiepwing.source.acquire import acquire_snapshot
 from wikiepwing.source.auth import EnterpriseAuthClient, HttpAuthTransport
@@ -369,6 +370,49 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="proceed even if the manifest shows a previous run still 'running'",
     )
+    generate = subparsers.add_parser(
+        "generate", help="render non-rejected model.sqlite3 articles into FreePWING entries.jsonl"
+    )
+    generate.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    generate.add_argument(
+        "--model-database",
+        type=Path,
+        help="model.sqlite3 input path (default: paths.work/model.sqlite3)",
+    )
+    generate.add_argument(
+        "--entries-output",
+        type=Path,
+        help="entries.jsonl output path (default: paths.output/entries.jsonl)",
+    )
+    generate.add_argument(
+        "--run-id",
+        type=str,
+        help="run identifier recorded in the stage manifest (default: generated)",
+    )
+    generate.add_argument(
+        "--manifest-path",
+        type=Path,
+        help=(
+            "stage manifest output path "
+            "(default: paths.work/runs/<run-id>/manifests/50-generate.json)"
+        ),
+    )
+    generate.add_argument(
+        "--git-commit",
+        type=str,
+        help="git commit recorded in the manifest (default: `git rev-parse HEAD`)",
+    )
+    generate.add_argument(
+        "--force",
+        action="store_true",
+        help="proceed even if the manifest shows a previous run still 'running'",
+    )
     return parser
 
 
@@ -641,6 +685,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(normalize_result.manifest_path)
         return 0 if normalize_result.manifest.status == "complete" else 1
+    if command == "generate":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+
+        run_id = cast(str | None, arguments.run_id) or (
+            f"{config.project}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+        )
+        model_database_path = cast(Path | None, arguments.model_database) or (
+            config.paths.work / "model.sqlite3"
+        )
+        entries_path = cast(Path | None, arguments.entries_output) or (
+            config.paths.output / "entries.jsonl"
+        )
+        manifest_path = cast(Path | None, arguments.manifest_path) or (
+            config.paths.work / "runs" / run_id / "manifests" / "50-generate.json"
+        )
+        git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+
+        generate_result = run_generate(
+            model_database_path=model_database_path,
+            entries_path=entries_path,
+            manifest_path=manifest_path,
+            run_id=run_id,
+            git_commit=git_commit,
+            force=cast(bool, arguments.force),
+            on_progress=lambda metrics: print(
+                f"articles_read={metrics.articles_read} "
+                f"entries_written={metrics.entries_written} "
+                f"articles_skipped={metrics.articles_skipped}",
+                file=sys.stderr,
+            ),
+        )
+        print(generate_result.manifest_path)
+        return 0 if generate_result.manifest.status == "complete" else 1
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0
