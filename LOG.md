@@ -3605,3 +3605,37 @@ git diff --check
 **次タスク**
 
 - EPIC K(Tables and infoboxes、依存: D010,G010)
+
+### 2026-07-15 02:45 UTC — TASK-K001
+
+**目的**
+
+- `ARCHITECTURE.md` 11.5(Table)のHTML-to-Table変換の最初の段階として、生の`<table>` DOM要素を中間表現(`RawTable`/`RawTableRow`/`RawTableCell`)へ解析する。row/col span正規化(K002)・複雑度分類(K003)・最終`TableBlock`変換(K004-K006)はまだ行わない狭いスコープ。
+
+**変更**
+
+- `src/wikiepwing/normalize/tables.py`に`RawTableCell`/`RawTableRow`/`RawTable`・`is_table()`・`parse_table_dom()`を実装した。`<caption>`・`thead`/`tbody`/`tfoot`配下も含めた`<tr>`・各セル(rowspan/colspan/is_header)を取り出す。ネストされた`<table>`の行を外側テーブルの行として取り込まないよう、行探索がネストした`<table>`タグに達したら再帰を止める設計にした。
+- rowspan/colspan属性が非数値または非正の場合は1へフォールバックし、`TABLE_INVALID_SPAN`という新しいDiagnostic codeを記録するようにした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_tables.py
+make check
+git diff --check
+```
+
+**結果**
+
+- table判定・非table拒否・行/セル解析・th判定・span読み取り・span欠落時のデフォルト値・不正span時のフォールバック+Diagnostic・caption有無・thead/tbody/tfoot内の行・ネストテーブル除外・class名取得を15件のテストで確認した。
+- 標準スイート850件(新規15件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `TABLE_INVALID_SPAN`という新しいDiagnostic codeを追加した(`ARCHITECTURE.md` 11.7の例一覧は網羅的でないことを確認済み)。
+- HTML仕様上`rowspan="0"`/`colspan="0"`は「表の終わりまで」という特殊な意味を持つが、本タスクでは単純に1へフォールバックしDiagnosticを残すに留めた(複雑なspan展開はTASK-K002の対象)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-K002 Row/col span normalization(依存: K001)

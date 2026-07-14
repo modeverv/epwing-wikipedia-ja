@@ -539,7 +539,7 @@
 
 ## EPIC K — Tables and infoboxes
 
-### TASK-K001 [ ] Table DOM parser
+### TASK-K001 [x] Table DOM parser
 
 **依存:** G001,F003
 
