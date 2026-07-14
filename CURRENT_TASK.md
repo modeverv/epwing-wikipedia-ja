@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-H007
+TASK-H008
 
 ## 目的
 
-`ARCHITECTURE.md` 16.2(標準レイアウト)を実装する。Articleを`RenderedEntry`(TASK-H006)へ変換する。タイトル・別名・更新日・導入文・見出し番号付き本文(1./1.1形式)・カテゴリ・出典情報を、EPWING画面幅を考慮した単純なplain textへ変換する。Table render policy(16.3、Epic K)・Entry size budget超過時の分割(16.4)は本タスクでは対象外とし、現状Table/InfoboxBlockを生成する変換器が無いため(Epic K/L未実装)実質的に発生しない。
+`ARCHITECTURE.md` 14.1(SearchTerm)を実装し、Articleから"title terms"(記事title本体、および`TASK-H004`のredirect由来alias)を`SearchTerm`列へ変換する関数を実装する。reading/category/keyword/cross_component等の他kindは対象外(将来のtask)とする。
 
 ## 事前条件
 
@@ -14,15 +14,15 @@ TASK-H007
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-H007(依存: H006,G012)を読んだ
-- [x] `ARCHITECTURE.md` 16.2(標準レイアウトのテキスト例)・16.3(Table render policy、対象外)・16.4(Entry size budget、対象外)を確認した
-- [x] `render/entry_id.py`(`compute_entry_id`)・`render/rendered_entry.py`(`RenderedEntry`)・`render/render_node.py`(`TextRenderNode`)を確認した
-- [x] `model/article.py`(`Article`)・`model/blocks.py`の全variantを確認した
+- [x] `TASKS.md`のTASK-H008(依存: H004,H006)を読んだ
+- [x] `ARCHITECTURE.md` 14.1(SearchTerm dataclass)・14.2(衝突規則、参考情報)・14.3(プロファイル別索引、参考情報)を確認した
+- [x] `ingest/repository.py`の`normalize_title`を再利用する
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/render/mini_layout.py`
-- `tests/test_render_mini_layout.py`
+- `src/wikiepwing/search/__init__.py`
+- `src/wikiepwing/search/search_term.py`
+- `tests/test_search_term.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,35 +30,31 @@ TASK-H007
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_render_mini_layout.py
+uv run pytest tests/test_search_term.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `render_article_to_entry(article) -> RenderedEntry`がtitle/別名/更新日/導入文/本文/カテゴリ/出典情報を含むplain textを生成する
-- [x] 見出しが1./1.1形式で正しく番号付けされる(兄弟見出しの連番、深いネストの復帰を含む)
-- [x] paragraph/list/definition list/quote/preformatted/horizontal rule/unsupportedのfallback_textが本文へ反映される
-- [x] `entry_id`が`compute_entry_id(article.page_id)`と一致する
-- [x] `headwords`が記事titleと全aliasを含む
-- [x] `estimated_size`が生成したtextのUTF-8バイト数と一致する
-- [x] `diagnostics`が`article.diagnostics`をそのまま引き継ぐ
+- [x] `SearchTerm`(`ARCHITECTURE.md` 14.1の全field)を実装し、`key`/`normalized_key`/`source`が非空文字列、`target_page_id`が正の整数、`kind`が既定の7値のいずれかであることを検証する
+- [x] `title_terms_for_article(article) -> tuple[SearchTerm, ...]`が記事title自身を`kind="title"`のSearchTermへ変換する
+- [x] `article.aliases`のうち`source="redirect"`のものを`kind="redirect"`のSearchTermへ変換する
+- [x] title側の`priority`がredirect側より高い(数値が小さい)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Table render policy(TASK-H007の範囲外、Epic K)
-- Entry size budget超過時の分割(16.4、後続task)
-- internal_targets/graphicsの実際の解決(link resolution・image epicは別途)
+- reading/category/keyword/cross_component kindの生成(将来のtask)
+- 衝突規則(14.2)・プロファイル別索引(14.3)の実装(Epic後半)
 
 ## 実施結果
 
-- `src/wikiepwing/render/mini_layout.py`に`render_article_to_entry`(`_HeadingNumberer`等の内部ヘルパーを含む)を実装した。
-- `tests/test_render_mini_layout.py`に12件のテストを追加。
-- `uv run pytest tests/test_render_mini_layout.py`: 12 passed。
-- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート672件)すべて成功。
+- `src/wikiepwing/search/__init__.py`(新規パッケージ)、`src/wikiepwing/search/search_term.py`に`SearchTerm`/`SearchTermError`/`title_terms_for_article`を実装した。
+- `tests/test_search_term.py`に7件のテストを追加。
+- `uv run pytest tests/test_search_term.py`: 7 passed。
+- `make check`: format-check/ruff lint/mypy strict/pytest(標準スイート679件)すべて成功。
 - `git diff --check`: 問題なし。
-- `TASKS.md`(H007チェック)、`LOG.md`(新規エントリ)を更新した。
-- Table render policy/Entry size budget超過時の分割は非対象。
-- 次タスク: TASK-H008 SearchTerm model and title terms。
+- `TASKS.md`(H008チェック)、`LOG.md`(新規エントリ)を更新した。
+- priority値(title=0, redirect=10)はdocumented assumption。
+- 次タスク: TASK-H009 FreePWING source writer。

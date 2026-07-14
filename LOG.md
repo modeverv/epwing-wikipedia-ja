@@ -2905,3 +2905,36 @@ git diff --check
 **次タスク**
 
 - TASK-H008 SearchTerm model and title terms(依存: H004,H006)
+
+### 2026-07-14 17:30 UTC — TASK-H008
+
+**目的**
+
+- `ARCHITECTURE.md` 14.1(SearchTerm)を実装し、Articleから記事title自身とredirect由来aliasを`SearchTerm`列(title terms)へ変換する関数を実装する。
+
+**変更**
+
+- `src/wikiepwing/search/__init__.py`(新規パッケージ)、`src/wikiepwing/search/search_term.py`に`SearchTerm`/`SearchTermError`/`title_terms_for_article`を実装した。`kind="title"`(priority=0)と`kind="redirect"`(priority=10、`source="redirect"`のaliasのみ対象)を生成する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- SearchTermのバリデーション(key/target_page_id/kind)、title termの生成、redirect aliasからのterm生成、非redirect aliasの除外、priorityの大小関係を7件のテストで確認した。
+- 標準スイート679件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- reading/category/keyword/cross_component kindの生成、衝突規則(14.2)、プロファイル別索引(14.3)は本タスクの対象外。
+- priority値(title=0, redirect=10)は具体的な数値がARCHITECTURE.mdに明文化されていないためdocumented assumption。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H009 FreePWING source writer(依存: B009,H007-H008)

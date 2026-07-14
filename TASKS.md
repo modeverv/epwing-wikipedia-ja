@@ -447,7 +447,7 @@
 
 **依存:** H006,G012
 
-### TASK-H008 [ ] SearchTerm model and title terms
+### TASK-H008 [x] SearchTerm model and title terms
 
 **依存:** H004,H006
 
