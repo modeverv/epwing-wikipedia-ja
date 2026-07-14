@@ -33,6 +33,7 @@ from wikiepwing.model.logical_hash import compute_logical_hash
 from wikiepwing.model.repository import ModelRepository
 from wikiepwing.model.validate import ModelValidationLimits, validate_article
 from wikiepwing.normalize.pipeline import NormalizeOptions, normalize_html
+from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
 from wikiepwing.pipeline.stage_manifest import StageManifestError
 from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
 from wikiepwing.pipeline.stage_manifest import read_manifest_payload as _read_manifest_payload
@@ -211,6 +212,13 @@ def run_normalize(
     )
 
 
+def _manifest_inputs(raw_database_path: Path) -> dict[str, str]:
+    inputs = {"raw_database_path": str(raw_database_path)}
+    if raw_database_path.is_file():
+        inputs["raw_database_fingerprint"] = compute_input_fingerprint(raw_database_path)
+    return inputs
+
+
 def _build_manifest(
     *,
     status: str,
@@ -241,7 +249,7 @@ def _build_manifest(
         run_id=run_id,
         started_at=started_at,
         completed_at=completed_at,
-        inputs={"raw_database_path": str(raw_database_path)},
+        inputs=_manifest_inputs(raw_database_path),
         outputs=outputs,
         metrics=metrics,
         software={

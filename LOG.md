@@ -3147,3 +3147,38 @@ git diff --check
 **次タスク**
 
 - TASK-I002 Fingerprint calculation(依存: I001)
+
+### 2026-07-14 20:30 UTC — TASK-I002
+
+**目的**
+
+- `ARCHITECTURE.md` 7.3(`Stage.input_fingerprints`)と`DATA_CONTRACTS.md` 3節のmanifest `inputs`欄(`sha256:...`形式)を実装する。
+
+**変更**
+
+- `src/wikiepwing/pipeline/fingerprint.py`に`compute_input_fingerprint(path) -> str`を実装した(`sha256:<hex>`形式、`source/checksums.py`の`compute_fingerprint`を再利用)。
+- `normalize/orchestrate.py`・`render/generate.py`の`inputs`欄を、入力DB(raw.sqlite3/model.sqlite3)の実際のcontent fingerprintを含むよう修正した(従来はpath文字列のみだった)。
+- `ingest/orchestrate.py`の`inputs`欄のkeyを`source_lock`、値を`sha256:`プレフィックス付きへ統一した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_pipeline_fingerprint.py tests/test_ingest_orchestrate.py tests/test_normalize_orchestrate.py tests/test_render_generate.py
+make check
+git diff --check
+```
+
+**結果**
+
+- fingerprintの`sha256:`プレフィックス形式、決定性、content変更での差分、既知値との一致を4件のテストで確認した。既存3モジュールのorchestrateテストが変更無しで成功することを確認した(inputs欄の値を検証するテストが存在しないため後方互換上の問題は無かった)。
+- 標準スイート743件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- リファクタ前、`normalize`/`generate`の`inputs`欄が入力DBの**path文字列**をそのまま入れており、実際のcontent fingerprintでは無かったことに気づいた。これでは入力の実際の変更を検出できず、TASK-I005(Resume判定)が正しく機能しないため、本タスクで修正した。
+- configファイル自体のfingerprint化は、config file pathが各run関数に渡されていないため本タスクの範囲では対応しなかった。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-I003 Stage lock(依存: I001)

@@ -21,6 +21,7 @@ from pathlib import Path
 from wikiepwing.ingest.zstd_codec import decompress
 from wikiepwing.model.canonical import decode_article
 from wikiepwing.model.database import connect_model_database
+from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
 from wikiepwing.pipeline.stage_manifest import StageManifestError
 from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
 from wikiepwing.pipeline.stage_manifest import read_manifest_payload as _read_manifest_payload
@@ -197,6 +198,13 @@ def _render_all(
     return tuple(entries)
 
 
+def _manifest_inputs(model_database_path: Path) -> dict[str, str]:
+    inputs = {"model_database_path": str(model_database_path)}
+    if model_database_path.is_file():
+        inputs["model_database_fingerprint"] = compute_input_fingerprint(model_database_path)
+    return inputs
+
+
 def _build_manifest(
     *,
     status: str,
@@ -227,7 +235,7 @@ def _build_manifest(
         run_id=run_id,
         started_at=started_at,
         completed_at=completed_at,
-        inputs={"model_database_path": str(model_database_path)},
+        inputs=_manifest_inputs(model_database_path),
         outputs=outputs,
         metrics=metrics,
         software={

@@ -245,7 +245,7 @@ def _build_manifest(
         run_id=run_id,
         started_at=started_at,
         completed_at=completed_at,
-        inputs={"metadata_response_sha256": lock.metadata_response_sha256},
+        inputs={"source_lock": f"sha256:{lock.metadata_response_sha256}"},
         outputs=outputs,
         metrics=metrics,
         software={

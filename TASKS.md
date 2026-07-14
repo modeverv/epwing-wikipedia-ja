@@ -479,7 +479,7 @@
 
 **依存:** E008,G012,H010
 
-### TASK-I002 [ ] Fingerprint calculation
+### TASK-I002 [x] Fingerprint calculation
 
 **依存:** I001
 
