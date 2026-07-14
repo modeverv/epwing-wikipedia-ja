@@ -1,13 +1,19 @@
-"""Block dispatch and unknown-DOM fallback (TASK-G010, ARCHITECTURE.md 12.2).
+"""Block dispatch and unknown-DOM fallback (TASK-G010/K010, ARCHITECTURE.md 12.2).
 
 `convert_block` ties together every per-element converter built in
-TASK-G004-G009 and falls back to `UnsupportedBlock` (with a
+TASK-G004-G009 plus `<table>`/infobox conversion (TASK-K001-K009,
+TASK-K010 wires them in here) and falls back to `UnsupportedBlock` (with a
 `DOM_UNKNOWN_ELEMENT` diagnostic, matching ARCHITECTURE.md 11.7's example
-code) for anything not yet recognized -- including `<table>`, infoboxes,
-images, math, and references, whose real HTML conversion is deferred to
-later epics (K/L/N/O) per PLAN.md's phased scope. `convert_document` groups
-runs of bare text/inline content between block-level siblings into their
-own `ParagraphBlock`.
+code) for anything still unrecognized -- images, math, and references,
+whose real HTML conversion is deferred to later epics (L/N/O) per
+PLAN.md's phased scope. `convert_document` groups runs of bare text/inline
+content between block-level siblings into their own `ParagraphBlock`.
+
+`build_table_block`/`build_infobox_block` are imported inside
+`convert_block` rather than at module level: they call back into this
+module's own `convert_document` (to convert cell/field content), so a
+top-level import would be circular. Deferring the import to call time
+breaks the cycle since both modules are already fully loaded by then.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from wikiepwing.model.diagnostics import Diagnostic
 from wikiepwing.normalize.definition_lists import convert_definition_list, is_definition_list
 from wikiepwing.normalize.headings import convert_heading, is_heading
 from wikiepwing.normalize.html_parser import ElementNode, Node, TextNode
+from wikiepwing.normalize.infobox import is_infobox
 from wikiepwing.normalize.lists import (
     convert_ordered_list,
     convert_unordered_list,
@@ -30,6 +37,7 @@ from wikiepwing.normalize.quotes import (
     is_preformatted,
     is_quote,
 )
+from wikiepwing.normalize.tables import is_table
 
 
 def convert_block(node: ElementNode) -> tuple[Block, tuple[Diagnostic, ...]]:
@@ -50,6 +58,14 @@ def convert_block(node: ElementNode) -> tuple[Block, tuple[Diagnostic, ...]]:
         return convert_preformatted(node)
     if node.tag == "hr":
         return HorizontalRuleBlock(), ()
+    if is_infobox(node):
+        from wikiepwing.normalize.infobox_block import build_infobox_block
+
+        return build_infobox_block(node)
+    if is_table(node):
+        from wikiepwing.normalize.table_block import build_table_block
+
+        return build_table_block(node)
     return _convert_unsupported(node)
 
 

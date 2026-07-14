@@ -575,7 +575,7 @@
 
 **依存:** K008,H007
 
-### TASK-K010 [ ] Table/infobox golden set
+### TASK-K010 [x] Table/infobox golden set
 
 **依存:** K006,K009
 

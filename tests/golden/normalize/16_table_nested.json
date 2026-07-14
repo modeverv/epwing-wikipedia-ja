@@ -1,0 +1,54 @@
+[
+  {
+    "caption": [],
+    "complexity": "simple",
+    "rows": [
+      [
+        {
+          "blocks": [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "outer"
+                }
+              ],
+              "type": "paragraph"
+            },
+            {
+              "caption": [],
+              "complexity": "simple",
+              "rows": [
+                [
+                  {
+                    "blocks": [
+                      {
+                        "inlines": [
+                          {
+                            "type": "text",
+                            "value": "inner"
+                          }
+                        ],
+                        "type": "paragraph"
+                      }
+                    ],
+                    "col_span": 1,
+                    "is_header": false,
+                    "row_span": 1
+                  }
+                ]
+              ],
+              "source_class_names": [],
+              "type": "table"
+            }
+          ],
+          "col_span": 1,
+          "is_header": false,
+          "row_span": 1
+        }
+      ]
+    ],
+    "source_class_names": [],
+    "type": "table"
+  }
+]

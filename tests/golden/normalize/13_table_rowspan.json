@@ -1,0 +1,62 @@
+[
+  {
+    "caption": [],
+    "complexity": "complex",
+    "rows": [
+      [
+        {
+          "blocks": [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "Emacs"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "col_span": 1,
+          "is_header": false,
+          "row_span": 2
+        },
+        {
+          "blocks": [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "GNU"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "col_span": 1,
+          "is_header": false,
+          "row_span": 1
+        }
+      ],
+      [
+        {
+          "blocks": [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "Free"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "col_span": 1,
+          "is_header": false,
+          "row_span": 1
+        }
+      ]
+    ],
+    "source_class_names": [],
+    "type": "table"
+  }
+]

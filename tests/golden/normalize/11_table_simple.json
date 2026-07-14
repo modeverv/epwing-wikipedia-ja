@@ -1,0 +1,78 @@
+[
+  {
+    "caption": [],
+    "complexity": "simple",
+    "rows": [
+      [
+        {
+          "blocks": [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "Name"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "col_span": 1,
+          "is_header": true,
+          "row_span": 1
+        },
+        {
+          "blocks": [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "Size"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "col_span": 1,
+          "is_header": true,
+          "row_span": 1
+        }
+      ],
+      [
+        {
+          "blocks": [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "Small"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "col_span": 1,
+          "is_header": false,
+          "row_span": 1
+        },
+        {
+          "blocks": [
+            {
+              "inlines": [
+                {
+                  "type": "text",
+                  "value": "1"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "col_span": 1,
+          "is_header": false,
+          "row_span": 1
+        }
+      ]
+    ],
+    "source_class_names": [],
+    "type": "table"
+  }
+]

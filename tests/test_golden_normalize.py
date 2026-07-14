@@ -17,13 +17,20 @@ _OPTIONS = NormalizeOptions(
     remove_authority_control=True,
 )
 
+# Fixtures that are expected to also produce diagnostics (TASK-K010: a
+# malformed span is deliberately exercised end-to-end). Every other fixture
+# must normalize cleanly with no diagnostics at all.
+_EXPECTED_DIAGNOSTIC_CODES = {
+    "14_table_malformed_span": {"TABLE_INVALID_SPAN"},
+}
+
 
 def _html_fixtures() -> list[Path]:
     return sorted(GOLDEN_DIR.glob("*.html"))
 
 
-def test_ten_golden_fixtures_exist() -> None:
-    assert len(_html_fixtures()) == 10
+def test_sixteen_golden_fixtures_exist() -> None:
+    assert len(_html_fixtures()) == 16
 
 
 @pytest.mark.parametrize("html_path", _html_fixtures(), ids=lambda path: path.stem)
@@ -35,4 +42,5 @@ def test_normalize_html_matches_golden_snapshot(html_path: Path) -> None:
     actual = [block_payload(block) for block in blocks]
 
     assert actual == expected
-    assert diagnostics == ()
+    expected_codes = _EXPECTED_DIAGNOSTIC_CODES.get(html_path.stem, set())
+    assert {d.code for d in diagnostics} == expected_codes

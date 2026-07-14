@@ -3905,3 +3905,39 @@ git diff --check
 **次タスク**
 
 - TASK-K010 Table/infobox golden set(依存: K006,K009)
+
+### 2026-07-15 06:35 UTC — TASK-K010
+
+**目的**
+
+- `PLAN.md` Phase 11の出口条件を実際のend-to-endパイプラインで検証するgolden setを作る。実装中に、TASK-K001-K009で構築した`build_table_block`/`build_infobox_block`が`convert_block.py`の`convert_block()`ディスパッチャから一度も呼ばれておらず、`<table>`要素が依然として`_convert_unsupported`へ落ちていたという重大なギャップに気づき、まずこれを修正した。
+
+**変更**
+
+- `convert_block.py`の`convert_block()`に`is_infobox`/`is_table`判定を追加し、`build_infobox_block`/`build_table_block`へディスパッチするよう配線した。両関数は`convert_document`(`convert_block.py`内で定義)を呼び返すため、モジュール先頭でimportすると循環importになる。関数内local importで回避した(理由をモジュールdocstringに明記)。
+- `tests/test_normalize_convert_block.py`・`tests/test_normalize_pipeline.py`の既存の「未知要素fallback」テストが`<table>`を例に使っていたため`<div>`/`<figure>`へ差し替え、新たに`<table>`/infoboxの正しいディスパッチを確認する専用テスト2件を追加した。
+- `tests/golden/normalize/`にTASK-G013と同形式のgolden fixture6件を追加した(2x2 simple table、8列wide table、rowspan complex table、不正colspanのmalformed table、infobox、ネストしたtable)。期待JSONは実際のパイプラインを実行して機械生成した。
+- `test_golden_normalize.py`を、fixture毎に期待Diagnostic codeを指定できるよう拡張した(`14_table_malformed_span`のみ`TABLE_INVALID_SPAN`を期待、他は従来通り無し)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_golden_normalize.py tests/test_normalize_convert_block.py tests/test_normalize_pipeline.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 新golden fixture6件を含む17件のgolden testが成功した(ネストしたtableが再帰的に正しく変換されることも確認)。
+- 標準スイート912件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。実DB経由のend-to-endテスト(`test_mini_end_to_end_build.py`等)も配線変更の影響を受けず成功した。
+
+**判断・注意点**
+
+- このギャップ(convert_blockへの未配線)は、K001-K009の各タスクが独立した関数として実装され、それぞれのユニットテストは通っていたためこれまで気づかれていなかった。実際のWikipedia記事の`<table>`はこれまで全てUnsupportedBlockとしてfallback表示されていたことになる。golden set作成の過程でこの事実に気づき、K010の一部として修正した。
+- "very large table"(oversized行数上限)のgolden fixtureは追加しなかった(TASK-K006のユニットテストで既に十分に検証済みのため、golden setには実用的なサイズのfixtureのみを置いた)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- EPIC L(References and categories、依存: G012,H007)

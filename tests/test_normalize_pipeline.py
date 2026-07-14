@@ -50,7 +50,7 @@ def test_normalize_html_collapses_whitespace() -> None:
 
 
 def test_normalize_html_falls_back_for_unknown_block_elements() -> None:
-    html = "<html><body><table><tr><td>cell</td></tr></table></body></html>"
+    html = "<html><body><figure>cell</figure></body></html>"
 
     blocks, diagnostics = normalize_html(html, _DEFAULT_OPTIONS)
 

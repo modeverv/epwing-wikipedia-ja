@@ -1,0 +1,23 @@
+[
+  {
+    "fields": [
+      {
+        "name": "Developer",
+        "value": [
+          {
+            "inlines": [
+              {
+                "type": "text",
+                "value": "GNU Project"
+              }
+            ],
+            "type": "paragraph"
+          }
+        ]
+      }
+    ],
+    "images": [],
+    "title": "Emacs",
+    "type": "infobox"
+  }
+]

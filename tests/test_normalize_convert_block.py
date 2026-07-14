@@ -3,9 +3,11 @@ from __future__ import annotations
 from wikiepwing.model.blocks import (
     HeadingBlock,
     HorizontalRuleBlock,
+    InfoboxBlock,
     ParagraphBlock,
     PreformattedBlock,
     QuoteBlock,
+    TableBlock,
     UnorderedListBlock,
     UnsupportedBlock,
 )
@@ -84,17 +86,38 @@ def test_convert_block_converts_hr_to_horizontal_rule() -> None:
 
 
 def test_convert_block_falls_back_for_unknown_element() -> None:
-    node = _body_children("<table><tr><td>cell</td></tr></table>")[0]
+    node = _body_children("<div>cell</div>")[0]
     assert isinstance(node, ElementNode)
 
     block, diagnostics = convert_block(node)
 
     assert isinstance(block, UnsupportedBlock)
-    assert block.element_name == "table"
+    assert block.element_name == "div"
     assert block.diagnostic_code == "DOM_UNKNOWN_ELEMENT"
     assert "cell" in block.fallback_text
     codes = {d.code for d in diagnostics}
     assert "DOM_UNKNOWN_ELEMENT" in codes
+
+
+def test_convert_block_dispatches_table_elements() -> None:
+    node = _body_children("<table><tr><td>cell</td></tr></table>")[0]
+    assert isinstance(node, ElementNode)
+
+    block, diagnostics = convert_block(node)
+
+    assert isinstance(block, TableBlock)
+    assert block.complexity == "simple"
+    assert diagnostics == ()
+
+
+def test_convert_block_dispatches_infobox_tables() -> None:
+    node = _body_children('<table class="infobox"><tr><th colspan="2">Emacs</th></tr></table>')[0]
+    assert isinstance(node, ElementNode)
+
+    block, _ = convert_block(node)
+
+    assert isinstance(block, InfoboxBlock)
+    assert block.title == "Emacs"
 
 
 def test_convert_document_groups_bare_text_between_block_elements() -> None:
@@ -133,7 +156,7 @@ def test_convert_document_empty_input() -> None:
 
 
 def test_convert_document_propagates_fallback_diagnostics() -> None:
-    nodes = _body_children("<table><tr><td>x</td></tr></table>")
+    nodes = _body_children("<div>x</div>")
 
     blocks, diagnostics = convert_document(nodes)
 
