@@ -1,14 +1,15 @@
-"""Mini layout renderer: Article -> RenderedEntry (TASK-H007/K004, ARCHITECTURE.md 16.2).
+"""Mini layout renderer: Article -> RenderedEntry (TASK-H007/K004/K005/K009, ARCHITECTURE.md 16.2).
 
 Renders the "標準レイアウト" as plain text: title, aliases, update date, the
 abstract, section-numbered body (1./1.1 style), categories, and source
-license info. TableBlock render policy (16.3) is implemented only for
-`complexity == "simple"` so far (TASK-K004's grid-like plain text); wide
-and complex tables get a caption-preserving placeholder line until
-TASK-K005/K006 add their dedicated layouts, and InfoboxBlock plus entry
-size budget splitting (16.4) remain out of scope -- InfoboxBlock isn't
-produced by the current pipeline yet (Epic L), and no article this
-renderer sees today can be oversized enough to need splitting.
+license info. TableBlock render policy (16.3) covers all four complexity
+tiers: "simple" as grid-like plain text (TASK-K004), "wide"/"complex" as
+vertical label:value records (TASK-K005), and "unsupported" (no rows) as
+just its caption. InfoboxBlock (TASK-K009) renders its title, each
+field's flattened value, and a placeholder line per image reference
+(actual image download/rendering is a separate epic). Entry size budget
+splitting (16.4) remains out of scope -- no article this renderer sees
+today can be oversized enough to need it.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from wikiepwing.model.blocks import (
     DefinitionListBlock,
     HeadingBlock,
     HorizontalRuleBlock,
+    InfoboxBlock,
     OrderedListBlock,
     ParagraphBlock,
     PreformattedBlock,
@@ -154,7 +156,27 @@ def _render_block(block: Block, numberer: _HeadingNumberer, *, indent: int) -> l
         return [f"{prefix}{block.fallback_text}", ""] if block.fallback_text else [""]
     if isinstance(block, TableBlock):
         return _render_table(block, prefix)
+    if isinstance(block, InfoboxBlock):
+        return _render_infobox(block, prefix)
     return [""]
+
+
+def _render_infobox(block: InfoboxBlock, prefix: str) -> list[str]:
+    lines: list[str] = []
+    if block.title:
+        lines.append(f"{prefix}{block.title}")
+    for field in block.fields:
+        value_parts = [
+            line.strip()
+            for child in field.value
+            for line in _render_block(child, _HeadingNumberer(), indent=0)
+            if line.strip()
+        ]
+        lines.append(f"{prefix}{field.name}: {' '.join(value_parts)}")
+    for image_src in block.images:
+        lines.append(f"{prefix}[画像: {image_src}]")
+    lines.append("")
+    return lines
 
 
 def _render_table(block: TableBlock, prefix: str) -> list[str]:

@@ -571,7 +571,7 @@
 
 **依存:** K007
 
-### TASK-K009 [ ] Infobox renderer
+### TASK-K009 [x] Infobox renderer
 
 **依存:** K008,H007
 

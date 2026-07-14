@@ -6,6 +6,8 @@ from wikiepwing.model.article import Alias, Article
 from wikiepwing.model.blocks import (
     HeadingBlock,
     HorizontalRuleBlock,
+    InfoboxBlock,
+    InfoboxField,
     ListItem,
     ParagraphBlock,
     PreformattedBlock,
@@ -326,3 +328,42 @@ def test_unsupported_empty_table_renders_only_its_caption() -> None:
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
     assert "Empty" in text
+
+
+def test_infobox_renders_title_fields_and_image_placeholder() -> None:
+    infobox = InfoboxBlock(
+        title="Emacs",
+        fields=(
+            InfoboxField(
+                name="Developer",
+                value=(ParagraphBlock(inlines=(TextInline(value="GNU Project"),)),),
+            ),
+        ),
+        images=("emacs.png",),
+    )
+    article = _make_article(blocks=(infobox,))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "Emacs" in text
+    assert "Developer: GNU Project" in text
+    assert "[画像: emacs.png]" in text
+
+
+def test_infobox_without_title_still_renders_fields() -> None:
+    infobox = InfoboxBlock(
+        title=None,
+        fields=(
+            InfoboxField(
+                name="License", value=(ParagraphBlock(inlines=(TextInline(value="GPL"),)),)
+            ),
+        ),
+        images=(),
+    )
+    article = _make_article(blocks=(infobox,))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "License: GPL" in text

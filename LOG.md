@@ -3870,3 +3870,38 @@ git diff --check
 **次タスク**
 
 - TASK-K009 Infobox renderer(依存: K008,H007)
+
+### 2026-07-15 06:05 UTC — TASK-K009
+
+**目的**
+
+- `ARCHITECTURE.md` 11.6(InfoboxBlock)の実際のモデル組み立てとMini-profileでのレンダリングを実装する。
+
+**変更**
+
+- `src/wikiepwing/normalize/infobox_block.py`に`build_infobox_block()`を実装した。TASK-K008の`parse_infobox_dom`を使い、各fieldの値を`convert_document`でBlockへ変換して`InfoboxBlock`/`InfoboxField`を組み立てる。title/fields/imagesが全て空の場合は`INFOBOX_EMPTY`(`ARCHITECTURE.md` 11.7の既存例コード)を記録する。
+- `render/mini_layout.py`に`InfoboxBlock`の`_render_block`ケースを追加した。title(あれば)+各fieldの「name: value」+各画像srcの`[画像: ...]`プレースホルダ行としてレンダリングする。モジュールdocstringの古い記述(TASK-K005で既に実装済みのTableBlock wide/complexレンダリングを「未実装のプレースホルダのまま」と書いていた古い記述)も気づいたので修正した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_infobox_block.py tests/test_render_mini_layout.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `build_infobox_block`について、title+fields組み立て・field値のBlock変換・画像srcの伝播・空infoboxでのDiagnostic記録・非空infoboxでの非記録・`parse_infobox_dom`からのDiagnostic伝播を6件のテストで確認した。
+- Mini-layoutでのInfoboxBlockレンダリング(title+field+画像プレースホルダ、title無しでもfieldは表示)を2件のテストで確認した。
+- 標準スイート904件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- mypy strictで`diagnostics`変数への型不一致な再代入(`tuple`→`list`)エラーを検出し、別名の変数(`raw_diagnostics`)へ分離して修正した。
+- 画像は実際にダウンロード・レンダリングせず、`src`文字列をそのままプレースホルダ行として表示するに留めた(実画像処理は別epicの対象)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-K010 Table/infobox golden set(依存: K006,K009)
