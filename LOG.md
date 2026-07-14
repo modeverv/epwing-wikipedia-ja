@@ -3466,3 +3466,38 @@ git diff --check
 **次タスク**
 
 - TASK-J004 Punctuation variants(依存: J001)
+
+### 2026-07-15 01:05 UTC — TASK-J004
+
+**目的**
+
+- `ARCHITECTURE.md` 14 / `PLAN.md`のpunctuation variantsを実装する。TASK-J002(space variant)・TASK-J003(kana variant)と同じパターンで、`normalize_index_key`だけでは吸収できない軸(句読点・記号)を補う。
+
+**変更**
+
+- `src/wikiepwing/search/punctuation_variant.py`に`punctuation_removed_variant()`を実装した。個別の記号を列挙するのではなく、`unicodedata.category`が"P"で始まる文字(Punctuation全般: connector/dash/open/close/initial/final/other)を機械的に除去する客観的な定義を採用した。
+- `search_term.py`の`_variant_terms`を、`(生成関数, priority, source)`タプルのリスト`_VARIANT_GENERATORS`をループする形にリファクタリングし、space/kana/punctuationの3variantを統一的に生成するようにした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_punctuation_variant.py tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 中黒・ASCII記号・括弧・日本語句読点の除去、記号が無い場合・記号のみの場合に`None`を返すこと、長音記号ー(Unicode上はPunctuationでなくLm=Modifier Letter)が対象外であることを7件のテストで確認した。
+- `title_terms_for_article`でのpunctuation variant生成(title/redirectエイリアス双方)を2件のテストで確認した。
+- 標準スイート821件(新規9件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 中黒「・」やダッシュ類など個別の記号を都度追加するのではなく、Unicodeカテゴリによる網羅的な定義を採用したことで、将来未知の記号が出てきても追加実装なしで自然にカバーされる。
+- space/kana/punctuationの3 variantは独立に生成しており、組み合わせ(例: 記号除去+かな入れ替え両方適用)は生成していない。必要になった場合の将来課題とする。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-J005 Alias priorities(依存: J002-J004)

@@ -1,22 +1,25 @@
-"""SearchTerm model and title/redirect term generation (TASK-H008/J002/J003, ARCHITECTURE.md 14.1).
+"""SearchTerm model and title/redirect term generation (TASK-H008/J002-J004, ARCHITECTURE.md 14.1).
 
 `title_terms_for_article` covers the article's own title (`kind="title"`),
-its redirect-sourced aliases (`kind="redirect"`, TASK-H004), a
-space-removed variant of each (`kind="alias"`, TASK-J002 -- see
-`wikiepwing.search.space_variant`), and a hiragana/katakana-swapped variant
-of each (`kind="alias"`, TASK-J003 -- see `wikiepwing.search.kana_variant`).
-reading/category/keyword/cross_component terms are separate, later work,
-as are the collision rules (14.2) and per-profile indexing (14.3).
+its redirect-sourced aliases (`kind="redirect"`, TASK-H004), and three
+variants of each (`kind="alias"`): space-removed (TASK-J002, see
+`wikiepwing.search.space_variant`), hiragana/katakana-swapped (TASK-J003,
+see `wikiepwing.search.kana_variant`), and punctuation-removed (TASK-J004,
+see `wikiepwing.search.punctuation_variant`). reading/category/keyword/
+cross_component terms are separate, later work, as are the collision rules
+(14.2) and per-profile indexing (14.3).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
 from wikiepwing.model.article import Article
 from wikiepwing.search.kana_variant import kana_variant
 from wikiepwing.search.normalize_key import normalize_index_key
+from wikiepwing.search.punctuation_variant import punctuation_removed_variant
 from wikiepwing.search.space_variant import space_removed_variant
 
 SearchTermKind = Literal[
@@ -26,8 +29,12 @@ _KINDS = ("title", "redirect", "alias", "reading", "category", "keyword", "cross
 
 _TITLE_PRIORITY = 0
 _REDIRECT_PRIORITY = 10
-_SPACE_VARIANT_PRIORITY = 20
-_KANA_VARIANT_PRIORITY = 30
+
+_VARIANT_GENERATORS: tuple[tuple[Callable[[str], str | None], int, str], ...] = (
+    (space_removed_variant, 20, "nfkc_case_space_variant"),
+    (kana_variant, 30, "kana_variant"),
+    (punctuation_removed_variant, 40, "punctuation_variant"),
+)
 
 
 class SearchTermError(ValueError):
@@ -59,7 +66,7 @@ class SearchTerm:
 
 
 def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
-    """Return the title, redirect-alias, space-removed, and kana-swapped variant SearchTerms."""
+    """Return the title, redirect-alias, and space/kana/punctuation variant SearchTerms."""
     title_normalized_key = normalize_index_key(article.title)
     terms = [
         SearchTerm(
@@ -92,28 +99,18 @@ def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
 
 def _variant_terms(normalized_key: str, page_id: int) -> tuple[SearchTerm, ...]:
     variants: list[SearchTerm] = []
-    space_variant = space_removed_variant(normalized_key)
-    if space_variant is not None:
+    for generate, priority, source in _VARIANT_GENERATORS:
+        variant = generate(normalized_key)
+        if variant is None:
+            continue
         variants.append(
             SearchTerm(
-                key=space_variant,
-                normalized_key=space_variant,
+                key=variant,
+                normalized_key=variant,
                 target_page_id=page_id,
                 kind="alias",
-                priority=_SPACE_VARIANT_PRIORITY,
-                source="nfkc_case_space_variant",
-            )
-        )
-    kana_swapped = kana_variant(normalized_key)
-    if kana_swapped is not None:
-        variants.append(
-            SearchTerm(
-                key=kana_swapped,
-                normalized_key=kana_swapped,
-                target_page_id=page_id,
-                kind="alias",
-                priority=_KANA_VARIANT_PRIORITY,
-                source="kana_variant",
+                priority=priority,
+                source=source,
             )
         )
     return tuple(variants)

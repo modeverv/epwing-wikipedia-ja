@@ -519,7 +519,7 @@
 
 **依存:** J001
 
-### TASK-J004 [ ] Punctuation variants
+### TASK-J004 [x] Punctuation variants
 
 **依存:** J001
 
