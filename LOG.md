@@ -2707,3 +2707,36 @@ git diff --check
 **次タスク**
 
 - TASK-H002 Internal target resolver(依存: H001,E008)
+
+### 2026-07-14 15:25 UTC — TASK-H002
+
+**目的**
+
+- `ARCHITECTURE.md` 12.5の手順5-7(normalized title生成/raw DBでpage ID解決/redirect targetの扱い)を実装する。
+
+**変更**
+
+- `src/wikiepwing/links/resolver.py`に`resolve_internal_link`/`ResolvedLink`を実装した。`ingest/repository.py`の`normalize_title`を再利用し、raw.sqlite3の`articles.normalized_title`直接一致→`redirects.normalized_redirect_title`一致(`follow_redirects`制御)→`missing`の順で解決する。`parsed.namespace`が非`None`(Category等)の場合は本プロジェクトの初期scope(namespace 0のみ取り込み)の範囲外として`externalized`を返す。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_links_resolver.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 直接一致解決、redirect経由解決(`follow_redirects`のON/OFF)、非一致時の`missing`、namespace付きlinkの`externalized`、fragment保持を6件のテストで確認した。
+- 標準スイート638件(新規6件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- namespace付きlinkを`externalized`とする判断は、本プロジェクトの初期scope(`source.namespace=0`)がnamespace 0のみを取り込む前提に基づくdocumented assumption。
+- EPWING entry IDへの変換、External link policy(H003)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-H003 External link policy(依存: H001)

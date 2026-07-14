@@ -423,7 +423,7 @@
 
 **依存:** G006
 
-### TASK-H002 [ ] Internal target resolver
+### TASK-H002 [x] Internal target resolver
 
 **依存:** H001,E008
 
