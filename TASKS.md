@@ -225,7 +225,7 @@
 
 **実装:** HEAD、Range、partial、atomic rename、bounded retry。
 
-### TASK-D006 [ ] Checksum and file fingerprint
+### TASK-D006 [x] Checksum and file fingerprint
 
 **依存:** D005
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import http.client
 import re
 import urllib.error
@@ -11,6 +10,8 @@ from dataclasses import dataclass
 from os import replace as os_replace
 from pathlib import Path
 from typing import Protocol, cast
+
+from wikiepwing.source.checksums import compute_fingerprint
 
 DEFAULT_DOWNLOAD_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 5
@@ -124,14 +125,14 @@ class ResumableChunkDownloader:
                     raise
                 continue
 
-        final_size = partial_path.stat().st_size
-        if final_size != total_size:
+        fingerprint = compute_fingerprint(partial_path)
+        if fingerprint.size_bytes != total_size:
             raise ChunkDownloadError(
-                f"chunk download incomplete: expected {total_size} bytes, got {final_size}"
+                f"chunk download incomplete: expected {total_size} bytes, "
+                f"got {fingerprint.size_bytes}"
             )
-        sha256 = _sha256_file(partial_path)
         os_replace(partial_path, destination)
-        return ChunkDownloadResult(size_bytes=final_size, sha256=sha256)
+        return ChunkDownloadResult(size_bytes=fingerprint.size_bytes, sha256=fingerprint.sha256)
 
     def _stream_once(
         self,
@@ -191,14 +192,6 @@ def _validate_not_symlink(label: str, path: Path) -> None:
         raise ChunkDownloadError(f"{label} must be an absolute path: {path}")
     if path.is_symlink():
         raise ChunkDownloadError(f"{label} must not be a symlink: {path}")
-
-
-def _sha256_file(path: Path) -> str:
-    hasher = hashlib.sha256()
-    with path.open("rb") as file:
-        for block in iter(lambda: file.read(1 << 20), b""):
-            hasher.update(block)
-    return hasher.hexdigest()
 
 
 def _require_url_segment(label: str, value: str) -> str:

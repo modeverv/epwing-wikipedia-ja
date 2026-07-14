@@ -1452,3 +1452,35 @@ git diff --check
 **次タスク**
 
 - TASK-D006 Checksum and file fingerprint
+
+### 2026-07-14 02:45 UTC — TASK-D006
+
+**目的**
+
+- fileのstreaming SHA-256計算とsize検証を1つの再利用可能なmoduleへ集約し、TASK-D005のdownloader内にあった同等ロジックの重複を解消する。
+
+**変更**
+
+- `src/wikiepwing/source/checksums.py`に`FileFingerprint`、`compute_fingerprint`、`verify_fingerprint`を実装した。symlink拒否、read失敗の明確なエラー、`read_chunk_bytes`非正値拒否、期待SHA-256の64桁小文字hex検証、負のsize拒否を持つ。
+- `src/wikiepwing/source/downloader.py`の独自`_sha256_file`実装を削除し、`compute_fingerprint`を使うよう置き換えた。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_checksums.py tests/test_chunk_downloader.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート216件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- source.lock.jsonへの実際の検証呼び出しはTASK-D007(acquireコマンド)の対象とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D007 Acquire command
