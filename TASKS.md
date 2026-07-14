@@ -611,7 +611,7 @@
 
 **依存:** B009
 
-### TASK-M002 [ ] Unicode classifier
+### TASK-M002 [x] Unicode classifier
 
 **依存:** M001
 

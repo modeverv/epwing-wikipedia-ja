@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-M001
+TASK-M002
 
 ## 目的
 
-`ARCHITECTURE.md` 18.1(文字分類: A. backend標準文字として表現可能)の基礎となる、EPWING/FreePWING backendが実際にネイティブ表現できる文字の判定機構を実装する。既存のFreePWING連携(TASK-H009)で確立した事実(EUC-JPエンコードがFPWParserへ到達する前の必須変換)により、backendが表現できる文字とは「EUC-JPへ損失無く符号化できる文字」と定義する。Pythonの標準`codecs`が持つEUC-JP実装を「backend representability table」の実体として利用し、独自の巨大なlookup tableを再実装しない。
+`ARCHITECTURE.md` 18.1(文字分類: A backend標準文字/B 設定済み文字列へ置換可能/C gaiji bitmapとして表現/D 表現不能)を実装する。TASK-M001の`is_backend_representable`をA分類の判定に使う。B分類(安全な置換)の実際の対応表はTASK-M003で構築されるため、本タスクの分類器は置換表を呼び出し側から注入できる引数として受け取る(未指定時は何も置換しない)。C/Dの境界は、Unicodeの一般カテゴリ(`unicodedata.category`)がCc(制御)/Cf(書式)/Cs(サロゲート)/Co(私用)/Cn(未割り当て)であれば「意味のあるグリフを持たずgaiji化しても無意味」としてD、それ以外の実際に印字可能な文字はCとする。
 
 ## 事前条件
 
@@ -14,15 +14,15 @@ TASK-M001
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-M001(依存: B009)を読んだ。B009は完了済み。
-- [x] `ARCHITECTURE.md` 18.1-18.5(外字設計)を再確認した
-- [x] TASK-H009で確立した「EUC-JPエンコードがFPWParserへの必須前処理」という事実を確認した(この判断根拠として採用する)
+- [x] `TASKS.md`のTASK-M002(依存: M001)を読んだ
+- [x] `ARCHITECTURE.md` 18.1(文字分類)・18.2(置換例)・18.5(D分類のfallback)を再確認した
+- [x] TASK-M003(安全な置換)がTASK-M002に依存する関係(置換表はまだ存在しない)であることを確認し、分類器が置換表を引数として受け取る設計にする根拠とした
+- [x] TASK-M001の`is_backend_representable`を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/gaiji/__init__.py`(新規パッケージ)
-- `src/wikiepwing/gaiji/representability.py`(新規: `is_backend_representable()`, `unrepresentable_characters()`)
-- `tests/test_gaiji_representability.py`(新規)
+- `src/wikiepwing/gaiji/classifier.py`(新規: `CharacterClass`, `classify_character()`)
+- `tests/test_gaiji_classifier.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,25 +30,27 @@ TASK-M001
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_gaiji_representability.py
+uv run pytest tests/test_gaiji_classifier.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `is_backend_representable(character)`が、EUC-JPへ符号化可能な1文字に対して`True`を返す
-- [x] EUC-JPで表現できない文字(絵文字等)に対して`False`を返す
-- [x] `unrepresentable_characters(text)`が、文字列中の表現不能な文字を出現順に(重複除去せず)返す
+- [x] backend表現可能な文字は`"A"`に分類される
+- [x] 置換表に登録されている文字は(backend表現不可の場合)`"B"`に分類される
+- [x] 印字可能だがbackend表現不可・置換表未登録の文字は`"C"`に分類される
+- [x] 制御文字・書式文字・サロゲート・私用領域・未割り当てコードポイントは`"D"`に分類される(ただしASCII C0制御文字はEUC-JPがそのまま通すため実際には"A"になる、実装中に発見・テストで明記)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Unicode分類器(A/B/C/D全体の判定、TASK-M002)
-- 安全な置換(TASK-M003)・gaiji registry(TASK-M004以降)
+- 実際の置換表の構築(TASK-M003)
+- gaiji registry・bitmap生成(TASK-M004以降)
 
 ## 実施結果
 
-- 新規パッケージ`src/wikiepwing/gaiji/`を作成し、`representability.py`に`is_backend_representable()`・`unrepresentable_characters()`を実装した。EUC-JPへの符号化可否をbackend representabilityの判定基準として採用し、Pythonの標準`codecs`実装をそのまま利用した(独自lookup tableの再実装をしない判断)。
-- `tests/test_gaiji_representability.py`(新規8件)で、ASCII・常用漢字・ひらがな・全角カタカナの表現可能性、絵文字・CJK拡張面文字の表現不能性、文字列中の表現不能文字の出現順抽出、全表現可能文字列での空タプルを確認した。
-- `make check`(format-check/lint/mypy/pytest 947件)と`git diff --check`が成功した。
+- `src/wikiepwing/gaiji/classifier.py`に`CharacterClass`・`classify_character()`を実装した。判定順序: `is_backend_representable`→A、置換表に登録済み→B、Unicode一般カテゴリがCc/Cf/Cs/Co/Cnのいずれか→D、それ以外→C。
+- 実装中に気づいた点: ASCII C0制御文字(`\x01`等)はEUC-JPがそのままバイト通過させるため、意味の無い文字であっても`is_backend_representable`が`True`を返し"A"に分類される。これは`ARCHITECTURE.md` 18.1がAを「エンコード可能性」のみで定義しており「意味のあるグリフ」を要求していないため、仕様上正しい挙動と判断した。当初の誤ったテスト期待値(C0制御文字を"D"と想定)を発見・修正し、代わりにC1制御文字(EUC-JPで実際に符号化不可)でD分類の実際の経路を検証するテストに差し替えた。
+- `tests/test_gaiji_classifier.py`(新規11件)で、A/B/C/D各分類の境界(置換表の有無、backend表現可能性が置換表より優先されること、C1制御文字・書式文字・未割り当て・私用領域のD分類)を確認した。
+- `make check`(format-check/lint/mypy/pytest 958件)と`git diff --check`が成功した。

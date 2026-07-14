@@ -4134,3 +4134,35 @@ git diff --check
 **次タスク**
 
 - TASK-M002 Unicode classifier(依存: M001)
+
+### 2026-07-15 09:05 UTC — TASK-M002
+
+**目的**
+
+- `ARCHITECTURE.md` 18.1(文字分類A/B/C/D)を実装する。TASK-M003(安全な置換表構築)がまだ存在しないため、分類器は置換表を呼び出し側から注入する引数として受け取る設計にした。
+
+**変更**
+
+- `src/wikiepwing/gaiji/classifier.py`に`CharacterClass`・`classify_character()`を実装した。判定順序: TASK-M001の`is_backend_representable`→A、置換表(引数、未指定なら何もしない)に登録済み→B、Unicode一般カテゴリがCc/Cf/Cs/Co/Cnのいずれか(意味のあるグリフが無い)→D、それ以外(印字可能だが表現不可)→C。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_classifier.py
+make check
+git diff --check
+```
+
+**結果**
+
+- A/B/C/D各分類の境界(置換表の有無、backend表現可能性が置換表より優先されること、C1制御文字・書式文字・未割り当て・私用領域のD分類)を11件のテストで確認した。
+- 標準スイート958件(新規19件、TASK-M001の8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実装中、ASCII C0制御文字(`\x01`等)がEUC-JPでそのままバイト通過するため"A"に分類されてしまうことを発見した。`ARCHITECTURE.md` 18.1のA分類は「エンコード可能性」のみを定義し「意味のあるグリフ」を要求していないため、これは仕様上正しい挙動と判断し、テストをこの実際の挙動に合わせて修正した(C1制御文字で実際のD分類経路を検証する形に差し替えた)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M003 Safe substitutions(依存: M002)
