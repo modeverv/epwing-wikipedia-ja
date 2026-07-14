@@ -563,7 +563,7 @@
 
 **依存:** K004-K005
 
-### TASK-K007 [ ] Infobox detector
+### TASK-K007 [x] Infobox detector
 
 **依存:** K001
 
