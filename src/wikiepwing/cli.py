@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -26,6 +27,7 @@ from wikiepwing.source.acquire import acquire_snapshot
 from wikiepwing.source.auth import EnterpriseAuthClient, HttpAuthTransport
 from wikiepwing.source.downloader import HttpChunkTransport, ResumableChunkDownloader
 from wikiepwing.source.enterprise import HttpSnapshotMetadataTransport, SnapshotMetadataClient
+from wikiepwing.source.register import LocalSourceFile, register_local_source
 
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{4,64}$")
 
@@ -176,6 +178,56 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="git commit recorded in source.lock.json (default: `git rev-parse HEAD`)",
     )
+    register = subparsers.add_parser(
+        "register-local-source",
+        help="register predownloaded Snapshot files without re-fetching them",
+    )
+    register.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    register.add_argument("--project", type=str, help="override configured project")
+    register.add_argument("--namespace", type=int, help="override configured source.namespace")
+    register.add_argument(
+        "--snapshot-identifier",
+        type=str,
+        required=True,
+        help="Snapshot identifier, e.g. jawiki_namespace_0",
+    )
+    register.add_argument(
+        "--snapshot-version",
+        type=str,
+        required=True,
+        help="concrete Snapshot version identifier (not 'latest')",
+    )
+    register.add_argument(
+        "--date-modified",
+        type=str,
+        required=True,
+        help="RFC3339 timestamp for this Snapshot version",
+    )
+    register.add_argument(
+        "--file",
+        action="append",
+        default=[],
+        required=True,
+        metavar="PATH:CHUNK_IDENTIFIER[:SHA256]",
+        help="predownloaded file to register; may be repeated",
+    )
+    register.add_argument(
+        "--copy",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="copy the file into paths.sources (default) or symlink to it in place",
+    )
+    register.add_argument(
+        "--git-commit",
+        type=str,
+        help="git commit recorded in source.lock.json (default: `git rev-parse HEAD`)",
+    )
     return parser
 
 
@@ -301,6 +353,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(result.lock_path)
         return 0
+    if command == "register-local-source":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+        source_section = config.section("source")
+        project = cast(str | None, arguments.project) or config.project
+        namespace = cast(int | None, arguments.namespace)
+        if namespace is None:
+            namespace = cast(int, source_section["namespace"])
+        git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+        files = [_parse_file_argument(value) for value in cast(list[str], arguments.file)]
+        result = register_local_source(
+            files,
+            project=project,
+            namespace=namespace,
+            snapshot_identifier=cast(str, arguments.snapshot_identifier),
+            snapshot_version=cast(str, arguments.snapshot_version),
+            date_modified=_parse_date_modified(cast(str, arguments.date_modified)),
+            sources_root=config.paths.sources,
+            copy=cast(bool, arguments.copy),
+            acquirer_name="wikiepwing",
+            acquirer_version=__version__,
+            acquirer_git_commit=git_commit,
+        )
+        print(result.lock_path)
+        return 0
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0
@@ -335,6 +415,28 @@ def _resolve_git_commit() -> str:
             "`git rev-parse HEAD` returned an unexpected value; pass --git-commit explicitly"
         )
     return commit
+
+
+def _parse_file_argument(value: str) -> LocalSourceFile:
+    parts = value.split(":", 2)
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise SystemExit(f"--file must be PATH:CHUNK_IDENTIFIER[:SHA256], got: {value!r}")
+    expected_sha256 = parts[2] if len(parts) == 3 and parts[2] else None
+    return LocalSourceFile(
+        source_path=Path(parts[0]),
+        chunk_identifier=parts[1],
+        expected_sha256=expected_sha256,
+    )
+
+
+def _parse_date_modified(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise SystemExit(f"--date-modified must be a valid RFC3339 timestamp: {error}") from error
+    if parsed.tzinfo is None:
+        raise SystemExit("--date-modified must include a timezone")
+    return parsed
 
 
 if __name__ == "__main__":

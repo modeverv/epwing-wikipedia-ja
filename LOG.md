@@ -1525,3 +1525,39 @@ git diff --check
 **次タスク**
 
 - TASK-D008 Register local source
+
+### 2026-07-14 03:20 UTC — TASK-D008
+
+**目的**
+
+- 既に取得済みのpredownloaded fileを、再downloadせずcopyまたはsymlinkでsource.lock.jsonへ登録できるようにする。
+
+**変更**
+
+- `src/wikiepwing/source/register.py`に`register_local_source`、`LocalSourceFile`、`RegisterError`を実装した。destinationが既に存在する場合は再copy/再symlinkせずfingerprintを再計算するだけにした。
+- `copy=True`(既定)はatomic copy(一時file→fsync→`os.replace`)、`copy=False`は解決済み絶対pathへの`symlink_to`を使う。呼び出し側の`expected_sha256`と不一致なら拒否する。
+- Wikimedia Enterprise metadataが存在しないため、`metadata_response_sha256`は登録入力の正準JSONへのSHA-256として合成した(同じ入力から決定的に同じ値になることを確認済み)。
+- `SourceLock`のatomic書込を`lockfile.write_source_lock`として`lockfile.py`へ切り出し、`acquire.py`の重複private実装を解消して`register.py`と共有した。
+- `src/wikiepwing/cli.py`に`wikiepwing register-local-source`コマンドを追加した(`--file PATH:CHUNK_IDENTIFIER[:SHA256]`複数指定、`--copy`/`--no-copy`、`--date-modified`、`--git-commit`)。完全オフラインで動作する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_register.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート238件(新規14件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `metadata_response_sha256`のローカル合成方式は一次資料が無いための仮定であり明示的に記録した。
+- `source.provider`設定値自体の検証・切替はこのタスクの対象外とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D009 Source inspect command

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,7 +17,7 @@ from wikiepwing.source.lockfile import (
     SourceLockAcquirer,
     SourceLockFile,
     build_source_lock,
-    canonical_json,
+    write_source_lock,
 )
 
 PROVIDER = "wikimedia-enterprise-snapshot"
@@ -151,21 +149,5 @@ def acquire_snapshot(
         ),
     )
     lock_path = snapshot_directory / "source.lock.json"
-    _write_lock_atomically(lock, lock_path)
+    write_source_lock(lock, lock_path)
     return AcquireResult(snapshot_directory=snapshot_directory, lock_path=lock_path, lock=lock)
-
-
-def _write_lock_atomically(lock: SourceLock, destination: Path) -> None:
-    payload = canonical_json(lock)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(
-        dir=destination.parent, prefix=f".{destination.name}.", delete=False
-    )
-    try:
-        temp_path = Path(handle.name)
-        handle.write(payload)
-        handle.flush()
-        os.fsync(handle.fileno())
-    finally:
-        handle.close()
-    os.replace(temp_path, destination)

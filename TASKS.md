@@ -237,7 +237,7 @@
 
 **実装:** metadata -> download -> verify -> lock。
 
-### TASK-D008 [ ] Register local source
+### TASK-D008 [x] Register local source
 
 **依存:** D004,D006
 

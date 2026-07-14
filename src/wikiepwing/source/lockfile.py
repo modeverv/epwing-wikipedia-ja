@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 SCHEMA_VERSION = 1
@@ -151,6 +154,23 @@ def canonical_json(lock: SourceLock) -> bytes:
     return (json.dumps(lock.payload(), ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
         "utf-8"
     )
+
+
+def write_source_lock(lock: SourceLock, destination: Path) -> None:
+    """Atomically write a source lock's canonical JSON to `destination`."""
+    payload = canonical_json(lock)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        dir=destination.parent, prefix=f".{destination.name}.", delete=False
+    )
+    try:
+        temp_path = Path(handle.name)
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    finally:
+        handle.close()
+    os.replace(temp_path, destination)
 
 
 def parse_source_lock(raw: bytes) -> SourceLock:

@@ -90,6 +90,49 @@ class CliTest(unittest.TestCase):
         self.assertIn("--snapshot-version", result.stdout)
         self.assertIn("--git-commit", result.stdout)
 
+    def test_register_local_source_help(self) -> None:
+        result = self.run_cli("register-local-source", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--file", result.stdout)
+        self.assertIn("--copy", result.stdout)
+        self.assertIn("--date-modified", result.stdout)
+
+    def test_register_local_source_registers_predownloaded_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            sources = temporary / "sources"
+            source_file = temporary / "downloads" / "mine.tar.gz"
+            source_file.parent.mkdir(parents=True)
+            source_file.write_bytes(b"predownloaded content")
+            config = temporary / "register.toml"
+            config.write_text(f'[paths]\nsources = "{sources}"\n', encoding="utf-8")
+
+            result = self.run_cli(
+                "register-local-source",
+                "--config",
+                str(config),
+                "--namespace",
+                "0",
+                "--snapshot-identifier",
+                "jawiki_namespace_0",
+                "--snapshot-version",
+                "local-2026-07-14",
+                "--date-modified",
+                "2026-07-14T00:00:00Z",
+                "--file",
+                f"{source_file}:jawiki_namespace_0_chunk_0",
+                "--git-commit",
+                "abc1234",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lock_path = Path(result.stdout.strip())
+            self.assertTrue(lock_path.is_file())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(lock["snapshot_version"], "local-2026-07-14")
+            self.assertEqual(lock["files"][0]["relative_path"], "jawiki_namespace_0_chunk_0.tar.gz")
+
 
 if __name__ == "__main__":
     unittest.main()

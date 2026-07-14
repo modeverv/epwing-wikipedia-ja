@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-D007
+TASK-D008
 
 ## 目的
 
-metadata解決→chunk download→verify→source.lock.json書込を1つのacquireオーケストレーションとCLIコマンドへ組み上げる。
+ユーザーが既に取得済みのfileを、再downloadせずに(copyまたはsymlinkで)source.lock.jsonへ登録できるようにする(`local-enterprise` provider相当)。
 
 ## 事前条件
 
@@ -14,20 +14,17 @@ metadata解決→chunk download→verify→source.lock.json書込を1つのacqui
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-D007を読んだ
-- [x] `ARCHITECTURE.md` 9.4(ダウンロード要件、source.lock.jsonは全ファイル検証後にのみ作成)を確認した
-- [x] `DATA_CONTRACTS.md` 2節(source lock契約、`.tar.gz`拡張子へ訂正済み)を確認した
-- [x] TASK-D002(`EnterpriseAuthClient`)、TASK-D003(`SnapshotMetadataClient`/`ResolvedSnapshot`)、TASK-D004(`SourceLock`/`build_source_lock`/`canonical_json`)、TASK-D005(`ResumableChunkDownloader`)、TASK-D006(`compute_fingerprint`/`verify_fingerprint`)を確認した
-- [x] `config/default.toml`の`source`/`source.enterprise`セクションと`paths.sources`を確認した
-- [x] `tests/test_cli.py`の既存コマンドの`--help`テストパターンを確認した
+- [x] `TASKS.md`のTASK-D008を読んだ
+- [x] `CONFIG_REFERENCE.md` 6節(`source.provider`の`local-enterprise`: predownloaded tar.gz)を確認した
+- [x] `PLAN.md`のlocal source registration/local file mode記述を確認した
+- [x] TASK-D004(`SourceLock`/`build_source_lock`/`canonical_json`)、TASK-D006(`compute_fingerprint`)、TASK-D007の`AcquireResult`を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/source/acquire.py`
+- `src/wikiepwing/source/register.py`
 - `src/wikiepwing/cli.py`
-- `tests/test_acquire.py`
+- `tests/test_register.py`
 - `tests/test_cli.py`
-- `DATA_CONTRACTS.md`(拡張子訂正、完了)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -35,40 +32,40 @@ metadata解決→chunk download→verify→source.lock.json書込を1つのacqui
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_acquire.py tests/test_cli.py
+uv run pytest tests/test_register.py tests/test_cli.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `acquire_snapshot`がauth解決→metadata解決→chunkごとdownload→verify→`SourceLock`構築→atomic書込を順に行う
-- [x] 既にdestinationが存在するchunkは再downloadせず、fingerprintを再計算して使う(中断再開時の無駄な再取得を避ける)
-- [x] download直後にverify_fingerprintで再検証し、破損を検出したら失敗させる
-- [x] `sources_root`が絶対pathでない場合・snapshot directoryやchunk destinationがsymlinkの場合を拒否する
-- [x] `wikiepwing acquire` CLIコマンドが`config`/環境変数からsecrets・endpoint・timeout・retryを組み立てて実行できる
-- [x] git commitは`git rev-parse HEAD`で自動解決し、失敗時は`--git-commit`を明示要求する
+- [x] `register_local_source`が既存fileをcopy(既定)またはsymlink(`copy=False`)でsources_root配下へ登録する
+- [x] 登録済み(destinationが既に存在する)fileは再copy/再symlinkしない
+- [x] 各fileのfingerprintを計算し、呼び出し側が期待SHA-256を渡した場合は不一致を拒否する
+- [x] predownloaded fileが存在しない・通常fileでない場合を拒否する
+- [x] `sources_root`/snapshot directory/destinationのsymlink・絶対path要件を`acquire_snapshot`と整合させる
+- [x] `wikiepwing register-local-source` CLIコマンドがオフラインで動作する(ネットワーク・credentials不要)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際にjawiki全81 chunk(約30 GB)を本セッションでacquireすること(コードとfakeによるテストに限定)
-- disk空き容量事前確認(`doctor`コマンド側)
-- ローカル既存sourceの登録(TASK-D008)
+- Wikimedia Enterprise APIへの問い合わせ(このタスクは完全オフライン)
+- `source.provider`設定値の検証・切替ロジック自体(既存の`config.py`スキーマ範囲外)
+- Source inspect command(TASK-D009)
 
 ## 実施結果
 
-- `src/wikiepwing/source/acquire.py`に`acquire_snapshot`(auth解決→metadata解決→chunkごとdownload→verify→`SourceLock`構築→atomic書込)、`AcquireResult`、`AuthResolver`/`MetadataResolver`/`ChunkDownloader` Protocolを実装した。
-- destinationが既に存在するchunkは再downloadせず`compute_fingerprint`で再計算し、新規downloadしたchunkは`verify_fingerprint`で再検証してから`SourceLockFile`へ積む。
-- `snapshot_directory`・chunk destinationのsymlinkを拒否し、`sources_root`が絶対pathでない場合を拒否する。
-- `src/wikiepwing/cli.py`に`wikiepwing acquire`コマンドを追加した。`--namespace`/`--snapshot-version`/`--git-commit`のCLI override、`config/default.toml`の`source`/`source.enterprise`セクションからのendpoint/timeout/retry組み立て、`load_enterprise_secrets(os.environ)`によるsecrets読取を実装した。
-- `git_commit`は`git rev-parse HEAD`で自動解決し、失敗時は`--git-commit`を明示要求するエラーで終了するようにした。
-- `tests/test_acquire.py`に7件(単一/複数chunk、再download skip、破損検知、sources_root/symlink検証)、`tests/test_cli.py`に`acquire --help`テストを追加した。
-- format-check、ruff lint、mypy strict、標準スイート224件、`git diff --check`が成功した。
-- 実credentialsで`wikiepwing acquire`コマンド全体を実行し(project=aawiki、namespace=0、`--config`で一時TOMLへ差し替え)、実際に認証→metadata解決→chunk download→verify→`source.lock.json`書込までend-to-endで成功することを確認した。生成された`source.lock.json`は`DATA_CONTRACTS.md`契約通りの構造で、SHA-256は以前の手動疎通確認と一致した。
+- `src/wikiepwing/source/register.py`に`register_local_source`、`LocalSourceFile`、`RegisterError`を実装した。
+- destinationが既に存在する(file/symlinkいずれも)場合は再copy/再symlinkせず、その場でfingerprintを再計算するだけにした(acquireの冪等skipと同じ発想)。
+- `copy=True`(既定)は一時fileへ書込→fsync→`os.replace`でatomic copy、`copy=False`は解決済み絶対pathへの`symlink_to`を使う。
+- 呼び出し側が`expected_sha256`を渡した場合は不一致を明確なエラーで拒否する。predownloaded fileの不在・非通常file、`sources_root`非絶対path、snapshot directoryのsymlinkを拒否する。
+- Wikimedia Enterprise metadataレスポンスが存在しないため、`metadata_response_sha256`は登録入力(project/namespace/snapshot_identifier/snapshot_version/date_modified/chunk_identifiers)を正準JSON化したものへのSHA-256として合成した(同じ入力からは決定的に同じ値になることをテストで確認)。
+- `SourceLock`の書込を`lockfile.write_source_lock`として`acquire.py`から`lockfile.py`へ切り出し、`acquire.py`・`register.py`双方から再利用するようにした(重複実装の解消)。
+- `src/wikiepwing/cli.py`に`wikiepwing register-local-source`コマンドを追加した。`--file PATH:CHUNK_IDENTIFIER[:SHA256]`(複数指定可)、`--copy`/`--no-copy`、`--date-modified`(RFC3339)、`--git-commit`を実装した。完全にオフラインで動作する。
+- `tests/test_register.py`に12件、`tests/test_cli.py`に2件(`--help`とend-to-end登録)のテストを追加した。
+- format-check、ruff lint、mypy strict、標準スイート238件、`git diff --check`が成功した。
 
 **判断・注意点**
 
-- disk空き容量事前確認はdoctorコマンド側の対象として残した。
-- ローカル既存source登録(コピー無しのpredownloaded file利用)はTASK-D008の対象とした。
-- 実データ検証に使った一時スクリプトはリポジトリ外のスクラッチパッドに置き、コミットしていない。credentialsは一切ログ・文書へ出力していない。
+- `metadata_response_sha256`をローカル登録用に合成する設計は一次資料が無いための小さな仮定であり、明示的に記録した(WMEの実応答ハッシュとは異なる性質だが、フィールドの目的(このlockを生成した入力の再現可能な指紋)は保っている)。
+- `source.provider`設定値自体の検証・切替は対象外とした(既存`config.py`のスキーマ範囲外)。
