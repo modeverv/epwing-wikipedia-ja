@@ -391,7 +391,7 @@
 
 **依存:** G005
 
-### TASK-G008 [ ] Definition lists
+### TASK-G008 [x] Definition lists
 
 **依存:** G005
 

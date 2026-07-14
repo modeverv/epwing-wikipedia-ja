@@ -2473,3 +2473,35 @@ git diff --check
 **次タスク**
 
 - TASK-G008 Definition lists(依存: G005)
+
+### 2026-07-14 12:45 UTC — TASK-G008
+
+**目的**
+
+- `<dl>`要素を`DefinitionListBlock`へ変換する(`ARCHITECTURE.md` 12.2のpass `N60`の一部)。
+
+**変更**
+
+- `src/wikiepwing/normalize/definition_lists.py`に`is_definition_list`/`convert_definition_list`を実装した。連続する`<dt>`を1entryのterms、続く連続する`<dd>`をそのentryのdefinitionsへグループ化し、`<dd>`の後に新しい`<dt>`が現れると新entryを開始する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_definition_lists.py
+make check
+git diff --check
+```
+
+**結果**
+
+- dl判定、単一entry、複数termsのグループ化、複数definitionsのグループ化、dd後のdtによる新entry開始、非`<dl>`要素での`ValueError`、空`<dl>`を8件のテストで確認した。
+- 標準スイート558件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 引用/preformatted(G009)と任意のDOMノード振り分けdispatcher(G010/G012)は本タスクの対象外。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-G009 Quote/preformatted(依存: G005)
