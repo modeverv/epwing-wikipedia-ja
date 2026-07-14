@@ -219,7 +219,7 @@
 
 **実装:** JSON schema、canonical serialization。
 
-### TASK-D005 [ ] Resumable downloader
+### TASK-D005 [x] Resumable downloader
 
 **依存:** D003
 

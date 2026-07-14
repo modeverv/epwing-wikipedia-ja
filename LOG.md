@@ -1412,3 +1412,43 @@ git diff --check
 **次タスク**
 
 - TASK-D005 Resumable downloaderを、正しいchunk download endpointで実装する。
+
+### 2026-07-14 02:30 UTC — TASK-D005
+
+**目的**
+
+- Snapshot chunkのresumable downloaderを実装する。正しいchunk download endpoint(`GET /v2/snapshots/{snapshot_identifier}/chunks/{identifier}/download`)を使い、Range再開・atomic rename・bounded retry・401/403即時失敗を持つ。
+
+**変更**
+
+- `src/wikiepwing/source/downloader.py`に`ResumableChunkDownloader`、`ChunkTransport` Protocol、`HttpChunkTransport`、`ChunkDownloadResult`、`ChunkDownloadError`/`ChunkDownloadAuthError`を実装した。
+- `HttpChunkTransport`は自前の`HTTPErrorProcessor`overrideで自動redirect追従を無効化し、307等のredirectを手動処理してからS3 URLへ`Authorization`無しの素のGET(`Range`のみ)を送る。
+- `ResumableChunkDownloader.download`は`.partial`ファイルの末尾からRangeで再開し、`Content-Range`/`Content-Length`で期待total sizeを検証、完了後にSHA-256を計算して`os.replace`でatomic renameする。401/403は即座に失敗、それ以外の失敗はbounded retry(既定5回)する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_chunk_downloader.py
+make check
+git diff --check
+```
+
+**実データ検証**
+
+- 実credentialsで`aawiki_namespace_0_chunk_0`(1,252 bytes)を実際に完全ダウンロードし、gzip展開して`chunk_0.ndjson`が入っていることを確認した。
+- 実ファイルを途中まで切り詰めた状態から実APIに対してresumeを実行し、フルダウンロードと完全に同一のbytesが得られることを確認した(resumeロジックが実データで実証された)。
+- 検証に使った一時スクリプトはリポジトリ外に置き、コミットしていない。credentialsは一切出力していない。
+
+**結果**
+
+- 標準スイート205件(新規25件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 前回セッションの404は、アカウント権限ではなくendpoint pathの誤りだった(訂正済み、`SOURCES.md`参照)。
+- disk空き容量の事前確認と`source.lock.json`書込はTASK-D007(acquireコマンド)へ委ねた。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-D006 Checksum and file fingerprint
