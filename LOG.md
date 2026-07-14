@@ -4306,3 +4306,35 @@ git diff --check
 **次タスク**
 
 - TASK-M006 Gaiji code assignment(依存: M005)
+
+### 2026-07-15 10:45 UTC — TASK-M006
+
+**目的**
+
+- `DATA_CONTRACTS.md` 10(Assignmentは"Unicode sort order + width classなどの決定論的規則"を使用し、処理順依存にしない)を実装する。
+
+**変更**
+
+- `src/wikiepwing/gaiji/code_assignment.py`に`GaijiCodeAssignmentError`・`assign_gaiji_codes()`を実装した。width_class("narrow"/"wide")ごとに独立した採番空間を持ち、各グループ内でsequenceのUnicodeソート順に基づいて`f"{width_class}-{index:04d}"`形式のcodeを1始まりで割り当てる。`tests/fixtures/handcrafted/halfchars.txt`/`fullchars.txt`が実際に別ファイル(=別code空間)であることを確認し、narrow/wideを独立させる根拠とした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_code_assignment.py
+make check
+git diff --check
+```
+
+**結果**
+
+- width_class毎の連番割当・独立したcode空間・Unicodeソート順による決定論的割当・入力順序に依存しない冪等性・空入力・不正width_class・重複sequence・4桁ゼロパディングを8件のテストで確認した。
+- 標準スイート996件(新規8件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実際のFreePWING/EB向けファイル形式(`halfchars.txt`の行形式等)への変換や具体的なEB gaiji code表現(hexアドレス等)への対応付けは、本タスクの対象外としTASK-M007へ委ねた。本タスクは抽象的な決定論的割当アルゴリズムのみを扱う。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M007 FreePWING gaiji integration(依存: M006,H009)

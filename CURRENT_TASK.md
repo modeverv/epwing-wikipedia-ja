@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-M005
+TASK-M006
 
 ## 目的
 
-`ARCHITECTURE.md` 18.4(フォント: Docker内の再配布可能なNoto CJK系を利用、package versionとhashをmanifestへ記録、フォントファイル自体は成果物に含めない)を実装する。gaiji文字(Unicode sequence)を実際にラスタライズしてbitmap(PNG bytes)を生成する。Pillowを新規依存として追加し、`docker/toolchain.Dockerfile`に(既存のDebian snapshot pinning慣習に従い)`fonts-noto-cjk`を追加する。
+`DATA_CONTRACTS.md` 10(Gaiji registry contract: "AssignmentはUnicode sort order + width classなどの決定論的規則を使用。処理順依存にしません。")を実装する。TASK-M004の`gaiji`テーブルの`assigned_code`列(NOT NULL UNIQUE)へ入れる値を、登録済みsequence群から決定論的に計算する`assign_gaiji_codes()`を実装する。実際のFreePWING/EB向けファイル形式(`halfchars.txt`/`fullchars.txt`、実際のgaiji code表現)への変換はTASK-M007(依存: M006,H009)の対象であり、本タスクは抽象的な決定論的割当のみを扱う。
 
 ## 事前条件
 
@@ -14,18 +14,15 @@ TASK-M005
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-M005(依存: M004)を読んだ
-- [x] `ARCHITECTURE.md` 18.4(フォント)を再確認した
-- [x] `docker/toolchain.Dockerfile`が全パッケージをDebian snapshot(2026-07-01時点)からexact versionでpinしている慣習を確認した
-- [x] Debian snapshot archive(`snapshot.debian.org`、`docker/toolchain.Dockerfile`が既に参照している同一snapshot)から`fonts-noto-cjk`の実際のpinバージョン(`1:20220127+repack1-1`)をネットワーク経由で確認した(推測でバージョンを書かない)
-- [x] このDev環境(macOS)にはNoto CJKフォントが無いため、実際のフォント読み込みが必要なテストは、利用可能な候補フォントパス(macOSのCJK対応システムフォント含む)を探索し、見つからなければ`pytest.skip()`する設計にする(ネットワーク取得はしない)
+- [x] `TASKS.md`のTASK-M006(依存: M005)を読んだ
+- [x] `DATA_CONTRACTS.md` 10(Assignment規則)を再確認した
+- [x] `tests/fixtures/handcrafted/halfchars.txt`/`fullchars.txt`/`generate_gaiji.pl`(実際のFreePWING gaiji fixture)を確認し、half/wideが別々のファイル(=別々のcode空間)で管理されることを確認した(本タスクでもnarrow/wideを別々に採番する根拠)
+- [x] 実際のEB/FreePWING側のgaiji code表現形式(`halfchars.txt`の行形式等)への変換はTASK-M007の範囲であることを確認した(本タスクはその手前の抽象的な決定論的割当のみ)
 
 ## 変更予定ファイル
 
-- `pyproject.toml`(Pillowを依存に追加)
-- `docker/toolchain.Dockerfile`(`fonts-noto-cjk=1:20220127+repack1-1`を追加、apt installリストへ)
-- `src/wikiepwing/gaiji/glyph_renderer.py`(新規: `GlyphRenderError`, `render_glyph_bitmap()`, `bitmap_hash()`, `DEFAULT_FONT_PATH`)
-- `tests/test_gaiji_glyph_renderer.py`(新規、フォント利用可能性に応じてskip)
+- `src/wikiepwing/gaiji/code_assignment.py`(新規: `assign_gaiji_codes()`）
+- `tests/test_gaiji_code_assignment.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -33,30 +30,27 @@ TASK-M005
 ## 実行予定コマンド
 
 ```bash
-uv add "Pillow==12.2.0"
-uv run pytest tests/test_gaiji_glyph_renderer.py
+uv run pytest tests/test_gaiji_code_assignment.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `render_glyph_bitmap(sequence, font_path=...)`が、フォントを使って文字/sequenceを実際にラスタライズしPNG bytesを返す
-- [x] `bitmap_hash(bitmap)`が、bitmap内容のSHA-256を返す(TASK-M004の`bitmap_hash`カラムと整合)
-- [x] フォントファイルが存在しない・不正な場合に`GlyphRenderError`を送出する
-- [x] `docker/toolchain.Dockerfile`に`fonts-noto-cjk`(pin済みバージョン)が追加される
+- [x] `assign_gaiji_codes(entries)`が、width_class("narrow"/"wide")ごとに独立した採番空間を持つ
+- [x] 各width_class内でsequenceのUnicodeソート順に基づいて決定論的にcodeを割り当てる(入力の並び順に依存しない)
+- [x] 同じ入力集合に対して常に同じ割当結果を返す(冪等性)
+- [x] 不正なwidth_class・重複sequenceに対してエラーを送出する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- gaiji code割当(TASK-M006)・FreePWING連携(TASK-M007)
-- 実際のDocker buildの実行確認(このセッションではDocker実行環境が無いため、Dockerfileの変更内容の妥当性はコードレビューベースで確認する)
+- 実際のFreePWING/EB向けファイル形式への変換(TASK-M007)
+- gaiji.sqlite3への実際の書き込み配線(将来のタスク)
 
 ## 実施結果
 
-- `pyproject.toml`に`Pillow==12.2.0`を依存として追加した(`uv add`で`uv.lock`も更新)。
-- `docker/toolchain.Dockerfile`のruntimeステージに`fonts-noto-cjk=1:20220127+repack1-1`を追加した。バージョンは推測せず、`docker/toolchain.Dockerfile`が既に参照している同一Debian snapshot(2026-07-01時点)からネットワーク経由で実際のpinバージョンを確認して採用した。
-- `src/wikiepwing/gaiji/glyph_renderer.py`に`GlyphRenderError`・`render_glyph_bitmap()`・`bitmap_hash()`・`DEFAULT_FONT_PATH`を実装した。フォント読み込み失敗・グリフ無しをGlyphRenderErrorとして扱う。
-- `tests/test_gaiji_glyph_renderer.py`(新規8件)を実装した。このDev環境(macOS)にはDebianのfonts-noto-cjkが無いため、実際のフォント読み込みが必要なテストはmacOSのCJK対応システムフォント(Hiragino Sans GB等)を候補として探索し、見つからなければ`pytest.skip()`する設計にした(ネットワーク取得はしない)。
-- `tests/test_gaiji_toolchain_definition.py`(新規1件)で、Dockerfileにpin済みfonts-noto-cjkが含まれることを確認した。
-- `make check`(format-check/lint/mypy/pytest 987件)と`git diff --check`が成功した。
+- `src/wikiepwing/gaiji/code_assignment.py`に`GaijiCodeAssignmentError`・`assign_gaiji_codes()`を実装した。width_class("narrow"/"wide")ごとに独立した採番空間を持ち、各グループ内でsequenceのUnicodeソート順(Pythonのデフォルト文字列比較)に基づいて`f"{width_class}-{index:04d}"`形式のcodeを1始まりで割り当てる。
+- `tests/fixtures/handcrafted/halfchars.txt`/`fullchars.txt`(実際のFreePWING gaiji fixture)を確認し、narrow/wideが別々のファイル(=別々のcode空間)で管理される実際の慣習を根拠とした。
+- `tests/test_gaiji_code_assignment.py`(新規8件)で、width_class毎の連番割当・独立したcode空間・Unicodeソート順による決定論的割当・入力順序に依存しない冪等性・空入力・不正width_class・重複sequence・4桁ゼロパディングを確認した。
+- `make check`(format-check/lint/mypy/pytest 996件)と`git diff --check`が成功した。

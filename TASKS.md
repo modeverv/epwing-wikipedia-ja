@@ -627,7 +627,7 @@
 
 **依存:** M004
 
-### TASK-M006 [ ] Gaiji code assignment
+### TASK-M006 [x] Gaiji code assignment
 
 **依存:** M005
 
