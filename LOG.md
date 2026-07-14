@@ -1868,3 +1868,38 @@ git diff --check
 **次タスク**
 
 - TASK-E008 Ingest command
+
+### 2026-07-14 06:10 UTC — TASK-E008
+
+**目的**
+
+- TASK-E003〜E007を結合し、`source.lock.json`のchunkをstreaming取込→raw.sqlite3書込まで行う`wikiepwing ingest`コマンドを実装する。
+
+**変更**
+
+- `src/wikiepwing/ingest/orchestrate.py`に`run_ingest`、`IngestMetrics`、`IngestManifest`、`IngestResult`、`IngestError`を実装した。各chunkを事前に`verify_fingerprint`で検証してから、NDJSON streaming読取→parse→重複解決→安全性検証→repository書込の順で処理し、`batch_size`件ごとにtransaction commitする。
+- `DATA_CONTRACTS.md` 3節のstage manifest契約に沿ったmanifestをatomic書込した(`logical_hash`/image digestはEpic S未整備のためnull)。
+- `src/wikiepwing/cli.py`に`wikiepwing ingest --lock-path`コマンドを追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_ingest_orchestrate.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- TASK-D010の10正常記事+8 edge case(11行)をend-to-endで取り込み、written=17イベント(16 distinct行、うち1件はrevision置換)、rejected=2、duplicate=3、error=3という期待通りの結果を確認した。
+- 標準スイート356件(新規6件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `source_sequence`はchunkごとに0から再開し、chunk跨ぎの一意性・追跡性は保証しない(将来の課題として記録)。
+- stage manifestはingest専用の実装であり、全stage共通化はTASK-I001で行う。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E009 Raw verifier

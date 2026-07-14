@@ -7,14 +7,17 @@ import json
 import os
 import re
 import subprocess
+import sys
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
 from wikiepwing import __version__
 from wikiepwing.config import load_config
 from wikiepwing.doctor import render_doctor_text, run_doctor
+from wikiepwing.ingest.orchestrate import run_ingest
+from wikiepwing.ingest.validate import ValidationLimits
 from wikiepwing.reference.entries import EbEntryAdapter, sample_reference_entries
 from wikiepwing.reference.inventory import (
     build_reference_inventory,
@@ -28,6 +31,7 @@ from wikiepwing.source.auth import EnterpriseAuthClient, HttpAuthTransport
 from wikiepwing.source.downloader import HttpChunkTransport, ResumableChunkDownloader
 from wikiepwing.source.enterprise import HttpSnapshotMetadataTransport, SnapshotMetadataClient
 from wikiepwing.source.inspect import inspect_source
+from wikiepwing.source.lockfile import SourceLockError, parse_source_lock
 from wikiepwing.source.register import LocalSourceFile, register_local_source
 
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{4,64}$")
@@ -244,6 +248,53 @@ def build_parser() -> argparse.ArgumentParser:
         default=5,
         help="number of NDJSON records to sample per chunk (default: 5)",
     )
+    ingest = subparsers.add_parser("ingest", help="stream a Snapshot's chunks into raw.sqlite3")
+    ingest.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    ingest.add_argument(
+        "--lock-path",
+        type=Path,
+        required=True,
+        help="path to the acquired Snapshot's source.lock.json",
+    )
+    ingest.add_argument(
+        "--namespace",
+        type=int,
+        help="override configured source.namespace as the expected article namespace",
+    )
+    ingest.add_argument(
+        "--run-id",
+        type=str,
+        help="run identifier recorded in the stage manifest (default: generated)",
+    )
+    ingest.add_argument(
+        "--raw-database",
+        type=Path,
+        help="raw.sqlite3 output path (default: paths.work/raw.sqlite3)",
+    )
+    ingest.add_argument(
+        "--manifest-path",
+        type=Path,
+        help=(
+            "stage manifest output path "
+            "(default: paths.work/runs/<run-id>/manifests/30-ingest.json)"
+        ),
+    )
+    ingest.add_argument(
+        "--batch-size",
+        type=int,
+        help="override configured ingest.batch_size",
+    )
+    ingest.add_argument(
+        "--git-commit",
+        type=str,
+        help="git commit recorded in the manifest (default: `git rev-parse HEAD`)",
+    )
     return parser
 
 
@@ -404,6 +455,57 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(inspection.payload(), ensure_ascii=False, indent=2, sort_keys=True))
         return 0 if inspection.ok else 1
+    if command == "ingest":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+        lock_path = cast(Path, arguments.lock_path).resolve()
+        try:
+            lock = parse_source_lock(lock_path.read_bytes())
+        except (OSError, SourceLockError) as error:
+            raise SystemExit(f"cannot read source lock {lock_path}: {error}") from error
+
+        ingest_section = config.section("ingest")
+        namespace = cast(int | None, arguments.namespace)
+        if namespace is None:
+            namespace = cast(int, config.section("source")["namespace"])
+        limits = ValidationLimits.from_config(config, expected_namespace_id=namespace)
+        batch_size = cast(int | None, arguments.batch_size) or cast(
+            int, ingest_section["batch_size"]
+        )
+        run_id = cast(str | None, arguments.run_id) or (
+            f"{config.project}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+        )
+        raw_database_path = cast(Path | None, arguments.raw_database) or (
+            config.paths.work / "raw.sqlite3"
+        )
+        manifest_path = cast(Path | None, arguments.manifest_path) or (
+            config.paths.work / "runs" / run_id / "manifests" / "30-ingest.json"
+        )
+        git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+
+        ingest_result = run_ingest(
+            lock,
+            snapshot_directory=lock_path.parent,
+            raw_database_path=raw_database_path,
+            migrations_path=None,
+            manifest_path=manifest_path,
+            run_id=run_id,
+            validation_limits=limits,
+            zstd_level=cast(int, ingest_section["zstd_level"]),
+            batch_size=batch_size,
+            git_commit=git_commit,
+            on_progress=lambda metrics: print(
+                f"records_read={metrics.records_read} "
+                f"records_written={metrics.records_written} "
+                f"records_rejected={metrics.records_rejected}",
+                file=sys.stderr,
+            ),
+        )
+        print(ingest_result.manifest_path)
+        return 0 if ingest_result.manifest.status == "complete" else 1
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0

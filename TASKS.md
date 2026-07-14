@@ -301,7 +301,7 @@
 
 **実装:** transactions、prepared SQL、foreign keys。
 
-### TASK-E008 [ ] Ingest command
+### TASK-E008 [x] Ingest command
 
 **依存:** E003-E007
 

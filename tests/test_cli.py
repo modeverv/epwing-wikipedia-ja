@@ -186,6 +186,85 @@ class CliTest(unittest.TestCase):
                 [{"identifier": "1"}],
             )
 
+    def test_ingest_help(self) -> None:
+        result = self.run_cli("ingest", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--lock-path", result.stdout)
+        self.assertIn("--batch-size", result.stdout)
+        self.assertIn("--raw-database", result.stdout)
+
+    def test_ingest_writes_manifest_and_raw_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            sources = temporary / "sources"
+            work = temporary / "work"
+            tar_path = temporary / "downloads" / "chunk_0.tar.gz"
+            tar_path.parent.mkdir(parents=True)
+            record = {
+                "identifier": 1,
+                "name": "Emacs",
+                "url": "https://ja.wikipedia.org/wiki/Emacs",
+                "namespace": {"identifier": 0},
+                "date_modified": "2026-06-01T00:00:00Z",
+                "version": {"identifier": 1},
+                "article_body": {"html": "<p>x</p>", "wikitext": "x"},
+                "license": [],
+                "redirects": [],
+                "categories": [],
+                "templates": [],
+            }
+            body = (json.dumps(record) + "\n").encode("utf-8")
+            with tarfile.open(tar_path, mode="w:gz") as archive:
+                info = tarfile.TarInfo(name="chunk_0.ndjson")
+                info.size = len(body)
+                archive.addfile(info, io.BytesIO(body))
+            config = temporary / "ingest.toml"
+            config.write_text(
+                f'[paths]\nsources = "{sources}"\nwork = "{work}"\n', encoding="utf-8"
+            )
+
+            register_result = self.run_cli(
+                "register-local-source",
+                "--config",
+                str(config),
+                "--namespace",
+                "0",
+                "--snapshot-identifier",
+                "jawiki_namespace_0",
+                "--snapshot-version",
+                "local-2026-07-14",
+                "--date-modified",
+                "2026-07-14T00:00:00Z",
+                "--file",
+                f"{tar_path}:jawiki_namespace_0_chunk_0",
+                "--git-commit",
+                "abc1234",
+            )
+            self.assertEqual(register_result.returncode, 0, register_result.stderr)
+            lock_path = register_result.stdout.strip()
+
+            ingest_result = self.run_cli(
+                "ingest",
+                "--config",
+                str(config),
+                "--lock-path",
+                lock_path,
+                "--git-commit",
+                "abc1234",
+                "--run-id",
+                "test-run",
+            )
+
+            self.assertEqual(ingest_result.returncode, 0, ingest_result.stderr)
+            manifest_path = Path(ingest_result.stdout.strip())
+            self.assertTrue(manifest_path.is_file())
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "complete")
+            self.assertEqual(manifest["metrics"]["records_read"], 1)
+            self.assertEqual(manifest["metrics"]["records_written"], 1)
+            self.assertTrue((work / "raw.sqlite3").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()
