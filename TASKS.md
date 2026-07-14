@@ -567,7 +567,7 @@
 
 **依存:** K001
 
-### TASK-K008 [ ] Infobox field parser
+### TASK-K008 [x] Infobox field parser
 
 **依存:** K007
 

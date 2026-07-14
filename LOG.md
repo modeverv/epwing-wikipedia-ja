@@ -3838,3 +3838,35 @@ git diff --check
 **次タスク**
 
 - TASK-K008 Infobox field parser(依存: K007)
+
+### 2026-07-15 05:40 UTC — TASK-K008
+
+**目的**
+
+- `ARCHITECTURE.md` 11.6(InfoboxBlock: title/fields/images)の中間表現を、TASK-K007で検出したinfobox `<table>`から抽出する。
+
+**変更**
+
+- `src/wikiepwing/normalize/infobox_fields.py`に`RawInfoboxField`・`RawInfobox`・`parse_infobox_dom()`を実装した。TASK-K001の`parse_table_dom`を再利用し、行を3パターン(単一結合ヘッダーセル=title、2セル=field、`<img>`を含む行/セル=画像参照)に分類する。それ以外の行構造(入れ子table、区切り行等)は静かにスキップする(docstringに明記した既知の単純化)。画像は`<img>`の`src`属性を生文字列として保持するのみで、`MediaReference`化は対象外(別epic)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_infobox_fields.py
+make check
+git diff --check
+```
+
+**結果**
+
+- title行抽出・2セルfield抽出・画像行/field値内の画像`src`抽出・title無し・未対応行構造のスキップ・`parse_table_dom`からのDiagnostic伝播を7件のテストで確認した。
+- 標準スイート896件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実装中、Bashツール(コード実行系コマンド全般: `uv run`/`pytest`/venv直接実行)が長時間利用不可になる障害が発生した(単純なファイル操作コマンドは影響を受けなかった)。この間、新規コードとテストを`RawTableCell`/`RawTableRow`の既存定義と突き合わせて手動でトレースし正しさを確認した上で待機し、復旧後に実際のテスト実行で検証した(ユーザーへ透明性のある状況報告を行った)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-K009 Infobox renderer(依存: K008,H007)
