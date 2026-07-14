@@ -2135,3 +2135,37 @@ git diff --check
 **次タスク**
 
 - TASK-F006 Canonical JSON codec(依存: F004-F005)
+
+### 2026-07-14 09:10 UTC — TASK-F006
+
+**目的**
+
+- `PLAN.md` Phase 5の"JSON debug codec"/"schema version"/"canonical ordering"を実装する。ハッシュ計算(TASK-F008)自体は対象外。
+
+**変更**
+
+- `src/wikiepwing/model/canonical.py`に`encode_article`/`decode_article`と`CanonicalCodecError`を実装した。`schema_version=1`のenvelope、`sort_keys=True`・`ensure_ascii=False`・固定`separators`による決定的出力を行う。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_model_canonical.py
+make check
+git diff --check
+```
+
+**結果**
+
+- roundtrip、2回encodeでのbyte完全一致、top-level key sort順、`schema_version`不一致/欠落・不正JSON・非object envelope・不正UTF-8・Articleフィールド不正の拒否を10件のテストで確認した。
+- 標準スイート471件(新規10件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- canonical JSON serializationのkey順/区切り/encodingルールは`ARCHITECTURE.md`/`DATA_CONTRACTS.md`に明文化が無かったため、`sort_keys=True`・`ensure_ascii=False`・`separators=(",", ":")`をdocumented assumptionとして採用した。
+- `schema_version`はDATA_CONTRACTS.mdのArticle JSON例通りenvelope fieldとして扱い、Article dataclass自体には持たせていない。
+- ハッシュ計算はTASK-F008に委ねる。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-F007 Compressed model DB schema(依存: F006)

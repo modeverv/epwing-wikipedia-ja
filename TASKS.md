@@ -343,7 +343,7 @@
 
 **依存:** F004
 
-### TASK-F006 [ ] Canonical JSON codec
+### TASK-F006 [x] Canonical JSON codec
 
 **依存:** F004-F005
 
