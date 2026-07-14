@@ -277,7 +277,7 @@
 
 **実装:** no full extraction、member validation。
 
-### TASK-E004 [ ] NDJSON record parser
+### TASK-E004 [x] NDJSON record parser
 
 **依存:** E003
 

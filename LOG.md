@@ -1735,3 +1735,36 @@ git diff --check
 **次タスク**
 
 - TASK-E004 NDJSON record parser
+
+### 2026-07-14 05:05 UTC — TASK-E004
+
+**目的**
+
+- 1つのNDJSON行を型付き`RawArticle`へparseする。
+
+**変更**
+
+- `src/wikiepwing/ingest/record_parser.py`に`RawArticle`、`LicenseRecord`、`SourceImage`、`parse_record`、`RecordParseError`を実装した。required field(`identifier`/`version.identifier`/`name`/`namespace.identifier`/`url`/`date_modified`/`article_body`)を検証し、optional field(`html`/`wikitext`/`redirects`/`categories`/`templates`/`license`/`image`)の省略を許容する。
+- `source_hash`は生NDJSON行のSHA-256とした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_record_parser.py
+make check
+git diff --check
+```
+
+**結果**
+
+- TASK-D010の10正常記事+8 edge caseすべてを実際にparseし、期待通りの結果(html/wikitext省略、同page ID別revision、重複hash、conflicting hash等)を確認した。
+- 標準スイート317件(新規19件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `image`フィールドの実shapeは未確認(実サンプルに存在しなかった)ため、`content_url`/`url`いずれかをbest-effortで受け入れる仮定とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E005 Record safety validation
