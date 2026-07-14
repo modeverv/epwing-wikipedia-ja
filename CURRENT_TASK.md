@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-M007
+TASK-M008
 
 ## 目的
 
-`ARCHITECTURE.md` 17.2(FreePWING adapter)・18.3/18.4を完成させ、TASK-M005(bitmap生成)・TASK-M006(決定論的code割当)の出力を、実際の`fpwmake`が読み込むgaiji build入力(`halfchars.txt`/`fullchars.txt`+個別XBMファイル)へ変換する。`tests/fixtures/handcrafted/halfchars.txt`("half-mark half16.xbm")・`fullchars.txt`・`generate_gaiji.pl`(実際に`fpwmake`へ渡り動作確認済みのXBM生成スクリプト)をリファレンス実装として、同じXBMバイト形式(LSB-first、1=前景/黒)で出力する。
+`ARCHITECTURE.md` 18.5(D分類の文字はreplacement markerだけで済ませず、コードポイント表記をfallbackにする。例: `[U+1Fxxx]`。件数・頻出順・記事例をreportへ出す)を実装する。(1)コードポイント表記fallback文字列を生成する関数、(2)出現をcharacterごとに集計し、頻出順・記事例(件数上限付き)を取得できる`UnrepresentableTracker`を実装する。実際のreport出力フォーマット自体はTASK-M009(依存: M003-M008)の対象とする。
 
 ## 事前条件
 
@@ -14,16 +14,14 @@ TASK-M007
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-M007(依存: M006,H009)を読んだ
-- [x] `tests/fixtures/handcrafted/generate_gaiji.pl`の実際のXBM出力形式(`#define {name}_width`/`_height`、`static unsigned char {name}_bits[] = {...}`)を確認した
-- [x] `halfchars.txt`/`fullchars.txt`の行形式(`<name> <xbmファイル名>`)を確認した
-- [x] TASK-M005の`render_glyph_bitmap`(PNG出力)・TASK-M006の`assign_gaiji_codes`(narrow/wideの決定論的code)を確認した
-- [x] EB Library/fpwmakeのnarrow/wide gaiji寸法が8x16/16x16であることを既存fixtureから確認した
+- [x] `TASKS.md`のTASK-M008(依存: M002)を読んだ
+- [x] `ARCHITECTURE.md` 18.5(fallback例`[U+1Fxxx]`、件数・頻出順・記事例)を再確認した
+- [x] `DATA_CONTRACTS.md` 11(Diagnostic details contract、詳細サイズに上限を設ける慣習)を確認し、記事例の保持数にも上限を設ける根拠とした
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/gaiji/freepwing_gaiji.py`(新規: `xbm_bytes_from_image()`, `render_glyph_as_xbm()`, `write_gaiji_build_files()`)
-- `tests/test_gaiji_freepwing_gaiji.py`(新規)
+- `src/wikiepwing/gaiji/unrepresentable.py`(新規: `unrepresentable_fallback()`, `UnrepresentableTracker`, `UnrepresentableStat`)
+- `tests/test_gaiji_unrepresentable.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,27 +29,26 @@ TASK-M007
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_gaiji_freepwing_gaiji.py
+uv run pytest tests/test_gaiji_unrepresentable.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `xbm_bytes_from_image(image, name)`が、PIL 1-bit imageから`generate_gaiji.pl`と同じテキスト形式(`#define`/`static unsigned char`)のXBM bytesを生成する(既知の小さな画像で厳密にバイト列を検証する)
-- [x] `render_glyph_as_xbm(sequence, font_path=..., width_class=...)`が、narrow(8x16)/wide(16x16)の寸法でフォントからXBMを生成する
-- [x] `write_gaiji_build_files(entries, destination_dir)`が、各gaijiのXBMファイルと`halfchars.txt`/`fullchars.txt`(`<name> <xbmファイル名>`形式)を書き出す
+- [x] `unrepresentable_fallback(character)`が`"[U+XXXX]"`形式(大文字hex、4桁以上、上位面は桁数を拡張)を返す
+- [x] `UnrepresentableTracker.record()`が文字ごとの出現回数を集計する
+- [x] `UnrepresentableTracker.most_frequent()`が頻出順(降順、同数はコードポイント順で安定)にソートされた統計を返す
+- [x] 記事例(page_id/title)の保持数に上限があり、上限を超えても件数カウント自体は正しく増え続ける
 - [x] `make check`が成功する
 
 ## 非対象
 
-- gaiji.sqlite3への実際の書き込み配線・normalize/renderパイプラインへの実配線(将来のタスク)
-- 実際のDocker/`fpwmake`実行による統合確認(このセッションではDocker実行環境が無いため、既存fixtureとのバイト形式一致をコードレビュー・ユニットテストで確認する)
+- 実際のreportファイル出力・フォーマット(TASK-M009)
 
 ## 実施結果
 
-- `src/wikiepwing/gaiji/freepwing_gaiji.py`に`FreePwingGaijiError`・`GaijiBuildEntry`・`xbm_bytes_from_image()`・`render_glyph_as_xbm()`・`write_gaiji_build_files()`を実装した。XBMのビット詰め順(LSB-first、bit=1が前景/黒)を、実際に動作確認済みの`tests/fixtures/handcrafted/generate_gaiji.pl`のバイト列を手動でデコードして確認した上で実装し、既知の小さな画像で厳密にバイト列が一致することをテストで検証した。
-- `render_glyph_as_xbm`はnarrow(8x16)/wide(16x16)の寸法でフォントからラスタライズし、`write_gaiji_build_files`は各gaijiのXBMファイルと`halfchars.txt`/`fullchars.txt`(`<name> <xbmファイル名>`形式、実fixtureと同じ行形式)を書き出す。
-- mypy strictで`Image.load()`の戻り値型(`PixelAccess | None`)に関するエラーを検出し、None チェックを追加して修正した。
-- `tests/test_gaiji_freepwing_gaiji.py`(新規7件)で、実fixtureパターンとのバイト完全一致・非8倍数幅の拒否・全白画像でのゼロバイト・narrow/wideの寸法・build files書き出し(XBM+リストファイル)・空エントリでの空リストファイルを確認した。
-- `make check`(format-check/lint/mypy/pytest 1003件)と`git diff --check`が成功した。
+- `src/wikiepwing/gaiji/unrepresentable.py`に`unrepresentable_fallback()`・`UnrepresentableExample`・`UnrepresentableStat`・`UnrepresentableTracker`を実装した。fallbackは`"[U+XXXX]"`(4桁以上、必要に応じ桁数拡張)。Trackerは文字ごとの出現回数を無制限にカウントしつつ、記事例(page_id/title)の保持数だけ上限(デフォルト5件)を設ける設計にした。
+- mypy strictで`sorted()`が`list`を返しタプル型注釈と不一致になるエラーを検出し、`tuple()`で包んで修正した。
+- `tests/test_gaiji_unrepresentable.py`(新規13件)で、fallback形式(BMP/補助面)・出現回数集計・頻出順ソート・同数時のコードポイント順tie-break・limit・記事例上限とカウントの独立性・page_id/titleの保持・総出現数・distinct文字一覧・不正なmax_examples・0件上限時の挙動を確認した。
+- `make check`(format-check/lint/mypy/pytest 1016件)と`git diff --check`が成功した。

@@ -4372,3 +4372,37 @@ git diff --check
 **次タスク**
 
 - TASK-M008 Unrepresentable fallback(依存: M002)
+
+### 2026-07-15 11:30 UTC — TASK-M008
+
+**目的**
+
+- `ARCHITECTURE.md` 18.5(D分類の文字はコードポイント表記へfallback、件数・頻出順・記事例をreportへ出す)を実装する。実際のreport出力(TASK-M009)の手前の、fallback文字列生成と出現統計の集計を行う。
+
+**変更**
+
+- `src/wikiepwing/gaiji/unrepresentable.py`に`unrepresentable_fallback()`・`UnrepresentableExample`・`UnrepresentableStat`・`UnrepresentableTracker`を実装した。fallbackは`"[U+XXXX]"`形式(4桁以上、補助面は桁数拡張)。Trackerは文字ごとの出現回数を無制限にカウントしつつ、`DATA_CONTRACTS.md` 11の詳細サイズ上限の慣習に倣い記事例(page_id/title)の保持数だけ上限(デフォルト5件)を設ける設計にした。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_unrepresentable.py
+make check
+git diff --check
+```
+
+**結果**
+
+- fallback形式(BMP/補助面)・出現回数集計・頻出順ソート・同数時のコードポイント順tie-break・limit・記事例上限とカウントの独立性・page_id/titleの保持・総出現数・distinct文字一覧・不正なmax_examples・0件上限時の挙動を13件のテストで確認した。
+- 標準スイート1016件(新規13件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- mypy strictで`sorted()`が`list`を返しタプル型注釈と不一致になるエラーを検出し、`tuple()`で包んで修正した。
+- 記事例の保持数に上限を設けたが出現カウント自体は無制限にした設計は、大規模ビルドでのメモリ使用量を抑えつつ正確な統計を保つための判断。
+- 実際のreportファイル出力・フォーマットはTASK-M009へ委ねた。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M009 Unicode report(依存: M003-M008)
