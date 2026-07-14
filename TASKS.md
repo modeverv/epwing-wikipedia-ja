@@ -555,7 +555,7 @@
 
 **依存:** K003,H007
 
-### TASK-K005 [ ] Wide table renderer
+### TASK-K005 [x] Wide table renderer
 
 **依存:** K003,H007
 

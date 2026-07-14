@@ -259,10 +259,14 @@ def test_simple_table_renders_as_grid_like_text() -> None:
     assert "Small | 1" in text
 
 
-def test_non_simple_table_renders_a_placeholder_without_losing_the_caption() -> None:
+def test_wide_table_with_header_row_renders_labeled_vertical_records() -> None:
     table = TableBlock(
         caption=(TextInline(value="Wide data"),),
-        rows=((_cell("a"), _cell("b")),),
+        rows=(
+            (_cell("Name", is_header=True), _cell("Size", is_header=True)),
+            (_cell("Small"), _cell("1")),
+            (_cell("Large"), _cell("2")),
+        ),
         source_class_names=(),
         complexity="wide",
     )
@@ -272,7 +276,41 @@ def test_non_simple_table_renders_a_placeholder_without_losing_the_caption() -> 
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
     assert "Wide data" in text
-    assert "簡略化して表示できません" in text
+    assert "Name: Small" in text
+    assert "Size: 1" in text
+    assert "Name: Large" in text
+    assert "Size: 2" in text
+
+
+def test_wide_table_without_header_row_falls_back_to_generic_labels() -> None:
+    table = TableBlock(
+        caption=(),
+        rows=((_cell("a"), _cell("b")),),
+        source_class_names=(),
+        complexity="wide",
+    )
+    article = _make_article(blocks=(table,))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "列1: a" in text
+    assert "列2: b" in text
+
+
+def test_complex_table_also_renders_as_vertical_records() -> None:
+    table = TableBlock(
+        caption=(),
+        rows=((_cell("Header", is_header=True),), (_cell("Value"),)),
+        source_class_names=(),
+        complexity="complex",
+    )
+    article = _make_article(blocks=(table,))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "Header: Value" in text
 
 
 def test_unsupported_empty_table_renders_only_its_caption() -> None:

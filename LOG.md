@@ -3740,3 +3740,36 @@ git diff --check
 **次タスク**
 
 - TASK-K005 Wide table renderer(依存: K003,H007)
+
+### 2026-07-15 04:15 UTC — TASK-K005
+
+**目的**
+
+- `PLAN.md` Phase 11の出口条件("wide table readable vertical layout")と`ARCHITECTURE.md` 16.3("wide": 1行をrecordとして縦表示)を実装する。TASK-K004の暫定プレースホルダ(wide/complex)を実際の縦record表示に置き換える。
+
+**変更**
+
+- `render/mini_layout.py`に`_render_table_as_records()`を実装した。先頭行が全てヘッダーセルなら、その文字列を以降の各行のフィールドラベルとして使い(無ければ「列N」にフォールバック)、「ラベル: 値」を1行ずつレコード間に空行を挟んで出力する。
+- "complex"専用のレンダラtaskがTASKS.mdに存在しないことを確認済み(TASK-K004のLOGで気づいた点)であるため、16.3の"complex"("row/sectionごとのkey-value化")が"wide"の縦record表示と方針的に同一であると判断し、本レンダラを`complexity in ("wide", "complex")`の両方に適用した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_mini_layout.py
+make check
+git diff --check
+```
+
+**結果**
+
+- ヘッダー行有り(ラベルとして使用)・ヘッダー行無し(汎用ラベルへフォールバック)・"complex"での縦record表示を3件のテストで確認した(既存の暫定プレースホルダテストを置き換え)。
+- 標準スイート880件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 結合セル(rowspan/colspan)を持つ"complex"テーブルは、TASK-K002のグリッド位置計算を使わず、DOM順にそのまま「ラベル: 値」として展開する簡易実装に留めた。正確なグリッド位置に基づくラベル対応付けが必要になれば将来のタスクとする。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-K006 Oversized table policy(依存: K004-K005)

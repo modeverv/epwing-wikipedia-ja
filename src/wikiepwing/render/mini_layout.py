@@ -165,9 +165,38 @@ def _render_table(block: TableBlock, prefix: str) -> list[str]:
     if block.complexity == "simple":
         for row in block.rows:
             lines.append(prefix + " | ".join(_flatten_table_cell(cell) for cell in row))
-    elif block.rows:
-        lines.append(f"{prefix}[表: {len(block.rows)}行、簡略化して表示できません]")
+    elif block.complexity in ("wide", "complex"):
+        lines.extend(_render_table_as_records(block, prefix))
     lines.append("")
+    return lines
+
+
+def _render_table_as_records(block: TableBlock, prefix: str) -> list[str]:
+    """Render each row as a vertical "label: value" record (ARCHITECTURE.md 16.3 wide/complex).
+
+    If the first row is entirely header cells, its text becomes each
+    subsequent row's field labels; otherwise cells fall back to generic
+    "列N" labels. Cells from a merged (rowspan/colspan) table are expanded
+    in DOM order without recomputing their exact grid position -- this
+    task keeps the mapping simple rather than pairing every cell with the
+    grid position TASK-K002 could resolve.
+    """
+    rows = block.rows
+    header_labels: list[str] | None = None
+    if rows and rows[0] and all(cell.is_header for cell in rows[0]):
+        header_labels = [_flatten_table_cell(cell) for cell in rows[0]]
+        rows = rows[1:]
+
+    lines: list[str] = []
+    for row in rows:
+        for index, cell in enumerate(row):
+            label = (
+                header_labels[index]
+                if header_labels is not None and index < len(header_labels)
+                else f"列{index + 1}"
+            )
+            lines.append(f"{prefix}{label}: {_flatten_table_cell(cell)}")
+        lines.append("")
     return lines
 
 
