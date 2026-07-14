@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-D009
+TASK-D010
 
 ## 目的
 
-`source.lock.json`を読み、記録済みfingerprintとの再検証(file)、tar構造の列挙(tar)、NDJSON内容の bounded sample(NDJSON)を行うinspectコマンドを実装する。
+TASK-D009で実データにより確定したWikimedia Enterprise記事NDJSONの実フィールド構造(`identifier`/`version.identifier`/`name`/`namespace.identifier`/`is_part_of`/`in_language`/`article_body.html`/`article_body.wikitext`/`license`/`redirects`/`categories`/`templates`)に基づき、EPIC E(Raw ingest)が使う10記事の正常fixtureと、`PLAN.md` Phase 4記載のedge case fixtureを作成する。credentials・実個人情報は一切含めない。
 
 ## 事前条件
 
@@ -14,17 +14,17 @@ TASK-D009
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-D009を読んだ
-- [x] `ARCHITECTURE.md` 7.1(`wikiepwing source inspect`)を確認した
-- [x] `PLAN.md` Phase 3出口条件(「source lockから再検証可能」)を確認した
-- [x] TASK-D004(`parse_source_lock`)、TASK-D006(`compute_fingerprint`)、TASK-D007/D008で生成される`source.lock.json`の実構造を確認した
+- [x] `TASKS.md`のTASK-D010を読んだ
+- [x] `PLAN.md` Phase 4の「開発用データ」節(10記事NDJSON fixture/edge case fixture/malformed fixture)とfixture edge case一覧を確認した
+- [x] `ARCHITECTURE.md` 10.3(`RawArticle`)とdata dictionary候補フィールドを確認した
+- [x] TASK-D009で実際に取得した実記事レコード(`article_body.html`/`license`/`redirects`/`version`等)の実構造を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/source/inspect.py`
-- `src/wikiepwing/cli.py`
-- `tests/test_source_inspect.py`
-- `tests/test_cli.py`
+- `tests/fixtures/enterprise/normal_articles.ndjson`
+- `tests/fixtures/enterprise/edge_case_articles.ndjson`
+- `tests/fixtures/enterprise/edge_case_index.json`
+- `tests/test_enterprise_fixtures.py`
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -32,39 +32,36 @@ TASK-D009
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_source_inspect.py tests/test_cli.py
+uv run pytest tests/test_enterprise_fixtures.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `source.lock.json`をparseし、記録されたfilesそれぞれの実際のsize/SHA-256を再計算して一致を判定する
-- [x] symlink登録(`register-local-source --no-copy`)されたfileも解決済みの実体を再検証できる
-- [x] fingerprintが一致したfileのみtar構造(member名・size)を列挙する
-- [x] NDJSON member(`.ndjson`で終わる名前)を検出し、bounded byte数・件数でJSON行をsample・parseする
-- [x] 不正なtar・不正なNDJSON行を明確なエラーとして報告する
-- [x] `wikiepwing inspect-source --lock-path`がオフラインで動作し、不一致があれば非ゼロ終了コードを返す
+- [x] `normal_articles.ndjson`が10行、各行が実フィールド構造を持つ有効なJSON objectである
+- [x] edge case fixtureが`PLAN.md`記載の全項目(HTMLなし+Wikitextあり、同page ID revision違い、同revision同hash重複、同revision異hash、title長すぎ、invalid URL、empty license、large article)を含む
+- [x] `edge_case_index.json`が各edge caseのシナリオ名と対応行番号を記録する
+- [x] fixtureにtoken・実credentials・実個人情報を含まない
+- [x] テストが各fixtureの行数・JSON妥当性・各edge caseの実在を検証する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際のraw ingest処理(EPIC E)
-- fixture NDJSONの作成(TASK-D010)
-- HTML/Wikitextの検証(EPIC E/Gの対象)
+- 実際のNDJSON parser・重複解決ロジックの実装(EPIC E)
+- malformed(JSON構文自体が壊れている)fixtureの作成(将来のE004/E005タスクで必要に応じて追加)
+- 実jawiki記事本文の再現(手作りの安全な代替内容を使う)
 
 ## 実施結果
 
-- `src/wikiepwing/source/inspect.py`に`inspect_source`、`SourceInspection`、`FileInspection`、`TarMember`、`NdjsonSample`、`InspectError`を実装した。
-- lockの各fileについて`compute_fingerprint`で実際のsize/SHA-256を再計算し、記録値と比較する。symlink登録(`register-local-source --no-copy`)されたfileは解決済みの実体を対象にする。
-- fingerprintが一致したfileのみ`tarfile`でtar構造を列挙し、`.ndjson`で終わるmemberを検出してbounded byte数・件数でJSON行をsample・parseする(`readline(N+1)`で1行あたりのメモリを上限管理)。
-- 不正なtar・不正なNDJSON行・不在file・lock自体の破損を明確な`InspectError`として拒否する。
-- `src/wikiepwing/cli.py`に`wikiepwing inspect-source --lock-path --sample-lines`コマンドを追加した。JSON結果を出力し、不一致があれば終了コード1を返す。完全にオフラインで動作する。
-- `tests/test_source_inspect.py`に14件、`tests/test_cli.py`に2件(`--help`とregister→inspectのend-to-end)のテストを追加した。
-- format-check、ruff lint、mypy strict、標準スイート254件、`git diff --check`が成功した。
-- 実credentialsで`acquire`→`inspect-source`をend-to-endで実行し(project=aawiki)、`ok: true`、tar member `chunk_0.ndjson`、NDJSON sample1件を正しく取得できることを実データで確認した。sample内容から実際のWME記事レコード全フィールド(`article_body.html`、`license`、`redirects`、`version`等)が判明し、将来のEPIC E(Raw ingest)実装の参考情報として有用だった。
+- `tests/fixtures/enterprise/normal_articles.ndjson`にTASK-D009で確認した実フィールド構造(`identifier`/`name`/`url`/`namespace.identifier`/`in_language`/`is_part_of`/`date_modified`/`version.identifier`/`article_body.html`+`wikitext`/`license`/`redirects`/`categories`/`templates`)を持つ10記事(Emacs、Linux等、既存fixtureと一貫したテーマ)を作成した。
+- `tests/fixtures/enterprise/edge_case_articles.ndjson`(11行)に`PLAN.md`記載の全8種のedge case(HTMLなし+Wikitextあり、同page ID別revision、同revision同hash重複、同revision異hash、title長すぎ、invalid URL、empty license、large article)を作成した。
+- `tests/fixtures/enterprise/edge_case_index.json`で各シナリオ名と対応行番号(0-indexed)を記録した。
+- `tests/test_enterprise_fixtures.py`に12件のテスト(行数、必須フィールド、secrets不在、各edge caseの実在)を追加した。
+- fixture作成中、Bashツールのコード実行系(`uv run`)が一時的に利用不能になったため、`jq`/`sed`(read-only系)でJSON妥当性と各edge caseの内容を1行ずつ手動検証してから、復旧後に`uv run pytest`で最終確認した。
+- format-check、ruff lint、mypy strict、標準スイート266件、`git diff --check`が成功した。
 
 **判断・注意点**
 
-- `tarfile.getmembers()`はtar形式の性質上、archive全体を順次スキャンする(central directoryが無いため)。bytes-in-memoryは境界内(streaming)だが、大きなchunk(実測300MB超)ではtar構造列挙に時間がかかる。これは「開発者による手動inspect」用途として許容範囲と判断した。
-- HTML/Wikitextの内容検証自体は対象外とし、単にNDJSON行がJSON objectとしてparseできることのみ確認する。
+- 実jawiki記事本文を再現するのではなく、既存のhandcrafted fixture(Emacs/Linux/Wikipedia系)と一貫したテーマの安全な合成内容を使った。credentials・実個人情報は一切含まれない(テストで`WME_*`/`Bearer `マーカーの不在も確認)。
+- malformed(JSON構文自体が壊れている)fixtureは対象外とし、将来のE004/E005タスクで必要に応じて追加する。

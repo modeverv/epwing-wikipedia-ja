@@ -1,0 +1,12 @@
+{
+  "scenarios": {
+    "html_missing_wikitext_present": [0],
+    "same_page_id_different_revision": [1, 2],
+    "same_revision_duplicate_hash": [3, 4],
+    "same_revision_different_hash": [5, 6],
+    "title_too_long": [7],
+    "invalid_url": [8],
+    "empty_license": [9],
+    "large_article": [10]
+  }
+}

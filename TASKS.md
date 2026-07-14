@@ -249,7 +249,7 @@
 
 **実装:** lock/file/tar/NDJSON sample inspection。
 
-### TASK-D010 [ ] Build sanitized NDJSON fixtures
+### TASK-D010 [x] Build sanitized NDJSON fixtures
 
 **依存:** D009
 

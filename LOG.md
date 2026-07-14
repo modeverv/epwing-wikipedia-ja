@@ -1600,3 +1600,37 @@ git diff --check
 **次タスク**
 
 - TASK-D010 Build sanitized NDJSON fixtures
+
+### 2026-07-14 04:00 UTC — TASK-D010
+
+**目的**
+
+- TASK-D009で確認した実フィールド構造に基づき、EPIC E(Raw ingest)が使う10記事の正常fixtureと`PLAN.md`記載のedge case fixtureを作成する。
+
+**変更**
+
+- `tests/fixtures/enterprise/normal_articles.ndjson`(10記事)、`edge_case_articles.ndjson`(11行、8種のedge case)、`edge_case_index.json`(シナリオ名→行番号)を追加した。
+- `tests/test_enterprise_fixtures.py`に12件のテスト(行数、必須フィールド、secrets不在、各edge caseの実在)を追加した。
+- 実jawiki記事本文の再現ではなく、既存のhandcrafted fixture(Emacs/Linux系)と一貫したテーマの安全な合成内容を使った。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_enterprise_fixtures.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート266件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- fixture作成中にBashツールのコード実行系(`uv run`)が一時的に利用不能になったため、`jq`/`sed`で各edge caseの内容を1行ずつ手動検証してから、復旧後に自動テストで最終確認する手順を取った。
+- malformed(JSON構文自体が壊れている)fixtureは対象外とし、将来のE004/E005タスクへ委ねた。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- EPIC E(Raw ingest)のTASK-E001 raw DB migrations(依存: A003, D010は完了)
