@@ -293,6 +293,64 @@ def test_rerun_over_completed_articles_is_idempotent(tmp_path: Path) -> None:
     assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
+def test_ingest_skips_rerun_when_previous_run_is_complete_and_unchanged(tmp_path: Path) -> None:
+    acquired = _register(tmp_path)
+    raw_database_path = tmp_path / "work" / "raw.sqlite3"
+    manifest_path = tmp_path / "manifests" / "30-ingest.json"
+
+    first = run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=raw_database_path,
+        migrations_path=MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-one",
+        validation_limits=_limits(),
+    )
+
+    second = run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=raw_database_path,
+        migrations_path=MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-two",
+        validation_limits=_limits(),
+    )
+
+    assert second.manifest.run_id == first.manifest.run_id
+    assert second.manifest.status == "complete"
+
+
+def test_ingest_force_reruns_despite_complete_manifest(tmp_path: Path) -> None:
+    acquired = _register(tmp_path)
+    raw_database_path = tmp_path / "work" / "raw.sqlite3"
+    manifest_path = tmp_path / "manifests" / "30-ingest.json"
+
+    run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=raw_database_path,
+        migrations_path=MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-one",
+        validation_limits=_limits(),
+    )
+
+    second = run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=raw_database_path,
+        migrations_path=MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-two",
+        validation_limits=_limits(),
+        force=True,
+    )
+
+    assert second.manifest.run_id == "run-two"
+
+
 def test_manifest_status_is_failed_when_a_chunk_fails_mid_run(tmp_path: Path) -> None:
     acquired = _register(tmp_path)
     # replace the second chunk with a validly-sized-and-hashed archive that has a

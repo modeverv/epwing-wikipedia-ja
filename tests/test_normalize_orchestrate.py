@@ -183,5 +183,65 @@ def test_normalize_force_proceeds_over_running_manifest(tmp_path: Path) -> None:
     assert result.manifest.status == "complete"
 
 
+def test_normalize_skips_rerun_when_previous_run_is_complete_and_unchanged(
+    tmp_path: Path,
+) -> None:
+    raw_database_path = _build_raw_database(tmp_path)
+    model_database_path = tmp_path / "work" / "model.sqlite3"
+    manifest_path = tmp_path / "manifests" / "40-normalize.json"
+
+    first = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=model_database_path,
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-one",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+    )
+
+    second = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=model_database_path,
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-two",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+    )
+
+    assert second.manifest.run_id == first.manifest.run_id
+    assert second.manifest.status == "complete"
+
+
+def test_normalize_force_reruns_despite_complete_manifest(tmp_path: Path) -> None:
+    raw_database_path = _build_raw_database(tmp_path)
+    model_database_path = tmp_path / "work" / "model.sqlite3"
+    manifest_path = tmp_path / "manifests" / "40-normalize.json"
+
+    run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=model_database_path,
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-one",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+    )
+
+    second = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=model_database_path,
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=manifest_path,
+        run_id="run-two",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+        force=True,
+    )
+
+    assert second.manifest.run_id == "run-two"
+
+
 def test_read_manifest_status_returns_none_when_missing(tmp_path: Path) -> None:
     assert read_manifest_status(tmp_path / "missing.json") is None

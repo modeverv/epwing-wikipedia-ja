@@ -495,7 +495,7 @@
 
 **依存:** I002-I004
 
-### TASK-I006 [ ] `--from-stage` and `--force-stage`
+### TASK-I006 [x] `--from-stage` and `--force-stage`
 
 **依存:** I005
 

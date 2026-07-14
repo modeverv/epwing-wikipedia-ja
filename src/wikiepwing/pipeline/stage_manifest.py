@@ -16,6 +16,7 @@ delegates the actual file I/O and validation to this module.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
 
@@ -98,6 +99,15 @@ def extract_status(payload: dict[str, object], manifest_path: Path) -> str:
     if not isinstance(status, str) or not status:
         raise StageManifestError(f"existing manifest {manifest_path} has no valid status field")
     return status
+
+
+def parse_manifest_timestamp(value: object) -> datetime | None:
+    """Parse a manifest `started_at`/`completed_at` field back into a datetime."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise StageManifestError(f"manifest timestamp must be a string: {value!r}")
+    return datetime.fromisoformat(value)
 
 
 def write_stage_manifest_payload(payload: dict[str, object], destination: Path) -> None:

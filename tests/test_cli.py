@@ -480,6 +480,186 @@ class CliTest(unittest.TestCase):
             self.assertTrue(verification["ok"])
             self.assertEqual(verification["entry_count"], 1)
 
+    def test_build_help(self) -> None:
+        result = self.run_cli("build", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--lock-path", result.stdout)
+        self.assertIn("--from-stage", result.stdout)
+        self.assertIn("--force-stage", result.stdout)
+
+    def _register_and_lock(self, temporary: Path, config: Path) -> str:
+        tar_path = temporary / "downloads" / "chunk_0.tar.gz"
+        tar_path.parent.mkdir(parents=True)
+        record = {
+            "identifier": 1,
+            "name": "Emacs",
+            "url": "https://ja.wikipedia.org/wiki/Emacs",
+            "namespace": {"identifier": 0},
+            "date_modified": "2026-06-01T00:00:00Z",
+            "version": {"identifier": 1},
+            "article_body": {"html": "<p>x</p>", "wikitext": "x"},
+            "license": [],
+            "redirects": [],
+            "categories": [],
+            "templates": [],
+        }
+        body = (json.dumps(record) + "\n").encode("utf-8")
+        with tarfile.open(tar_path, mode="w:gz") as archive:
+            info = tarfile.TarInfo(name="chunk_0.ndjson")
+            info.size = len(body)
+            archive.addfile(info, io.BytesIO(body))
+
+        register_result = self.run_cli(
+            "register-local-source",
+            "--config",
+            str(config),
+            "--namespace",
+            "0",
+            "--snapshot-identifier",
+            "jawiki_namespace_0",
+            "--snapshot-version",
+            "local-2026-07-14",
+            "--date-modified",
+            "2026-07-14T00:00:00Z",
+            "--file",
+            f"{tar_path}:jawiki_namespace_0_chunk_0",
+            "--git-commit",
+            "abc1234",
+        )
+        self.assertEqual(register_result.returncode, 0, register_result.stderr)
+        return register_result.stdout.strip()
+
+    def test_build_runs_all_stages_end_to_end(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            sources = temporary / "sources"
+            work = temporary / "work"
+            output = temporary / "output"
+            config = temporary / "build.toml"
+            config.write_text(
+                f'[paths]\nsources = "{sources}"\nwork = "{work}"\noutput = "{output}"\n',
+                encoding="utf-8",
+            )
+            lock_path = self._register_and_lock(temporary, config)
+
+            build_result = self.run_cli(
+                "build",
+                "--config",
+                str(config),
+                "--lock-path",
+                lock_path,
+                "--git-commit",
+                "abc1234",
+                "--run-id",
+                "test-build",
+            )
+
+            self.assertEqual(build_result.returncode, 0, build_result.stderr)
+            manifest_paths = [Path(line) for line in build_result.stdout.splitlines()]
+            self.assertEqual(len(manifest_paths), 3)
+            for manifest_path in manifest_paths:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                self.assertEqual(manifest["status"], "complete")
+            entries_path = output / "entries.jsonl"
+            self.assertTrue(entries_path.is_file())
+
+    def test_build_resumes_completed_stages_on_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            sources = temporary / "sources"
+            work = temporary / "work"
+            output = temporary / "output"
+            config = temporary / "build.toml"
+            config.write_text(
+                f'[paths]\nsources = "{sources}"\nwork = "{work}"\noutput = "{output}"\n',
+                encoding="utf-8",
+            )
+            lock_path = self._register_and_lock(temporary, config)
+
+            first = self.run_cli(
+                "build",
+                "--config",
+                str(config),
+                "--lock-path",
+                lock_path,
+                "--git-commit",
+                "abc1234",
+                "--run-id",
+                "same-run",
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            first_started_at = {
+                str(manifest_path): json.loads(manifest_path.read_text(encoding="utf-8"))[
+                    "started_at"
+                ]
+                for manifest_path in (Path(line) for line in first.stdout.splitlines())
+            }
+
+            second = self.run_cli(
+                "build",
+                "--config",
+                str(config),
+                "--lock-path",
+                lock_path,
+                "--git-commit",
+                "abc1234",
+                "--run-id",
+                "same-run",
+            )
+            self.assertEqual(second.returncode, 0, second.stderr)
+
+            for manifest_path in (Path(line) for line in second.stdout.splitlines()):
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                self.assertEqual(manifest["status"], "complete")
+                # unchanged started_at proves the stage was skipped, not rerun.
+                self.assertEqual(manifest["started_at"], first_started_at[str(manifest_path)])
+
+    def test_build_from_stage_skips_earlier_stages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            sources = temporary / "sources"
+            work = temporary / "work"
+            output = temporary / "output"
+            config = temporary / "build.toml"
+            config.write_text(
+                f'[paths]\nsources = "{sources}"\nwork = "{work}"\noutput = "{output}"\n',
+                encoding="utf-8",
+            )
+            lock_path = self._register_and_lock(temporary, config)
+
+            first = self.run_cli(
+                "build",
+                "--config",
+                str(config),
+                "--lock-path",
+                lock_path,
+                "--git-commit",
+                "abc1234",
+                "--run-id",
+                "first-run",
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+
+            second = self.run_cli(
+                "build",
+                "--config",
+                str(config),
+                "--lock-path",
+                lock_path,
+                "--git-commit",
+                "abc1234",
+                "--run-id",
+                "second-run",
+                "--from-stage",
+                "generate",
+            )
+
+            self.assertEqual(second.returncode, 0, second.stderr)
+            manifest_paths = [Path(line) for line in second.stdout.splitlines()]
+            self.assertEqual(len(manifest_paths), 1)
+            self.assertIn("50-generate.json", str(manifest_paths[0]))
+
     def test_verify_help(self) -> None:
         result = self.run_cli("verify", "--help")
 

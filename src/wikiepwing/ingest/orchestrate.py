@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from wikiepwing.ingest.database import connect_raw_database, initialize_raw_database
 from wikiepwing.ingest.deduplicate import resolve_duplicate
@@ -14,7 +15,8 @@ from wikiepwing.ingest.record_parser import RecordParseError, parse_record
 from wikiepwing.ingest.repository import RawRepository
 from wikiepwing.ingest.tar_reader import iter_ndjson_lines
 from wikiepwing.ingest.validate import ValidationLimits, validate_article
-from wikiepwing.pipeline.stage_manifest import StageManifestError
+from wikiepwing.pipeline.resume import decide_resume
+from wikiepwing.pipeline.stage_manifest import StageManifestError, parse_manifest_timestamp
 from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
 from wikiepwing.pipeline.stage_manifest import read_manifest_payload as _read_manifest_payload
 from wikiepwing.pipeline.stage_manifest import (
@@ -141,6 +143,11 @@ def run_ingest(
     `diagnostics` and `ingest_duplicates` are append-only and are not run-scoped in
     the current schema, so a rerun may duplicate audit rows for records processed in
     both the interrupted and the rerun attempt.
+
+    If the previous manifest at `manifest_path` shows status "complete" with a
+    matching `stage_version` and matching input fingerprints, this stage is
+    skipped entirely and the previous manifest is returned as-is (TASK-I005's
+    `decide_resume`). Pass `force=True` to always rerun.
     """
     if batch_size < 1:
         raise IngestError("batch_size must be positive")
@@ -150,6 +157,16 @@ def run_ingest(
             f"manifest {manifest_path} shows a previous run still 'running'; "
             "pass force=True to proceed after confirming that run is dead"
         )
+    if not force:
+        previous_payload = _read_manifest_payload(manifest_path)
+        decision = decide_resume(
+            previous_payload,
+            stage_version=STAGE_VERSION,
+            current_inputs=_manifest_inputs(lock),
+        )
+        if decision.should_skip:
+            assert previous_payload is not None
+            return _resume_result(previous_payload, manifest_path, raw_database_path)
     started_at = datetime.now(UTC)
 
     for file in lock.files:
@@ -215,6 +232,32 @@ def run_ingest(
     )
 
 
+def _manifest_inputs(lock: SourceLock) -> dict[str, str]:
+    return {"source_lock": f"sha256:{lock.metadata_response_sha256}"}
+
+
+def _resume_result(
+    previous_payload: dict[str, object], manifest_path: Path, raw_database_path: Path
+) -> IngestResult:
+    metrics = IngestMetrics(**cast(dict[str, int], previous_payload["metrics"]))
+    manifest = IngestManifest(
+        schema_version=cast(int, previous_payload["schema_version"]),
+        stage=STAGE_NAME,
+        stage_version=cast(int, previous_payload["stage_version"]),
+        status=cast(str, previous_payload["status"]),
+        run_id=cast(str, previous_payload["run_id"]),
+        started_at=cast(datetime, parse_manifest_timestamp(previous_payload["started_at"])),
+        completed_at=parse_manifest_timestamp(previous_payload["completed_at"]),
+        inputs=cast(dict[str, str], previous_payload["inputs"]),
+        outputs=tuple(cast(list[dict[str, object]], previous_payload["outputs"])),
+        metrics=metrics,
+        software=cast(dict[str, str | None], previous_payload["software"]),
+    )
+    return IngestResult(
+        manifest=manifest, manifest_path=manifest_path, raw_database_path=raw_database_path
+    )
+
+
 def _build_manifest(
     *,
     status: str,
@@ -245,7 +288,7 @@ def _build_manifest(
         run_id=run_id,
         started_at=started_at,
         completed_at=completed_at,
-        inputs={"source_lock": f"sha256:{lock.metadata_response_sha256}"},
+        inputs=_manifest_inputs(lock),
         outputs=outputs,
         metrics=metrics,
         software={

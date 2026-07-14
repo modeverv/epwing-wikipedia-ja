@@ -23,6 +23,7 @@ from wikiepwing.ingest.verify import verify_raw_database
 from wikiepwing.model.validate import ModelValidationLimits
 from wikiepwing.normalize.orchestrate import DEFAULT_BATCH_SIZE, run_normalize
 from wikiepwing.normalize.pipeline import NormalizeOptions
+from wikiepwing.pipeline.build import STAGE_ORDER, is_forced_stage, stages_from
 from wikiepwing.reference.entries import EbEntryAdapter, sample_reference_entries
 from wikiepwing.reference.inventory import (
     build_reference_inventory,
@@ -414,6 +415,47 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="proceed even if the manifest shows a previous run still 'running'",
     )
+    build = subparsers.add_parser(
+        "build", help="chain ingest -> normalize -> generate, reusing completed stages"
+    )
+    build.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    build.add_argument(
+        "--lock-path",
+        type=Path,
+        required=True,
+        help="path to the acquired Snapshot's source.lock.json",
+    )
+    build.add_argument(
+        "--namespace",
+        type=int,
+        help="override configured source.namespace as the expected article namespace",
+    )
+    build.add_argument(
+        "--run-id",
+        type=str,
+        help="run identifier recorded in each stage manifest (default: generated)",
+    )
+    build.add_argument(
+        "--git-commit",
+        type=str,
+        help="git commit recorded in each manifest (default: `git rev-parse HEAD`)",
+    )
+    build.add_argument(
+        "--from-stage",
+        choices=STAGE_ORDER,
+        help="skip stages before this one, assuming they already completed",
+    )
+    build.add_argument(
+        "--force-stage",
+        choices=STAGE_ORDER,
+        help="force this one stage to rerun even if its previous manifest is reusable",
+    )
     verify = subparsers.add_parser(
         "verify", help="verify entries.jsonl: empty/duplicate tags, headwords, unknown targets"
     )
@@ -732,6 +774,93 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(generate_result.manifest_path)
         return 0 if generate_result.manifest.status == "complete" else 1
+    if command == "build":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+        lock_path = cast(Path, arguments.lock_path).resolve()
+        try:
+            lock = parse_source_lock(lock_path.read_bytes())
+        except (OSError, SourceLockError) as error:
+            raise SystemExit(f"cannot read source lock {lock_path}: {error}") from error
+
+        run_id = cast(str | None, arguments.run_id) or (
+            f"{config.project}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+        )
+        git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+        from_stage = cast(str | None, arguments.from_stage)
+        force_stage = cast(str | None, arguments.force_stage)
+        stages = stages_from(from_stage)
+
+        raw_database_path = config.paths.work / "raw.sqlite3"
+        model_database_path = config.paths.work / "model.sqlite3"
+        entries_path = config.paths.output / "entries.jsonl"
+        manifests_root = config.paths.work / "runs" / run_id / "manifests"
+
+        if "ingest" in stages:
+            ingest_section = config.section("ingest")
+            namespace = cast(int | None, arguments.namespace)
+            if namespace is None:
+                namespace = cast(int, config.section("source")["namespace"])
+            limits = ValidationLimits.from_config(config, expected_namespace_id=namespace)
+            ingest_result = run_ingest(
+                lock,
+                snapshot_directory=lock_path.parent,
+                raw_database_path=raw_database_path,
+                migrations_path=None,
+                manifest_path=manifests_root / "30-ingest.json",
+                run_id=run_id,
+                validation_limits=limits,
+                zstd_level=cast(int, ingest_section["zstd_level"]),
+                batch_size=cast(int, ingest_section["batch_size"]),
+                git_commit=git_commit,
+                force=is_forced_stage("ingest", force_stage),
+            )
+            print(ingest_result.manifest_path)
+            if ingest_result.manifest.status != "complete":
+                return 1
+
+        if "normalize" in stages:
+            normalize_section = config.section("normalize")
+            normalize_options = NormalizeOptions(
+                max_dom_depth=cast(int, normalize_section["max_dom_depth"]),
+                html_recover=cast(bool, normalize_section["html_recover"]),
+                remove_edit_ui=cast(bool, normalize_section["remove_edit_ui"]),
+                remove_navboxes=cast(bool, normalize_section["remove_navboxes"]),
+                remove_authority_control=cast(bool, normalize_section["remove_authority_control"]),
+            )
+            normalize_result = run_normalize(
+                raw_database_path=raw_database_path,
+                model_database_path=model_database_path,
+                model_migrations_path=None,
+                manifest_path=manifests_root / "40-normalize.json",
+                run_id=run_id,
+                model_validation_limits=ModelValidationLimits.from_config(config),
+                normalize_options=normalize_options,
+                batch_size=DEFAULT_BATCH_SIZE,
+                git_commit=git_commit,
+                force=is_forced_stage("normalize", force_stage),
+            )
+            print(normalize_result.manifest_path)
+            if normalize_result.manifest.status != "complete":
+                return 1
+
+        if "generate" in stages:
+            generate_result = run_generate(
+                model_database_path=model_database_path,
+                entries_path=entries_path,
+                manifest_path=manifests_root / "50-generate.json",
+                run_id=run_id,
+                git_commit=git_commit,
+                force=is_forced_stage("generate", force_stage),
+            )
+            print(generate_result.manifest_path)
+            if generate_result.manifest.status != "complete":
+                return 1
+
+        return 0
     if command == "verify":
         entries_verification = verify_entries_jsonl(cast(Path, arguments.entries))
         print(

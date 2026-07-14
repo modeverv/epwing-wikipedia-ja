@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from wikiepwing.ingest.database import connect_raw_database
 from wikiepwing.ingest.zstd_codec import decompress
@@ -34,7 +35,8 @@ from wikiepwing.model.repository import ModelRepository
 from wikiepwing.model.validate import ModelValidationLimits, validate_article
 from wikiepwing.normalize.pipeline import NormalizeOptions, normalize_html
 from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
-from wikiepwing.pipeline.stage_manifest import StageManifestError
+from wikiepwing.pipeline.resume import decide_resume
+from wikiepwing.pipeline.stage_manifest import StageManifestError, parse_manifest_timestamp
 from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
 from wikiepwing.pipeline.stage_manifest import read_manifest_payload as _read_manifest_payload
 from wikiepwing.pipeline.stage_manifest import (
@@ -146,7 +148,13 @@ def run_normalize(
     force: bool = False,
     on_progress: Callable[[NormalizeMetrics], None] | None = None,
 ) -> NormalizeResult:
-    """Normalize every accepted raw article into model.sqlite3."""
+    """Normalize every accepted raw article into model.sqlite3.
+
+    If the previous manifest at `manifest_path` shows status "complete" with
+    a matching `stage_version` and matching input fingerprints, this stage is
+    skipped entirely and the previous manifest is returned as-is (TASK-I005's
+    `decide_resume`). Pass `force=True` to always rerun.
+    """
     if batch_size < 1:
         raise NormalizeError("batch_size must be positive")
     previous_status = read_manifest_status(manifest_path)
@@ -155,6 +163,16 @@ def run_normalize(
             f"manifest {manifest_path} shows a previous run still 'running'; "
             "pass force=True to proceed after confirming that run is dead"
         )
+    if not force:
+        previous_payload = _read_manifest_payload(manifest_path)
+        decision = decide_resume(
+            previous_payload,
+            stage_version=STAGE_VERSION,
+            current_inputs=_manifest_inputs(raw_database_path),
+        )
+        if decision.should_skip:
+            assert previous_payload is not None
+            return _resume_result(previous_payload, manifest_path, model_database_path)
     started_at = datetime.now(UTC)
 
     metrics = NormalizeMetrics()
@@ -209,6 +227,28 @@ def run_normalize(
 
     return NormalizeResult(
         manifest=manifest, manifest_path=manifest_path, model_database_path=database_path
+    )
+
+
+def _resume_result(
+    previous_payload: dict[str, object], manifest_path: Path, model_database_path: Path
+) -> NormalizeResult:
+    metrics = NormalizeMetrics(**cast(dict[str, int], previous_payload["metrics"]))
+    manifest = NormalizeManifest(
+        schema_version=cast(int, previous_payload["schema_version"]),
+        stage=STAGE_NAME,
+        stage_version=cast(int, previous_payload["stage_version"]),
+        status=cast(str, previous_payload["status"]),
+        run_id=cast(str, previous_payload["run_id"]),
+        started_at=cast(datetime, parse_manifest_timestamp(previous_payload["started_at"])),
+        completed_at=parse_manifest_timestamp(previous_payload["completed_at"]),
+        inputs=cast(dict[str, str], previous_payload["inputs"]),
+        outputs=tuple(cast(list[dict[str, object]], previous_payload["outputs"])),
+        metrics=metrics,
+        software=cast(dict[str, str | None], previous_payload["software"]),
+    )
+    return NormalizeResult(
+        manifest=manifest, manifest_path=manifest_path, model_database_path=model_database_path
     )
 
 

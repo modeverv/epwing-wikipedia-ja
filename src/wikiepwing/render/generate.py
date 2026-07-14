@@ -17,12 +17,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from wikiepwing.ingest.zstd_codec import decompress
 from wikiepwing.model.canonical import decode_article
 from wikiepwing.model.database import connect_model_database
 from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
-from wikiepwing.pipeline.stage_manifest import StageManifestError
+from wikiepwing.pipeline.resume import decide_resume
+from wikiepwing.pipeline.stage_manifest import StageManifestError, parse_manifest_timestamp
 from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
 from wikiepwing.pipeline.stage_manifest import read_manifest_payload as _read_manifest_payload
 from wikiepwing.pipeline.stage_manifest import (
@@ -125,13 +127,29 @@ def run_generate(
     force: bool = False,
     on_progress: Callable[[GenerateMetrics], None] | None = None,
 ) -> GenerateResult:
-    """Render every non-rejected model article into entries.jsonl."""
+    """Render every non-rejected model article into entries.jsonl.
+
+    If the previous manifest at `manifest_path` shows status "complete" with
+    a matching `stage_version` and matching input fingerprints, this stage is
+    skipped entirely and the previous manifest is returned as-is (TASK-I005's
+    `decide_resume`). Pass `force=True` to always rerun.
+    """
     previous_status = read_manifest_status(manifest_path)
     if previous_status == "running" and not force:
         raise GenerateError(
             f"manifest {manifest_path} shows a previous run still 'running'; "
             "pass force=True to proceed after confirming that run is dead"
         )
+    if not force:
+        previous_payload = _read_manifest_payload(manifest_path)
+        decision = decide_resume(
+            previous_payload,
+            stage_version=STAGE_VERSION,
+            current_inputs=_manifest_inputs(model_database_path),
+        )
+        if decision.should_skip:
+            assert previous_payload is not None
+            return _resume_result(previous_payload, manifest_path, entries_path)
     started_at = datetime.now(UTC)
 
     metrics = GenerateMetrics()
@@ -196,6 +214,26 @@ def _render_all(
         if on_progress is not None:
             on_progress(metrics)
     return tuple(entries)
+
+
+def _resume_result(
+    previous_payload: dict[str, object], manifest_path: Path, entries_path: Path
+) -> GenerateResult:
+    metrics = GenerateMetrics(**cast(dict[str, int], previous_payload["metrics"]))
+    manifest = GenerateManifest(
+        schema_version=cast(int, previous_payload["schema_version"]),
+        stage=STAGE_NAME,
+        stage_version=cast(int, previous_payload["stage_version"]),
+        status=cast(str, previous_payload["status"]),
+        run_id=cast(str, previous_payload["run_id"]),
+        started_at=cast(datetime, parse_manifest_timestamp(previous_payload["started_at"])),
+        completed_at=parse_manifest_timestamp(previous_payload["completed_at"]),
+        inputs=cast(dict[str, str], previous_payload["inputs"]),
+        outputs=tuple(cast(list[dict[str, object]], previous_payload["outputs"])),
+        metrics=metrics,
+        software=cast(dict[str, str | None], previous_payload["software"]),
+    )
+    return GenerateResult(manifest=manifest, manifest_path=manifest_path, entries_path=entries_path)
 
 
 def _manifest_inputs(model_database_path: Path) -> dict[str, str]:

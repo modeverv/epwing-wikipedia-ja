@@ -3283,3 +3283,43 @@ git diff --check
 **次タスク**
 
 - TASK-I006 `--from-stage`/`--force-stage`(依存: I005)
+
+### 2026-07-14 22:40 UTC — TASK-I006
+
+**目的**
+
+- `PLAN.md` Phase 9(`--from-stage`/`--force-stage`)と`ARCHITECTURE.md` 7.1の`wikiepwing build`を実装する。TASK-I005の`decide_resume`をまだどのorchestratorも呼んでおらず、複数stageを繋ぐコマンドが無ければ`--from-stage`は意味を持たないため、両方を一度に実装した。
+
+**変更**
+
+- `src/wikiepwing/pipeline/stage_manifest.py`に`parse_manifest_timestamp()`を追加した(manifestのISO 8601タイムスタンプ文字列を`datetime`へ戻す)。
+- `src/wikiepwing/ingest/orchestrate.py`・`src/wikiepwing/normalize/orchestrate.py`・`src/wikiepwing/render/generate.py`の各`run_*`関数に`decide_resume`を配線した。直前manifestが`complete`かつ`stage_version`/`inputs`一致なら実処理を一切行わず、直前manifestのフィールド(`run_id`/timestamps/`inputs`/`outputs`/`metrics`/`software`)からResultを再構築して返す`_resume_result`ヘルパーを各モジュールに追加した。`force=True`は「runningの拒否を上書き」と「resume判定を上書き」の両方を意味するよう拡張した。
+- `src/wikiepwing/pipeline/build.py`を新規実装した。`STAGE_ORDER = ("ingest", "normalize", "generate")`、`stages_from(from_stage)`(指定stage以降のみを返す純粋関数)、`is_forced_stage(stage, force_stage)`(指定した1 stageだけを強制対象とする純粋関数)。
+- `src/wikiepwing/cli.py`に`wikiepwing build`サブコマンドを追加した。`--lock-path`必須、`--namespace`/`--run-id`/`--git-commit`は既存コマンドと同じ意味論、`--from-stage`/`--force-stage`は`{ingest,normalize,generate}`から選択。各stageのmanifest pathを1行ずつ出力し、いずれかのstageが`complete`以外なら即座に非0で終了する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_pipeline_build.py tests/test_ingest_orchestrate.py tests/test_normalize_orchestrate.py tests/test_render_generate.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `pipeline/build.py`の純粋関数(`stages_from`/`is_forced_stage`)を7件のテストで確認した。
+- ingest/normalize/generateそれぞれで「直前実行が`complete`かつ入力不変なら同じ`run_id`を返す(実処理skip)」「`force=True`なら新しい`run_id`で強制再実行する」ことを既存3モジュールのテストに追加した6件で確認した。
+- CLI `build`コマンドについて、(1)3 stage全てを通しでentries.jsonlまで生成する、(2)同一`--run-id`で2回叩くと2回目は各stageの`started_at`が変化しない(実処理skip)、(3)`--from-stage generate`だと生成されるmanifestが50-generateの1件だけになる、の3シナリオをend-to-endで実行するテストを追加し、全て成功した。
+- 標準スイート780件(新規24件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- manifest pathが既存の各CLIコマンド同様`paths.work/runs/<run-id>/manifests/<stage>.json`という**run-id別**のパスであるため、resumeは「同一run-idでの再実行(クラッシュ後の再試行やCIでの冪等実行)」を意味し、異なるrun-idを渡すたびに新規manifest履歴が作られる(既存の単一stageコマンド群と同じ設計)。異なるrun-id間でstageを再利用したい場合は、明示的に同じ`--manifest-path`を渡す必要がある(この制約はテストのコメントとして明記した)。
+- `--force-stage`で指定した1 stageだけを強制対象にし、下流stageへは明示的な連鎖をしない設計にした。下流stageのmanifest `inputs`には上流の出力fingerprintが記録されているため、上流を強制再実行しても出力内容が変わらなければ下流は自然にresume判定でskipされ、内容が変われば自然に再実行される(fingerprint比較による自動連鎖)。
+- media/render等の将来stageは`STAGE_ORDER`に追加するだけで良い設計にした(本タスクでは追加しない)。
+- outputsファイルの実在性・sha256一致チェックはTASK-I005同様、対象外とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-I007 Kill/restart統合テスト(依存: I006)

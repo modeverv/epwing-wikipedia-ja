@@ -117,5 +117,59 @@ def test_run_generate_force_proceeds_over_running_manifest(tmp_path: Path) -> No
     assert result.manifest.status == "complete"
 
 
+def test_run_generate_skips_rerun_when_previous_run_is_complete_and_unchanged(
+    tmp_path: Path,
+) -> None:
+    database_path = _seed_model_database(
+        tmp_path / "model.sqlite3", [(_make_article(), "complete")]
+    )
+    entries_path = tmp_path / "entries.jsonl"
+    manifest_path = tmp_path / "manifests" / "50-generate.json"
+
+    first = run_generate(
+        model_database_path=database_path,
+        entries_path=entries_path,
+        manifest_path=manifest_path,
+        run_id="first-run",
+    )
+    entries_text_after_first = entries_path.read_text(encoding="utf-8")
+
+    second = run_generate(
+        model_database_path=database_path,
+        entries_path=entries_path,
+        manifest_path=manifest_path,
+        run_id="second-run",
+    )
+
+    assert second.manifest.run_id == first.manifest.run_id
+    assert second.manifest.status == "complete"
+    assert entries_path.read_text(encoding="utf-8") == entries_text_after_first
+
+
+def test_run_generate_force_reruns_despite_complete_manifest(tmp_path: Path) -> None:
+    database_path = _seed_model_database(
+        tmp_path / "model.sqlite3", [(_make_article(), "complete")]
+    )
+    entries_path = tmp_path / "entries.jsonl"
+    manifest_path = tmp_path / "manifests" / "50-generate.json"
+
+    run_generate(
+        model_database_path=database_path,
+        entries_path=entries_path,
+        manifest_path=manifest_path,
+        run_id="first-run",
+    )
+
+    second = run_generate(
+        model_database_path=database_path,
+        entries_path=entries_path,
+        manifest_path=manifest_path,
+        run_id="second-run",
+        force=True,
+    )
+
+    assert second.manifest.run_id == "second-run"
+
+
 def test_read_manifest_status_returns_none_when_missing(tmp_path: Path) -> None:
     assert read_manifest_status(tmp_path / "missing.json") is None
