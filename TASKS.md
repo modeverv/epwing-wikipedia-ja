@@ -283,7 +283,7 @@
 
 **実装:** required/optional fields、typed RawArticle。
 
-### TASK-E005 [ ] Record safety validation
+### TASK-E005 [x] Record safety validation
 
 **依存:** E004
 

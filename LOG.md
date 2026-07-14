@@ -1768,3 +1768,36 @@ git diff --check
 **次タスク**
 
 - TASK-E005 Record safety validation
+
+### 2026-07-14 05:20 UTC — TASK-E005
+
+**目的**
+
+- parseされた`RawArticle`のfield length・URL形式・namespace一致・HTML/wikitext sizeを検証し、記事単位で受理/拒否と構造化診断を返す。
+
+**変更**
+
+- `src/wikiepwing/ingest/validate.py`に`ValidationLimits`(`from_config`)、`Diagnostic`、`ValidationResult`、`validate_article`を実装した。title/url/html/wikitext長超過、非https URL、namespace不一致を検出し、error重大度の診断があれば`accepted=False`とする。
+- TASK-D010の`title_too_long` edge case(3549 bytes)が`config/default.toml`の実際の既定`max_title_bytes=4096`を超えていなかったため、5250 bytesへ拡張し修正した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_ingest_validate.py
+make check
+git diff --check
+```
+
+**結果**
+
+- title長すぎ/invalid URL edge caseが正しく拒否され、正常な10記事は全件受理されることを確認した。
+- 標準スイート332件(新規15件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `ingest.strict_required_fields`設定の配線先(E004の必須field強制と記事単位skipの関係)は未決定のままTASK-E007/E008へ持ち越した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E006 Duplicate resolver
