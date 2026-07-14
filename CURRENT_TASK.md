@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-M002
+TASK-M003
 
 ## 目的
 
-`ARCHITECTURE.md` 18.1(文字分類: A backend標準文字/B 設定済み文字列へ置換可能/C gaiji bitmapとして表現/D 表現不能)を実装する。TASK-M001の`is_backend_representable`をA分類の判定に使う。B分類(安全な置換)の実際の対応表はTASK-M003で構築されるため、本タスクの分類器は置換表を呼び出し側から注入できる引数として受け取る(未指定時は何も置換しない)。C/Dの境界は、Unicodeの一般カテゴリ(`unicodedata.category`)がCc(制御)/Cf(書式)/Cs(サロゲート)/Co(私用)/Cn(未割り当て)であれば「意味のあるグリフを持たずgaiji化しても無意味」としてD、それ以外の実際に印字可能な文字はCとする。
+`ARCHITECTURE.md` 18.2(置換例: non-breaking space→normal space、typographic quote→configured quote、variation selector→base glyph + diagnostic、combining sequence→NFC化後に再判定)を実装する。「意味を変える置換は行いません」という制約の下、(1)nbsp・タイポグラフィ引用符は単純な文字→文字の置換表、(2)variation selectorは基底文字を残したまま除去してDiagnosticを記録、(3)結合文字列はNFC正規化を適用する、という3種類の処理を`apply_safe_substitutions()`にまとめる。TASK-M002の`classify_character`が受け取る`substitutions`引数の実データ(デフォルト置換表)もここで提供する。
 
 ## 事前条件
 
@@ -14,15 +14,15 @@ TASK-M002
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-M002(依存: M001)を読んだ
-- [x] `ARCHITECTURE.md` 18.1(文字分類)・18.2(置換例)・18.5(D分類のfallback)を再確認した
-- [x] TASK-M003(安全な置換)がTASK-M002に依存する関係(置換表はまだ存在しない)であることを確認し、分類器が置換表を引数として受け取る設計にする根拠とした
-- [x] TASK-M001の`is_backend_representable`を確認した
+- [x] `TASKS.md`のTASK-M003(依存: M002)を読んだ
+- [x] `ARCHITECTURE.md` 18.2(置換例)を再確認した
+- [x] TASK-M002の`classify_character`が`substitutions`引数(未提供時は何もしない)を受け取る設計であることを確認した。本タスクでその実データを提供する
+- [x] variation selector(U+FE00-FE0F, U+E0100-E01EF)・NFC正規化がsingle-character置換とは異なる「シーケンスレベル」の処理であることに気づいた
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/gaiji/classifier.py`(新規: `CharacterClass`, `classify_character()`)
-- `tests/test_gaiji_classifier.py`(新規)
+- `src/wikiepwing/gaiji/substitutions.py`(新規: `DEFAULT_SUBSTITUTIONS`, `is_variation_selector()`, `apply_safe_substitutions()`)
+- `tests/test_gaiji_substitutions.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,27 +30,25 @@ TASK-M002
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_gaiji_classifier.py
+uv run pytest tests/test_gaiji_substitutions.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] backend表現可能な文字は`"A"`に分類される
-- [x] 置換表に登録されている文字は(backend表現不可の場合)`"B"`に分類される
-- [x] 印字可能だがbackend表現不可・置換表未登録の文字は`"C"`に分類される
-- [x] 制御文字・書式文字・サロゲート・私用領域・未割り当てコードポイントは`"D"`に分類される(ただしASCII C0制御文字はEUC-JPがそのまま通すため実際には"A"になる、実装中に発見・テストで明記)
+- [x] `DEFAULT_SUBSTITUTIONS`にnon-breaking space→space、タイポグラフィ引用符(左右single/double)→ASCII引用符が含まれる
+- [x] `apply_safe_substitutions(text)`が、テキスト全体にNFC正規化を適用してから、variation selectorを除去(Diagnostic記録)し、置換表にある文字を置換する
+- [x] variation selector除去後も直前の基底文字は保持される(基底文字ごと消えない)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際の置換表の構築(TASK-M003)
 - gaiji registry・bitmap生成(TASK-M004以降)
+- 実際のnormalizeパイプラインへの配線(本文全体への適用タイミングは別途検討)
 
 ## 実施結果
 
-- `src/wikiepwing/gaiji/classifier.py`に`CharacterClass`・`classify_character()`を実装した。判定順序: `is_backend_representable`→A、置換表に登録済み→B、Unicode一般カテゴリがCc/Cf/Cs/Co/Cnのいずれか→D、それ以外→C。
-- 実装中に気づいた点: ASCII C0制御文字(`\x01`等)はEUC-JPがそのままバイト通過させるため、意味の無い文字であっても`is_backend_representable`が`True`を返し"A"に分類される。これは`ARCHITECTURE.md` 18.1がAを「エンコード可能性」のみで定義しており「意味のあるグリフ」を要求していないため、仕様上正しい挙動と判断した。当初の誤ったテスト期待値(C0制御文字を"D"と想定)を発見・修正し、代わりにC1制御文字(EUC-JPで実際に符号化不可)でD分類の実際の経路を検証するテストに差し替えた。
-- `tests/test_gaiji_classifier.py`(新規11件)で、A/B/C/D各分類の境界(置換表の有無、backend表現可能性が置換表より優先されること、C1制御文字・書式文字・未割り当て・私用領域のD分類)を確認した。
-- `make check`(format-check/lint/mypy/pytest 958件)と`git diff --check`が成功した。
+- `src/wikiepwing/gaiji/substitutions.py`に`DEFAULT_SUBSTITUTIONS`・`is_variation_selector()`・`apply_safe_substitutions()`を実装した。NFC正規化→variation selector除去(基底文字は保持、`CHAR_VARIATION_SELECTOR_DROPPED`Diagnosticを記録)→置換表適用、の順で処理する。
+- `tests/test_gaiji_substitutions.py`(新規10件)で、nbsp→space・タイポグラフィ引用符→ASCII引用符・variation selector検出(標準/補助範囲)・variation selector除去時の基底文字保持とDiagnostic記録・結合文字列のNFC正規化・置換不要時の非変更・カスタム置換表・デフォルト置換表の内容を確認した。
+- `make check`(format-check/lint/mypy/pytest 968件)と`git diff --check`が成功した。

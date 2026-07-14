@@ -4166,3 +4166,36 @@ git diff --check
 **次タスク**
 
 - TASK-M003 Safe substitutions(依存: M002)
+
+### 2026-07-15 09:25 UTC — TASK-M003
+
+**目的**
+
+- `ARCHITECTURE.md` 18.2(置換例)を実装する。「意味を変える置換は行いません」という制約の下、単純な文字→文字置換(nbsp・タイポグラフィ引用符)とシーケンスレベルの処理(variation selector除去・NFC正規化)を組み合わせる。
+
+**変更**
+
+- `src/wikiepwing/gaiji/substitutions.py`に`DEFAULT_SUBSTITUTIONS`・`is_variation_selector()`・`apply_safe_substitutions()`を実装した。NFC正規化→variation selector除去(基底文字を保持しつつ`CHAR_VARIATION_SELECTOR_DROPPED`という新しいDiagnostic codeを記録)→置換表適用、の順で処理する。TASK-M002の`classify_character`が受け取る`substitutions`引数の実データとしてそのまま使える。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_gaiji_substitutions.py
+make check
+git diff --check
+```
+
+**結果**
+
+- nbsp→space・タイポグラフィ引用符→ASCII引用符・variation selector検出(標準U+FE00-FE0F/補助U+E0100-E01EF範囲)・除去時の基底文字保持とDiagnostic記録・結合文字列のNFC正規化・置換不要時の非変更・カスタム置換表・デフォルト置換表の内容を10件のテストで確認した。
+- 標準スイート968件(新規10件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `CHAR_VARIATION_SELECTOR_DROPPED`という新しいDiagnostic codeを追加した(`ARCHITECTURE.md` 11.7の例一覧は網羅的でないことを確認済み)。
+- 実際のnormalizeパイプラインへの配線(本文全体へどのタイミングで適用するか)は本タスクの対象外とした。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M004 Gaiji registry schema(依存: M002)

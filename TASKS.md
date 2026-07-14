@@ -615,7 +615,7 @@
 
 **依存:** M001
 
-### TASK-M003 [ ] Safe substitutions
+### TASK-M003 [x] Safe substitutions
 
 **依存:** M002
 
