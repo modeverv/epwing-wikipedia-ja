@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "Wikipedia EPWING Builder contributors" }]
-dependencies = []
+dependencies = ["zstandard==0.25.0"]
 
 [project.scripts]
 wikiepwing = "wikiepwing.cli:main"

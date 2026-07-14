@@ -265,7 +265,7 @@
 
 **実装:** articles, redirects, categories, templates, licenses, diagnostics, metadata。
 
-### TASK-E002 [ ] zstd codec
+### TASK-E002 [x] zstd codec
 
 **依存:** E001
 

@@ -1668,3 +1668,37 @@ git diff --check
 **次タスク**
 
 - TASK-E002 zstd codec
+
+### 2026-07-14 04:35 UTC — TASK-E002
+
+**目的**
+
+- raw/model BLOB圧縮用のzstd codecを、決定的設定・roundtrip・入出力サイズ上限付きで実装する。
+
+**変更**
+
+- `pyproject.toml`へ実行時依存`zstandard==0.25.0`を追加した(プロジェクト初の実行時依存、`uv.lock`更新)。
+- `src/wikiepwing/ingest/zstd_codec.py`に`compress`/`decompress`/`ZstdCodecError`を実装した。`threads=0`で単一スレッド圧縮とし決定性を保証、level 1〜22の範囲検証、入出力サイズ上限を持つ。
+- decompress前に`get_frame_parameters`でframeの`content_size`を検査し、既知の宣言サイズが上限超過なら実際の展開前に拒否する。`ZSTD_CONTENTSIZE_UNKNOWN`/`_ERROR`のsentinel値は「未知」として扱い、`decompress()`自体の`max_output_size`で保護する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_zstd_codec.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 標準スイート286件(新規12件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `zstandard`のAPIで`content_size`「未知」はNoneではなくsentinel整数(2^64-1等)で表現されることを実装中に発見し、正しく処理するよう修正した。
+- `docker/app.Dockerfile`は`uv sync --frozen`で依存解決するため変更不要だった。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-E003 Tar streaming reader
