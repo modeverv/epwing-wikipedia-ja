@@ -327,7 +327,7 @@
 
 **依存:** E001
 
-### TASK-F002 [ ] Inline model
+### TASK-F002 [x] Inline model
 
 **依存:** F001
 

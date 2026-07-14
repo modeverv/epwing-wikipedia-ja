@@ -2003,3 +2003,35 @@ git diff --check
 **次タスク**
 
 - TASK-F002 Inline model(`PLAN.md` Phase 6の初期対応範囲: text/strong/emphasis/internal link/external link/code/line break/unsupported)
+
+### 2026-07-14 07:10 UTC — TASK-F002
+
+**目的**
+
+- `ARCHITECTURE.md` 11.3のInline unionのうち`PLAN.md` Phase 6の初期対応範囲を実装する。
+
+**変更**
+
+- `src/wikiepwing/model/inline.py`に8種のInline型(text/strong/emphasis/code/line_break/internal_link/external_link/unsupported)と`Inline` union、`inline_payload`/`parse_inline`を実装した。`InternalLinkInline`は`ARCHITECTURE.md` 11.4通りのfieldを持ち、`resolution`を検証する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_model_inline.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 全種別のroundtrip(nested inline含む)、未知typeの拒否、resolution検証を確認した。
+- 標準スイート399件(新規18件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- math/ruby inlineは`PLAN.md` Phase 6の初期対応範囲外のため実装せず、将来epicまでは`UnsupportedInline`が受け皿になる。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-F003 Block model(`PLAN.md` Phase 5の初期対応block: Heading/Paragraph/List/DefinitionList/Quote/Preformatted/各種placeholder/Unsupported)
