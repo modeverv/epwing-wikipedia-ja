@@ -467,7 +467,7 @@
 
 **依存:** D010
 
-### TASK-H013 [ ] Mini end-to-end build
+### TASK-H013 [x] Mini end-to-end build
 
 **依存:** H011-H012
 

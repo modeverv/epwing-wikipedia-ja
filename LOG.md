@@ -3077,3 +3077,39 @@ git diff --check
 **次タスク**
 
 - TASK-H013 Mini end-to-end build(依存: H011-H012)
+
+### 2026-07-14 19:45 UTC — TASK-H013
+
+**目的**
+
+- `DECISIONS.md` ADR-015の100記事Gateとして、`register-local-source`→`ingest`→`normalize`→`generate`→`verify`の全パイプラインを100記事fixtureに対してend-to-endで実行し、加えて実toolchainで実際にhonmonを構築して`wikiepwing-eb-search`で検証する。
+
+**変更**
+
+- `tests/test_mini_end_to_end_build.py`にPython側のみのend-to-endテスト(Docker不要)を実装した。100記事fixtureを`register_local_source`→`run_ingest`→`run_normalize`→`run_generate`→`verify_entries_jsonl`に通し、各manifestが`complete`になること、100記事すべてが処理されること、`entries.jsonl`が100件・一意なtagを持ちverifyでokになることを検証する。
+- `docker/toolchain/mini-end-to-end-smoke.sh`に実Docker toolchainでの検証を実装した。同じPythonパイプラインをコンテナ内で実行して`entries.jsonl`を生成し、`freepwing_build_entries.pl`(TASK-H009)経由で実際に100記事分のhonmonを構築、`wikiepwing-eb-search`で複数の異なるtitle("Emacs"、"Linux"、"GNU Project")とalias("Vim alias")が正しく解決できることを実機で確認した。
+- `Makefile`に`test-mini-end-to-end`ターゲットを追加した。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_mini_end_to_end_build.py
+sh docker/toolchain/mini-end-to-end-smoke.sh wikiepwing-toolchain:dev
+make check
+git diff --check
+```
+
+**結果**
+
+- Python側end-to-endテストが成功した(標準スイートに追加、Docker不要)。
+- 実Docker smoke testを`wikiepwing-toolchain:dev`イメージで実行し、100記事から実際にhonmonを構築、4種類の異なるtitle/aliasクエリすべてで正しいhitを確認した(単なる非クラッシュ確認ではなく実際のcontent検証)。
+- 標準スイート714件(新規1件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 現時点で`<a>`要素の実HTML変換(internal link conversion)は未実装(Epic H内でURL解析/解決モジュールH001-H004は独立して構築済みだが、normalize pipeline自体への統合はまだ)であるため、fixture内の内部linkは本文中のplain textとして扱われ、`internal_targets`は実質空になる。これは既知の制約であり、本タスクの検証対象外とした。
+- これでEpic H(Links and Mini rendering)が完了した。
+
+**次タスク**
+
+- TASK-I001 Stage manifest schema(依存: E008,G012,H010)
