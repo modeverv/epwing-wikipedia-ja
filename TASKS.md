@@ -591,7 +591,7 @@
 
 **依存:** L001
 
-### TASK-L003 [ ] Reference renderer
+### TASK-L003 [x] Reference renderer
 
 **依存:** L002,H007
 

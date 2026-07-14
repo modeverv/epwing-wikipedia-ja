@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-L002
+TASK-L003
 
 ## 目的
 
-`ARCHITECTURE.md` 12.2の"N100 Convert references"の続きとして、記事末尾の参照リスト(MediaWiki Cite拡張が出力する`<ol class="references"><li id="cite_note-X">...</li>...</ol>`)を解析する。各`<li>`から、脚注番号に対応する`note_id`(`<sup>`側のtarget_idと同じ値、TASK-L001)と、実際の引用文content(`<span class="mw-cite-backlink">`の巻き戻しリンクを除いた`<span class="reference-text">`部分、または無ければbacklinkを除いた残り)を抽出する。
+`ARCHITECTURE.md` 12.2の"N100 Convert references"を完成させる。TASK-L002の`RawReferenceItem`から実際の`ReferencesBlock`(`items: tuple[tuple[Inline,...],...]`)を組み立て、`convert_block.py`のディスパッチへ配線し、Mini-profileでのレンダリングを実装する。
 
 ## 事前条件
 
@@ -14,14 +14,19 @@ TASK-L002
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-L002(依存: L001)を読んだ
-- [x] MediaWiki Cite拡張の参照リスト実際のHTML出力形式(`<ol class="references">`、`<span class="mw-cite-backlink">`、`<span class="reference-text">`)を確認した(ドキュメントにアルゴリズムが無いため、この形式を判断根拠として採用する)
-- [x] `model/blocks.py`の`ReferencesBlock`(`items: tuple[tuple[Inline,...],...]`、id情報を持たない設計)を確認した。本タスクの`note_id`はTASK-L003での実際のBlock組み立てには使わないが、将来のマーカー⇔リスト対応付けの布石として抽出しておく
+- [x] `TASKS.md`のTASK-L003(依存: L002,H007)を読んだ
+- [x] `model/blocks.py`の`ReferencesBlock`(`items: tuple[tuple[Inline,...],...]`)を確認した
+- [x] `reference_list.py`の`parse_reference_list`/`RawReferenceItem`を確認した
+- [x] `build_references_block`は`convert_inline_nodes`のみで済み(`convert_document`不要)、`table_block.py`/`infobox_block.py`のような循環import回避が不要であることを確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/normalize/reference_list.py`(新規: `RawReferenceItem`, `is_reference_list()`, `parse_reference_list()`)
-- `tests/test_normalize_reference_list.py`(新規)
+- `src/wikiepwing/normalize/references_block.py`(新規: `build_references_block()`)
+- `src/wikiepwing/normalize/convert_block.py`(`<ol class="references">`をディスパッチするよう配線)
+- `src/wikiepwing/render/mini_layout.py`(ReferencesBlockの`_render_block`ケースを追加)
+- `tests/test_normalize_references_block.py`(新規)
+- `tests/test_normalize_convert_block.py`(配線の回帰テスト追加)
+- `tests/test_render_mini_layout.py`(レンダリングの回帰テスト追加)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -29,24 +34,26 @@ TASK-L002
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_normalize_reference_list.py
+uv run pytest tests/test_normalize_references_block.py tests/test_normalize_convert_block.py tests/test_render_mini_layout.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `is_reference_list(node)`が、`class`に`references`トークンを含む`<ol>`要素を検出する
-- [x] `parse_reference_list(node)`が、各`<li>`の`id`属性を`note_id`として、`<span class="reference-text">`があればその子要素、無ければbacklink要素を除いた残りの子要素を`content`として抽出する
+- [x] `build_references_block(node)`が、各`RawReferenceItem.content`を`convert_inline_nodes`でInlineへ変換し`ReferencesBlock`を組み立てる
+- [x] `convert_block()`が`<ol class="references">`を`ReferencesBlock`へディスパッチする
+- [x] Mini-profileが`ReferencesBlock`を、各項目を"[N] 引用文"の形式で番号付きレンダリングする
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際の`ReferencesBlock`への変換・レンダリング(TASK-L003)
-- インラインマーカーとの実際のクロスリファレンス機能(モデルにid情報を保持する設計が無いため対象外)
+- インラインマーカーとの実際のクロスリファレンス(番号の対応付けはDOM順による暗黙の対応のみ)
 
 ## 実施結果
 
-- `src/wikiepwing/normalize/reference_list.py`に`RawReferenceItem`・`is_reference_list()`・`parse_reference_list()`を実装した。`<ol class="references">`を検出し、各`<li>`から`id`属性(`note_id`)と、`<span class="reference-text">`があればその子要素、無ければ`<span class="mw-cite-backlink">`を除いた残りの子要素を`content`として抽出する。
-- `tests/test_normalize_reference_list.py`(新規8件)で、リスト検出・非検出・note_id+reference-text抽出・複数項目の順序保持・backlinkのみ除去のフォールバック・id欠落時のNone・非リストへの呼び出し時のエラー・非`<li>`子要素の無視を確認した。
-- `make check`(format-check/lint/mypy/pytest 927件)と`git diff --check`が成功した。
+- `src/wikiepwing/normalize/references_block.py`に`build_references_block()`を実装した。`parse_reference_list`(TASK-L002)の各`RawReferenceItem.content`を`convert_inline_nodes`でInlineへ変換し`ReferencesBlock`を組み立てる。
+- `convert_block.py`に`is_reference_list`判定を追加した。参照リストも`<ol>`要素であるため、`is_ordered_list`より**前**にチェックする必要があることに気づき、その順序で配線した(誤って通常のOrderedListBlockへ変換されるのを防ぐ)。
+- `render/mini_layout.py`に`ReferencesBlock`の`_render_block`ケース(`_render_references`)を追加した。各項目を"[N] 引用文"としてDOM順の番号付きでレンダリングする。
+- `tests/test_normalize_references_block.py`(新規3件)・`tests/test_normalize_convert_block.py`への追加2件(参照リストの正しいディスパッチ、通常の`<ol>`が従来通りOrderedListBlockになること)・`tests/test_render_mini_layout.py`への追加2件を実装した。
+- `make check`(format-check/lint/mypy/pytest 934件)と`git diff --check`が成功した。

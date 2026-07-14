@@ -11,6 +11,7 @@ from wikiepwing.model.blocks import (
     ListItem,
     ParagraphBlock,
     PreformattedBlock,
+    ReferencesBlock,
     TableBlock,
     TableCell,
     UnorderedListBlock,
@@ -367,3 +368,28 @@ def test_infobox_without_title_still_renders_fields() -> None:
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
     assert "License: GPL" in text
+
+
+def test_references_render_as_numbered_list() -> None:
+    references = ReferencesBlock(
+        items=(
+            (TextInline(value="First citation."),),
+            (TextInline(value="Second citation."),),
+        )
+    )
+    article = _make_article(blocks=(references,))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "[1] First citation." in text
+    assert "[2] Second citation." in text
+
+
+def test_empty_references_block_renders_no_items() -> None:
+    article = _make_article(blocks=(ReferencesBlock(items=()),))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "[1]" not in text

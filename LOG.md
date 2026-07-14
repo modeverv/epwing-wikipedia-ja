@@ -4005,3 +4005,37 @@ git diff --check
 **次タスク**
 
 - TASK-L003 Reference renderer(依存: L002,H007)
+
+### 2026-07-15 07:45 UTC — TASK-L003
+
+**目的**
+
+- `ARCHITECTURE.md` 12.2の"N100 Convert references"を完成させる。TASK-L002の`RawReferenceItem`から実際の`ReferencesBlock`を組み立て、`convert_block.py`のディスパッチへ配線し、Mini-profileでのレンダリングを実装する。
+
+**変更**
+
+- `src/wikiepwing/normalize/references_block.py`に`build_references_block()`を実装した。`convert_inline_nodes`のみで済み(`convert_document`不要)、TASK-K010で発生したような循環importの心配は無い。
+- `convert_block.py`に`is_reference_list`判定を追加した。参照リストも`<ol>`要素であるため、`is_ordered_list`より前にチェックする必要があることに気づき(順序を誤ると通常のOrderedListBlockに変換されてしまう)、その順序で配線した。
+- `render/mini_layout.py`に`ReferencesBlock`の`_render_block`ケースを追加した。各項目を"[N] 引用文"としてDOM順の番号付きでレンダリングする(インラインマーカーとの対応はDOM順による暗黙のものに留まる、モデルにid情報が無いため)。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_references_block.py tests/test_normalize_convert_block.py tests/test_render_mini_layout.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `build_references_block`の組み立て・空リスト・インライン変換を3件、`convert_block`での正しいディスパッチ(参照リスト/通常の`<ol>`)を2件、Mini-layoutでの番号付きレンダリング/空リストを2件のテストで確認した。
+- 標準スイート934件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 参照リストが`<ol>`要素である事実により、dispatch順序を間違えると通常のリストとして誤変換されるという罠に気づいた。テストで両方の挙動(参照リストとして処理される場合・通常のOrderedListBlockのまま処理される場合)を明示的に確認した。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-L004 Category appendix(依存: E008,H007)

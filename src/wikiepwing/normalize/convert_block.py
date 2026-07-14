@@ -1,19 +1,27 @@
-"""Block dispatch and unknown-DOM fallback (TASK-G010/K010, ARCHITECTURE.md 12.2).
+"""Block dispatch and unknown-DOM fallback (TASK-G010/K010/L003, ARCHITECTURE.md 12.2).
 
 `convert_block` ties together every per-element converter built in
 TASK-G004-G009 plus `<table>`/infobox conversion (TASK-K001-K009,
-TASK-K010 wires them in here) and falls back to `UnsupportedBlock` (with a
-`DOM_UNKNOWN_ELEMENT` diagnostic, matching ARCHITECTURE.md 11.7's example
-code) for anything still unrecognized -- images, math, and references,
-whose real HTML conversion is deferred to later epics (L/N/O) per
-PLAN.md's phased scope. `convert_document` groups runs of bare text/inline
-content between block-level siblings into their own `ParagraphBlock`.
+TASK-K010 wires them in here) and reference list conversion
+(TASK-L001-L002, TASK-L003 wires it in here), falling back to
+`UnsupportedBlock` (with a `DOM_UNKNOWN_ELEMENT` diagnostic, matching
+ARCHITECTURE.md 11.7's example code) for anything still unrecognized --
+images and math, whose real HTML conversion is deferred to later epics
+(N/O) per PLAN.md's phased scope. `convert_document` groups runs of bare
+text/inline content between block-level siblings into their own
+`ParagraphBlock`.
+
+A reference list is itself an `<ol>`, so `is_reference_list` must be
+checked *before* `is_ordered_list` -- otherwise every reference list would
+be misconverted into a plain OrderedListBlock instead of a ReferencesBlock.
 
 `build_table_block`/`build_infobox_block` are imported inside
 `convert_block` rather than at module level: they call back into this
 module's own `convert_document` (to convert cell/field content), so a
 top-level import would be circular. Deferring the import to call time
 breaks the cycle since both modules are already fully loaded by then.
+`build_references_block` only needs `convert_inline_nodes`, not
+`convert_document`, so it has no such cycle and is imported normally.
 """
 
 from __future__ import annotations
@@ -37,6 +45,8 @@ from wikiepwing.normalize.quotes import (
     is_preformatted,
     is_quote,
 )
+from wikiepwing.normalize.reference_list import is_reference_list
+from wikiepwing.normalize.references_block import build_references_block
 from wikiepwing.normalize.tables import is_table
 
 
@@ -48,6 +58,8 @@ def convert_block(node: ElementNode) -> tuple[Block, tuple[Diagnostic, ...]]:
         return ParagraphBlock(inlines=convert_inline_nodes(node.children)), ()
     if is_unordered_list(node):
         return convert_unordered_list(node)
+    if is_reference_list(node):
+        return build_references_block(node)
     if is_ordered_list(node):
         return convert_ordered_list(node)
     if is_definition_list(node):

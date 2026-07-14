@@ -4,9 +4,11 @@ from wikiepwing.model.blocks import (
     HeadingBlock,
     HorizontalRuleBlock,
     InfoboxBlock,
+    OrderedListBlock,
     ParagraphBlock,
     PreformattedBlock,
     QuoteBlock,
+    ReferencesBlock,
     TableBlock,
     UnorderedListBlock,
     UnsupportedBlock,
@@ -118,6 +120,30 @@ def test_convert_block_dispatches_infobox_tables() -> None:
 
     assert isinstance(block, InfoboxBlock)
     assert block.title == "Emacs"
+
+
+def test_convert_block_dispatches_reference_lists() -> None:
+    node = _body_children(
+        '<ol class="references">'
+        '<li id="cite_note-1"><span class="reference-text">Citation.</span></li>'
+        "</ol>"
+    )[0]
+    assert isinstance(node, ElementNode)
+
+    block, diagnostics = convert_block(node)
+
+    assert isinstance(block, ReferencesBlock)
+    assert block.items == ((TextInline(value="Citation."),),)
+    assert diagnostics == ()
+
+
+def test_convert_block_dispatches_plain_ordered_lists_as_before() -> None:
+    node = _body_children("<ol><li>a</li></ol>")[0]
+    assert isinstance(node, ElementNode)
+
+    block, _ = convert_block(node)
+
+    assert isinstance(block, OrderedListBlock)
 
 
 def test_convert_document_groups_bare_text_between_block_elements() -> None:

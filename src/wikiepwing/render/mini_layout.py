@@ -1,4 +1,6 @@
-"""Mini layout renderer: Article -> RenderedEntry (TASK-H007/K004/K005/K009, ARCHITECTURE.md 16.2).
+"""Mini layout renderer: Article -> RenderedEntry (TASK-H007/K004/K005/K009/L003).
+
+ARCHITECTURE.md 16.2 describes the "標準レイアウト" this module renders.
 
 Renders the "標準レイアウト" as plain text: title, aliases, update date, the
 abstract, section-numbered body (1./1.1 style), categories, and source
@@ -7,9 +9,12 @@ tiers: "simple" as grid-like plain text (TASK-K004), "wide"/"complex" as
 vertical label:value records (TASK-K005), and "unsupported" (no rows) as
 just its caption. InfoboxBlock (TASK-K009) renders its title, each
 field's flattened value, and a placeholder line per image reference
-(actual image download/rendering is a separate epic). Entry size budget
-splitting (16.4) remains out of scope -- no article this renderer sees
-today can be oversized enough to need it.
+(actual image download/rendering is a separate epic). ReferencesBlock
+(TASK-L003) renders each item as a numbered "[N] citation text" line, in
+DOM order -- the only correspondence to an inline marker's number, since
+the model carries no explicit id linkage (see TASK-L002). Entry size
+budget splitting (16.4) remains out of scope -- no article this renderer
+sees today can be oversized enough to need it.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from wikiepwing.model.blocks import (
     ParagraphBlock,
     PreformattedBlock,
     QuoteBlock,
+    ReferencesBlock,
     TableBlock,
     TableCell,
     UnorderedListBlock,
@@ -158,7 +164,17 @@ def _render_block(block: Block, numberer: _HeadingNumberer, *, indent: int) -> l
         return _render_table(block, prefix)
     if isinstance(block, InfoboxBlock):
         return _render_infobox(block, prefix)
+    if isinstance(block, ReferencesBlock):
+        return _render_references(block, prefix)
     return [""]
+
+
+def _render_references(block: ReferencesBlock, prefix: str) -> list[str]:
+    lines = [
+        f"{prefix}[{index}] {_flatten_inlines(item)}" for index, item in enumerate(block.items, 1)
+    ]
+    lines.append("")
+    return lines
 
 
 def _render_infobox(block: InfoboxBlock, prefix: str) -> list[str]:
