@@ -66,6 +66,7 @@ RUN printf '%s\n' \
     && rm --force /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::Check-Valid-Until=false update \
     && apt-get install --yes --no-install-recommends \
+        fonts-noto-cjk=1:20220127+repack1-1 \
         make=4.3-4.1 \
         perl=5.36.0-7+deb12u3 \
         zip=3.0-13 \

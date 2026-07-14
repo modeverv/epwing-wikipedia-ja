@@ -4232,3 +4232,42 @@ git diff --check
 **次タスク**
 
 - TASK-M005 Glyph bitmap renderer(依存: M004)
+
+### 2026-07-15 10:10 UTC — TASK-M005
+
+**目的**
+
+- `ARCHITECTURE.md` 18.4(フォント: Docker内の再配布可能なNoto CJK系を利用、フォントファイル自体は成果物に含めない)を実装する。gaiji文字を実際にラスタライズしてbitmapを生成する。
+
+**変更**
+
+- `pyproject.toml`に`Pillow==12.2.0`を新規依存として追加した(`uv add`)。
+- `docker/toolchain.Dockerfile`のruntimeステージに`fonts-noto-cjk=1:20220127+repack1-1`を追加した。既存のDebian snapshot pinning慣習に従い、バージョンを推測せずネットワーク経由で同一snapshotから実際のpinバージョンを確認して採用した。
+- `src/wikiepwing/gaiji/glyph_renderer.py`に`GlyphRenderError`・`render_glyph_bitmap()`・`bitmap_hash()`・`DEFAULT_FONT_PATH`(Debianのfonts-noto-cjkパッケージの標準インストールパス、ドキュメント化された前提)を実装した。
+
+**実行コマンド**
+
+```bash
+uv add "Pillow==12.2.0"
+uv run pytest tests/test_gaiji_glyph_renderer.py tests/test_gaiji_toolchain_definition.py
+make check
+git diff --check
+```
+
+**結果**
+
+- PNG生成・決定性(同じ入力で同じbitmap)・異なるsequenceでの異なるbitmap・フォント欠落時のエラー・空sequence時のエラー・bitmap_hashのSHA-256計算を8件のテストで確認した(このmacOS Dev環境にはfonts-noto-cjkが無いため、実フォント読み込みが必要なテストはmacOSのCJK対応システムフォントを代替として使用し、それも無ければskip)。
+- Dockerfileへのpin済みfonts-noto-cjk追加を1件のテストで確認した。
+- 標準スイート987件、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- ユーザーに確認した上で、Pillowを新規依存として追加しNoto CJKフォントをDocker toolchainイメージへ組み込む方針を採用した(スタブ実装やスキップではなく実装を進める判断)。
+- フォントファイル自体はgitリポジトリに含めず、Docker imageのapt packageとしてのみ存在させる設計にした(`ARCHITECTURE.md` 18.4の要件通り)。
+- `DEFAULT_FONT_PATH`(`/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`)は、実際にDebianパッケージの中身をネットワーク経由で検証できなかったため、ドキュメント化された前提(一般的に知られているfonts-noto-cjkパッケージの標準インストールパス)として明記した。
+- manifestへのfont package version/hash記録(18.4後半の要件)は、既存のstage manifestスキーマに対応するフィールドが無く、`toolchain_image_digest`が既にイメージ全体のハッシュとして間接的にこれをカバーしているため、本タスクでは追加のスキーマ変更を行わなかった。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-M006 Gaiji code assignment(依存: M005)

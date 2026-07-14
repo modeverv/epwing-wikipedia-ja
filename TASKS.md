@@ -623,7 +623,7 @@
 
 **依存:** M002
 
-### TASK-M005 [ ] Glyph bitmap renderer
+### TASK-M005 [x] Glyph bitmap renderer
 
 **依存:** M004
 
