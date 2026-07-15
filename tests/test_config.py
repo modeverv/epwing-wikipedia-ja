@@ -102,3 +102,43 @@ exclude_images_without_license = true
 
     with pytest.raises(ConfigurationError, match="missing_license_action cannot be warn"):
         load_config(DEFAULT_CONFIG, [override])
+
+
+@pytest.mark.parametrize("profile", ["mini", "lite", "full"])
+def test_loads_each_profile_overlay_without_error(profile: str) -> None:
+    profile_path = Path(f"config/profiles/{profile}.toml")
+
+    config = load_config(DEFAULT_CONFIG, [profile_path])
+
+    assert config.profile == profile
+
+
+def test_mini_profile_disables_images_and_shrinks_search_terms() -> None:
+    config = load_config(DEFAULT_CONFIG, [Path("config/profiles/mini.toml")])
+
+    assert config.section("images")["enabled"] is False
+    assert config.section("search")["max_terms_per_article"] == 8
+
+
+def test_lite_profile_enables_images_with_expected_limits() -> None:
+    config = load_config(DEFAULT_CONFIG, [Path("config/profiles/lite.toml")])
+
+    assert config.section("images")["enabled"] is True
+    assert config.section("images")["max_per_article"] == 3
+    assert config.section("search")["max_terms_per_article"] == 32
+
+
+def test_full_profile_enables_richer_limits() -> None:
+    config = load_config(DEFAULT_CONFIG, [Path("config/profiles/full.toml")])
+
+    assert config.section("images")["max_per_article"] == 8
+    assert config.section("search")["include_categories"] is True
+    assert config.section("distribution")["include_attribution_appendix"] is True
+
+
+def test_rejects_unknown_profile(tmp_path: Path) -> None:
+    override = tmp_path / "bad-profile.toml"
+    override.write_text('profile = "ultra"\n', encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="profile must be one of"):
+        load_config(DEFAULT_CONFIG, [override])

@@ -5104,3 +5104,38 @@ git diff --check
 **次タスク**
 
 - TASK-P001 Profile schema(依存: A003)
+
+## 2026-07-16 TASK-P001 Profile schema
+
+**目的**
+
+`ARCHITECTURE.md` 21(Mini/Lite/Full profile定義)・`CONFIG_REFERENCE.md` 17(profile defaultsの正確なTOML内容)を実装する。`config/profiles/mini.toml`/`lite.toml`/`full.toml`を作成し、`profile`値のschema検証を追加する。
+
+**変更**
+
+- `config/profiles/mini.toml`/`lite.toml`/`full.toml`(新規、`CONFIG_REFERENCE.md` 17と一致)
+- `src/wikiepwing/config.py`: `_PROFILES = ("mini", "lite", "full")`、`load_config`での検証追加
+- `tests/test_config.py`(新規13件)
+- `TASKS.md`(TASK-P001を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_config.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 各profile fileのoverride読み込み・各profileの主要な値・不正なprofile値の拒否を13件のテストで確認した。
+- 標準スイート1230件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `config/profiles/<profile>.toml`の自動選択・読み込み(`CONFIG_REFERENCE.md` 1のlayer 3)は対象外とした。`config/default.toml`の現在の`[search]`(`max_terms_per_article=64`)が`lite.toml`(`32`)と異なるため、自動読み込みを実装すると既存の`load_config`呼び出し全箇所(ingest/normalize/generate/image-fetch等)の実効設定値が一括で変わってしまう。この広範囲な挙動変更はTASK-P004(Profile-driven renderer)が担う設計と判断した。今日でも`--config config/profiles/lite.toml`のように明示的に渡せばoverlayとして機能する。
+- `config/projects/<project>.toml`(layer 2)も対象外(別タスクの範囲)。
+
+**次タスク**
+
+- TASK-P002 Mini profile finalize(依存: H013,J007,K010,L004,M009)

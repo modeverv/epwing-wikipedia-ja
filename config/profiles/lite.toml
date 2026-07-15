@@ -1,0 +1,16 @@
+profile = "lite"
+
+[images]
+enabled = true
+max_per_article = 3
+preferred_width = 320
+
+[math]
+render_graphics = true
+
+[search]
+include_aliases = true
+include_categories = false
+include_heading_keywords = true
+include_infobox_keywords = false
+max_terms_per_article = 32

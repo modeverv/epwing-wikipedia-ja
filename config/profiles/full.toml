@@ -1,0 +1,16 @@
+profile = "full"
+
+[images]
+enabled = true
+max_per_article = 8
+preferred_width = 480
+
+[search]
+include_aliases = true
+include_categories = true
+include_heading_keywords = true
+include_infobox_keywords = true
+max_terms_per_article = 128
+
+[distribution]
+include_attribution_appendix = true

@@ -57,6 +57,8 @@ class _Kind(Enum):
 
 type _SchemaNode = _Kind | dict[str, "_SchemaNode"]
 
+_PROFILES = ("mini", "lite", "full")
+
 
 _SCHEMA: dict[str, _SchemaNode] = {
     "schema_version": _Kind.INTEGER,
@@ -381,6 +383,8 @@ def load_config(
         raise ConfigurationError(f"unsupported schema_version: {schema_version}")
     project = cast(str, _require_value(merged, "project", str))
     profile = cast(str, _require_value(merged, "profile", str))
+    if profile not in _PROFILES:
+        raise ConfigurationError(f"profile must be one of {_PROFILES}: {profile!r}")
     paths = _require_paths(merged)
     _validate_semantics(merged, paths)
     frozen = cast(Mapping[str, object], _freeze(merged))

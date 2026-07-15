@@ -731,7 +731,7 @@
 
 ## EPIC P — Profiles and Lite
 
-### TASK-P001 [ ] Profile schema
+### TASK-P001 [x] Profile schema
 
 **依存:** A003
 

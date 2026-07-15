@@ -1,0 +1,21 @@
+profile = "mini"
+
+[images]
+enabled = false
+
+[math]
+render_graphics = false
+
+[tables]
+enabled = true
+oversized_action = "fallback"
+
+[search]
+include_aliases = false
+include_categories = false
+include_heading_keywords = false
+include_infobox_keywords = false
+max_terms_per_article = 8
+
+[references]
+max_references = 100
