@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from wikiepwing.model.article import Article
-from wikiepwing.model.blocks import HeadingBlock
+from wikiepwing.model.blocks import Block, HeadingBlock, InfoboxBlock
 from wikiepwing.model.inline import Inline
 from wikiepwing.search.kana_variant import kana_variant
 from wikiepwing.search.normalize_key import normalize_index_key
@@ -58,6 +58,7 @@ _NORMALIZED_TITLE_VARIANT_PRIORITY = 800
 _KANA_VARIANT_PRIORITY = 600
 _CATEGORY_PRIORITY = 500
 _HEADING_KEYWORD_PRIORITY = 400
+_INFOBOX_KEYWORD_PRIORITY = 300
 
 _VARIANT_GENERATORS: tuple[tuple[Callable[[str], str | None], int, str], ...] = (
     (space_removed_variant, _NORMALIZED_TITLE_VARIANT_PRIORITY, "nfkc_case_space_variant"),
@@ -176,6 +177,54 @@ def heading_keyword_terms_for_article(article: Article) -> tuple[SearchTerm, ...
             )
         )
     return tuple(terms)
+
+
+def infobox_keyword_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
+    """Return one `kind="keyword"` SearchTerm per distinct infobox field value (TASK-Q002).
+
+    Only field *values* are extracted, not their names/labels (a label
+    like "生年月日" is a generic column heading, not a searchable term).
+    Deduplicated and kept separate from `title_terms_for_article` for the
+    same one-to-many reason as `category_terms_for_article`/
+    `heading_keyword_terms_for_article`.
+    """
+    terms: list[SearchTerm] = []
+    seen_normalized_keys: set[str] = set()
+    for block in article.blocks:
+        if not isinstance(block, InfoboxBlock):
+            continue
+        for field in block.fields:
+            text = _flatten_block_text(field.value)
+            if not text:
+                continue
+            normalized_key = normalize_index_key(text)
+            if not normalized_key or normalized_key in seen_normalized_keys:
+                continue
+            seen_normalized_keys.add(normalized_key)
+            terms.append(
+                SearchTerm(
+                    key=text,
+                    normalized_key=normalized_key,
+                    target_page_id=article.page_id,
+                    kind="keyword",
+                    priority=_INFOBOX_KEYWORD_PRIORITY,
+                    source="infobox",
+                )
+            )
+    return tuple(terms)
+
+
+def _flatten_block_text(blocks: tuple[Block, ...]) -> str:
+    parts: list[str] = []
+    for block in blocks:
+        inlines = getattr(block, "inlines", None)
+        if inlines is not None:
+            parts.append(_flatten_inline_text(inlines))
+            continue
+        nested_blocks = getattr(block, "blocks", None)
+        if nested_blocks is not None:
+            parts.append(_flatten_block_text(nested_blocks))
+    return " ".join(part for part in parts if part).strip()
 
 
 def _flatten_inline_text(inlines: tuple[Inline, ...]) -> str:

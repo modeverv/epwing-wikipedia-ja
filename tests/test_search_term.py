@@ -12,6 +12,7 @@ from wikiepwing.search.search_term import (
     SearchTermError,
     category_terms_for_article,
     heading_keyword_terms_for_article,
+    infobox_keyword_terms_for_article,
     sort_search_terms,
     title_terms_for_article,
 )
@@ -333,3 +334,99 @@ def test_heading_keyword_terms_use_normalized_index_key() -> None:
     terms = heading_keyword_terms_for_article(article)
 
     assert terms[0].normalized_key == "emacs"
+
+
+def test_infobox_keyword_terms_extracted_from_field_values() -> None:
+    from wikiepwing.model.blocks import InfoboxBlock, InfoboxField
+
+    article = _make_article(
+        blocks=(
+            InfoboxBlock(
+                title="Emacs",
+                fields=(
+                    InfoboxField(
+                        name="Developer",
+                        value=(ParagraphBlock(inlines=(TextInline(value="GNU Project"),)),),
+                    ),
+                ),
+                images=(),
+            ),
+        )
+    )
+
+    terms = infobox_keyword_terms_for_article(article)
+
+    assert len(terms) == 1
+    assert terms[0].key == "GNU Project"
+    assert terms[0].kind == "keyword"
+    assert terms[0].priority == 300
+    assert terms[0].source == "infobox"
+    assert terms[0].target_page_id == article.page_id
+
+
+def test_infobox_keyword_terms_exclude_field_names() -> None:
+    from wikiepwing.model.blocks import InfoboxBlock, InfoboxField
+
+    article = _make_article(
+        blocks=(
+            InfoboxBlock(
+                title=None,
+                fields=(
+                    InfoboxField(
+                        name="Developer",
+                        value=(ParagraphBlock(inlines=(TextInline(value="GNU Project"),)),),
+                    ),
+                ),
+                images=(),
+            ),
+        )
+    )
+
+    terms = infobox_keyword_terms_for_article(article)
+
+    assert all(term.key != "Developer" for term in terms)
+
+
+def test_infobox_keyword_terms_deduplicate_by_normalized_key() -> None:
+    from wikiepwing.model.blocks import InfoboxBlock, InfoboxField
+
+    article = _make_article(
+        blocks=(
+            InfoboxBlock(
+                title=None,
+                fields=(
+                    InfoboxField(
+                        name="A",
+                        value=(ParagraphBlock(inlines=(TextInline(value="GNU Project"),)),),
+                    ),
+                    InfoboxField(
+                        name="B",
+                        value=(ParagraphBlock(inlines=(TextInline(value="GNU Project"),)),),
+                    ),
+                ),
+                images=(),
+            ),
+        )
+    )
+
+    terms = infobox_keyword_terms_for_article(article)
+
+    assert len(terms) == 1
+
+
+def test_infobox_keyword_terms_ignore_empty_field_values() -> None:
+    from wikiepwing.model.blocks import InfoboxBlock, InfoboxField
+
+    article = _make_article(
+        blocks=(InfoboxBlock(title=None, fields=(InfoboxField(name="A", value=()),), images=()),)
+    )
+
+    terms = infobox_keyword_terms_for_article(article)
+
+    assert terms == ()
+
+
+def test_no_infobox_yields_no_infobox_keyword_terms() -> None:
+    article = _make_article(blocks=(ParagraphBlock(inlines=(TextInline(value="text"),)),))
+
+    assert infobox_keyword_terms_for_article(article) == ()

@@ -767,7 +767,7 @@
 
 **依存:** J007
 
-### TASK-Q002 [ ] Infobox keyword extraction
+### TASK-Q002 [x] Infobox keyword extraction
 
 **依存:** K009,J007
 

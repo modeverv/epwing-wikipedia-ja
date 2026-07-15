@@ -5407,3 +5407,37 @@ git diff --check
 **次タスク**
 
 - TASK-Q002 Infobox keyword extraction(依存: K009,J007)
+
+## 2026-07-16 TASK-Q002 Infobox keyword extraction
+
+**目的**
+
+`ARCHITECTURE.md` 14.3(Full profileの索引「infobox selected values」)・`DATA_CONTRACTS.md`のpriority提案(`300 infobox keyword`)を実装する。TASK-Q001と同じ形で`infobox_keyword_terms_for_article`を追加する。
+
+**変更**
+
+- `src/wikiepwing/search/search_term.py`: `infobox_keyword_terms_for_article`(`_INFOBOX_KEYWORD_PRIORITY=300`)・`_flatten_block_text`(`InfoboxField.value`のduck-typed再帰flatten)
+- `tests/test_search_term.py`(新規5件)
+- `TASKS.md`(TASK-Q002を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- フィールド値からのterm抽出・フィールド名の除外・重複除去・空値の無視・infoboxなし記事を5件のテストで確認した。
+- 標準スイート1248件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- フィールド名(label)自体はkeywordとして抽出しない(generic column headingであり検索キーワードとして不適切なため)。
+- `InfoboxField.value`は`tuple[Block,...]`(`convert_document`が生成、`ParagraphBlock`以外も来うる)であるため、`mini_layout.py`と同様のduck-typed再帰flattenを実装した。
+
+**次タスク**
+
+- TASK-Q003 Lead alias extraction(依存: G012,J007)
