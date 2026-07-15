@@ -691,7 +691,7 @@
 
 **依存:** O002
 
-### TASK-O004 [ ] Secure downloader
+### TASK-O004 [x] Secure downloader
 
 **依存:** A004
 

@@ -4786,3 +4786,40 @@ git diff --check
 **次タスク**
 
 - TASK-O004 Secure downloader(依存: A004)
+
+## 2026-07-16 TASK-O004 Secure downloader
+
+**目的**
+
+`ARCHITECTURE.md` 15.4のダウンロード安全性要件のうちネットワーク層(HTTPSのみ・host allowlist・redirect回数制限・timeout・content-length上限)を実装する。新規`src/wikiepwing/media/`パッケージ(gaijiと同様の独立パッケージ)にsecure downloaderを新設した。
+
+**変更**
+
+- `src/wikiepwing/media/__init__.py`(新規)
+- `src/wikiepwing/media/downloader.py`(新規): `MediaDownloadError`・`MediaDownloadResult`・`SecureMediaDownloader`(`MediaTransport` Protocolでネットワーク層を抽象化、既定実装は`urllib.request`ベース)
+- `tests/test_media_downloader.py`(新規16件、fake transportで実ネットワークなしにテスト)
+- `TASKS.md`(TASK-O004を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_downloader.py
+make check
+git diff --check
+```
+
+**結果**
+
+- HTTPS強制・host allowlist・redirect追跡と各hopでの再検証・redirect超過・Location欠落・想定外status・content-length上限(header/実読み取り両方)・response常時close・コンストラクタバリデーションを16件のテストで確認した。
+- 標準スイート1136件(新規16件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- redirectは各hopでHTTPS/host allowlistを再検証する設計にした。allowlistされたホストからdisallowedなホストへredirectされることでallowlistを迂回されるのを防ぐため。
+- Content-Lengthヘッダによる事前拒否だけでなく、実際に読み取ったバイト数でも上限を強制した(ヘッダを偽るサーバへの防御)。
+- MIME/magic byte検証・実デコード後pixel上限・SVG sanitizeは対象外とした(バイト列の実デコードが必要なためTASK-O005/O006の範囲)。
+- 既存の`source/downloader.py`(Snapshot chunk用)は同一APIへの1回だけのredirectを扱う設計であり、O004は任意の(allowlistされた)外部ホストへの複数回redirectを扱う必要があるため、独立したモジュールとして実装した(コード共有は見送った)。
+
+**次タスク**
+
+- TASK-O005 MIME/magic/pixel validation(依存: O004)
