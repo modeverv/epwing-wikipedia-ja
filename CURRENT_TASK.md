@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-O005
+TASK-O006
 
 ## 目的
 
-`ARCHITECTURE.md` 15.4のダウンロード安全性要件のうち「実デコード後pixel上限」「MIMEとmagic byte検証」を実装する。TASK-O004がダウンロードした生バイト列を、(1) magic byteから実際のフォーマットを判定し、(2) 宣言された`Content-Type`と矛盾しないか確認し、(3) Pillowで実際にデコードして得られる幅・高さの積が上限を超えないか検証する、という3段階のバリデーションを行う。SVGはXML(magic byteでの判定になじまない、外部entity等の懸念もある)ため対象外とし、TASK-O006(SVG sanitizer)に委ねる。
+`ARCHITECTURE.md` 15.4の「SVG sanitize」「external entity禁止」を実装する。SVGはXMLであり、TASK-O005のmagic byte検証の対象外(別の脅威モデル)としたため、専用のsanitizerを実装する。DOCTYPE/ENTITY宣言(XXE・entity展開DoSの経路)を検出したら即座に拒否し、パース後のDOM木から`<script>`/`<foreignObject>`要素、`on*`イベントハンドラ属性、`javascript:` URIを持つ`href`/`xlink:href`属性を取り除いた安全なSVGバイト列を返す。
 
 ## 事前条件
 
@@ -14,15 +14,15 @@ TASK-O005
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-O005(依存: O004)を読んだ
-- [x] `ARCHITECTURE.md` 15.4(「実デコード後pixel上限」「MIMEとmagic byte検証」)を再確認した
-- [x] TASK-M005で追加済みのPillow依存を再利用する(新規依存なし)
-- [x] `MediaDownloadResult.content_type`(TASK-O004、`Content-Type`ヘッダから取得、`None`もありうる)を確認した
+- [x] `TASKS.md`のTASK-O006(依存: O005)を読んだ
+- [x] `ARCHITECTURE.md` 15.4(「SVG sanitize」「external entity禁止」)を再確認した
+- [x] 標準ライブラリの`xml.etree.ElementTree`(`expat`ベース)がDOCTYPE内のカスタムENTITY宣言によるXXE/entity展開DoSに晒されうることを確認し、パース前にDOCTYPE/ENTITY宣言を検出したら即座に拒否する(選択的除去ではなく)fail-closed方針にした
+- [x] 新規外部依存(`defusedxml`等)を追加せず、標準ライブラリのみで実装できることを確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/media/validation.py`(新規: `MediaValidationError`, `MediaValidationResult`, `validate_media_bytes`)
-- `tests/test_media_validation.py`(新規)
+- `src/wikiepwing/media/svg_sanitizer.py`(新規: `SvgSanitizeError`, `sanitize_svg`)
+- `tests/test_media_svg_sanitizer.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,29 +30,30 @@ TASK-O005
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_media_validation.py
+uv run pytest tests/test_media_svg_sanitizer.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] PNG/JPEG/GIF/WEBPの実際のmagic byteを正しく認識する
-- [x] magic byteから判定できない(不正/未対応)フォーマットは拒否する
-- [x] 宣言された`Content-Type`(与えられた場合)が実際に検出したフォーマットと矛盾する場合は拒否する。`None`の場合はスキップする
-- [x] Pillowでのデコードが失敗する場合は拒否する(クラッシュしない)
-- [x] 幅×高さが`max_pixels`を超える場合は拒否する
-- [x] 検証成功時は検出フォーマット・幅・高さを返す
+- [x] `<!DOCTYPE ...>`または`<!ENTITY ...>`を含むSVGは(大文字小文字を問わず)拒否する
+- [x] 整形式でないXMLは拒否する(クラッシュしない)
+- [x] `<script>`要素は出力から除去される
+- [x] `<foreignObject>`要素は出力から除去される
+- [x] `on*`(`onload`/`onclick`等、大文字小文字問わず)属性は除去される
+- [x] `javascript:`で始まる`href`/`xlink:href`属性は除去される
+- [x] 安全な`<svg>`(`<rect>`/`<path>`等のみ)はほぼそのまま(内容が保持されて)出力される
 - [x] `make check`が成功する
 
 ## 非対象
 
-- SVG(XMLベースで別の脅威モデル、TASK-O006のSVG sanitizerの対象)
+- SVGの完全なCSS/style属性内スクリプト解析(将来必要になれば別タスク)
 - raster変換(TASK-O007)
 
 ## 実施結果
 
-- `src/wikiepwing/media/validation.py`に`MediaValidationError`・`MediaValidationResult`・`validate_media_bytes`を実装した。magic byte(PNG/JPEG/GIF/WEBPの既知シグネチャ)でフォーマットを判定し、`declared_content_type`(与えられた場合)がそのフォーマットと矛盾しないか確認したうえで、Pillowで実際にデコードして幅・高さを取得し、`max_pixels`を超えないか検証する。
-- `tests/test_media_validation.py`(新規13件)で、PNG/JPEG/GIF/WEBP各magic byteの認識・未対応フォーマットの拒否・Content-Type一致/不一致/未知値/未指定・デコード失敗・pixel上限超過/境界値・`max_pixels`のバリデーションを確認した。
-- `make check`(format-check/lint/mypy/pytest 1149件)と`git diff --check`が成功した。
-- SVGは対象外(TASK-O006のSVG sanitizerが別の脅威モデルで対応)。
+- `src/wikiepwing/media/svg_sanitizer.py`に`SvgSanitizeError`・`sanitize_svg`を実装した。生バイト列に(大文字小文字を問わず)`<!DOCTYPE`/`<!ENTITY`が含まれる場合はパース前にfail-closedで拒否する。`xml.etree.ElementTree`でパース後、`<script>`/`<foreignObject>`要素、`on*`イベントハンドラ属性、`javascript:` URIの`href`/`xlink:href`属性を木から除去してから再シリアライズする。ルート要素自体が危険なタグの場合も拒否する。`ElementTree.register_namespace`でSVG/xlink名前空間を登録し、`ns0:`のような自動生成prefixではなく通常の`xmlns=`形式で出力されるようにした。
+- `tests/test_media_svg_sanitizer.py`(新規13件)で、安全なSVGの保持・DOCTYPE/ENTITY拒否(大文字小文字問わず)・整形式エラー拒否・script/foreignObject除去・onload/onclick除去(大文字小文字問わず)・javascript: href/xlink:href除去・安全なhrefの保持・危険なroot要素の拒否を確認した。
+- `make check`(format-check/lint/mypy/pytest 1162件)と`git diff --check`が成功した。
+- 新規外部依存は追加していない(標準ライブラリの`xml.etree.ElementTree`のみで実装)。

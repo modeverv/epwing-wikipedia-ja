@@ -4858,3 +4858,38 @@ git diff --check
 **次タスク**
 
 - TASK-O006 SVG sanitizer(依存: O005)
+
+## 2026-07-16 TASK-O006 SVG sanitizer
+
+**目的**
+
+`ARCHITECTURE.md` 15.4の「SVG sanitize」「external entity禁止」を実装する。SVGはXMLであり、TASK-O005のmagic byte検証の対象外としたため専用のsanitizerを新設した。
+
+**変更**
+
+- `src/wikiepwing/media/svg_sanitizer.py`(新規): `SvgSanitizeError`・`sanitize_svg`(DOCTYPE/ENTITY宣言をパース前にfail-closedで拒否、パース後に`<script>`/`<foreignObject>`要素・`on*`属性・`javascript:` href/xlink:hrefを除去して再シリアライズ)
+- `tests/test_media_svg_sanitizer.py`(新規13件)
+- `TASKS.md`(TASK-O006を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_svg_sanitizer.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 安全なSVGの保持・DOCTYPE/ENTITY拒否・整形式エラー拒否・script/foreignObject除去・イベントハンドラ除去・javascript: href除去・安全なhrefの保持・危険なroot要素の拒否を13件のテストで確認した。
+- 標準スイート1162件(新規13件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- DOCTYPE/ENTITY宣言は選択的に除去するのではなく、検出したら即座に拒否するfail-closed方針にした。難読化されたDOCTYPEを見逃すリスクを避けるため。
+- `defusedxml`等の新規依存は追加せず、標準ライブラリの`xml.etree.ElementTree`のみで実装した(Python標準のexpatパーサは既定で外部entityを解決しないため、DOCTYPE自体を排除すればXXE/entity展開DoSの経路を断てる)。
+- `ElementTree.tostring`が既定でSVG/xlink名前空間を`ns0:`のような自動生成prefixにしてしまう問題を、`register_namespace`で回避した。
+
+**次タスク**
+
+- TASK-O007 Raster converter(依存: O005-O006)

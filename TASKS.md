@@ -699,7 +699,7 @@
 
 **依存:** O004
 
-### TASK-O006 [ ] SVG sanitizer
+### TASK-O006 [x] SVG sanitizer
 
 **依存:** O005
 
