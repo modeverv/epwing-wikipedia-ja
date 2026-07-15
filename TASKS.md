@@ -739,7 +739,7 @@
 
 **依存:** H013,J007,K010,L004,M009
 
-### TASK-P003 [ ] Lite profile
+### TASK-P003 [x] Lite profile
 
 **依存:** N007,O012,P001
 

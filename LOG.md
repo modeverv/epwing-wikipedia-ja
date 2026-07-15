@@ -5171,3 +5171,35 @@ git diff --check
 **次タスク**
 
 - TASK-P003 Lite profile(依存: N007,O012,P001)
+
+## 2026-07-16 TASK-P003 Lite profile
+
+**目的**
+
+TASK-P002と同じ方針で、Lite profile(`config/profiles/lite.toml`)を使った実際のend-to-end buildが完走することを確認する受け入れテストを実装する。
+
+**変更**
+
+- `tests/test_lite_profile_build.py`(新規): TASK-P002と同じ100記事gate構成で、`config/profiles/lite.toml`をoverrideとして使うend-to-endテスト
+- `TASKS.md`(TASK-P003を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_lite_profile_build.py
+make check
+git diff --check
+```
+
+**結果**
+
+- Lite profile configでのregister→ingest→normalize→generate→verifyの全stage完走、有効な`entries.jsonl`(100件)生成を1件のテストで確認した。
+- 標準スイート1232件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- TASK-P002と同じ理由で、config値の実際のnormalize/render pipelineへの配線は対象外(TASK-P004)。
+
+**次タスク**
+
+- TASK-P004 Profile-driven renderer(依存: P002-P003)
