@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-N006
+TASK-N007
 
 ## 目的
 
-`convert_block.py`/`paragraphs.py`のdocstringに明記されている「images and math, whose real HTML conversion is deferred to later epics (N/O)」を数式について解消する。TASK-N001(`RawMathNode`抽出)・TASK-N002(`canonicalize_math_source`によるcanonical化)で得た情報を、block-level(`display="block"`)は`MathBlock`、inline(それ以外)は新設する`MathInline`として、実際のDOM変換パイプライン(`convert_block`/`convert_inline_nodes`)に配線する。あわせてMini layout renderer(TASK-H007)がこれらを人間可読なテキスト行として出力できるようにする。TASK-N003(レンダラ)・TASK-N004(cache)・TASK-N005(raster)が返すバイト列自体をgraphicsとして埋め込む配線はEPIC O(`GraphicAsset`/`add_graphic`)の責務であり、`ImageBlock`が同様にまだplaceholderであることに合わせ、対象外とする。
+`ARCHITECTURE.md` 15.7の数式変換優先順位の最後のステップ「5. 失敗時はTeX/plain textへフォールバック」を実装する。TASK-N003(レンダラ)・TASK-N004(cache)・TASK-N005(raster変換)を1つのパイプラインとして呼び出し、途中のどの段階で失敗しても(未対応のTeX構文、デコード失敗等)例外を外に漏らさず、TASK-N001が保存済みのplain text(text alternativeまたはTeX source)へフォールバックし、診断を1件記録する関数を実装する。1記事の数式1個の失敗が記事全体のbuildを止めないようにする(ARCHITECTURE.md 3.5の障害分離方針)。
 
 ## 事前条件
 
@@ -14,23 +14,15 @@ TASK-N006
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-N006(依存: N004-N005,H007)を読んだ
-- [x] `convert_block.py`/`paragraphs.py`の現状(mathが未配線で、block-level mathはinline_bufferに混入、inline mathはtransparent wrapperとして子要素を再帰するだけで実質破棄される)を確認した
-- [x] `model/blocks.py`の`MathBlock`(既存placeholder: `source`/`source_format`)、`ARCHITECTURE.md` 11.3の`MathInline`(未実装)を確認した
-- [x] `mini_layout.py`が`ImageBlock`同様、graphics実体の埋め込みは行わずtextのみをrenderしている現状の設計方針を確認した
+- [x] `TASKS.md`のTASK-N007(依存: N001)を読んだ
+- [x] `ARCHITECTURE.md` 15.7(数式変換の優先順位、ステップ5「失敗時はTeX/plain textへフォールバック」)を再確認した
+- [x] TASK-N003の`MathRenderError`・TASK-N005の`MathRasterError`(いずれも`ValueError`)を確認した
+- [x] TASK-N004の`MathCache.get_or_render`(`render`callableが例外を送出した場合はそのまま伝播する、という既存契約)を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/model/inline.py`(`MathInline`追加)
-- `src/wikiepwing/normalize/math_content.py`(新規: `resolve_math_source`共有ヘルパー)
-- `src/wikiepwing/normalize/convert_block.py`(block-level math配線)
-- `src/wikiepwing/normalize/paragraphs.py`(inline math配線)
-- `src/wikiepwing/render/mini_layout.py`(`MathBlock`/`MathInline`のtext render)
-- `tests/test_normalize_math_content.py`(新規)
-- `tests/test_normalize_convert_block.py`または既存math関連test(必要に応じて新規/追記)
-- `tests/test_normalize_paragraphs.py`(追記)
-- `tests/test_render_mini_layout.py`(追記)
-- `tests/test_model_inline.py`(存在すれば追記、なければ確認のみ)
+- `src/wikiepwing/normalize/math_fallback.py`(新規: `MathRenderOutcome`, `render_math_with_fallback`)
+- `tests/test_normalize_math_fallback.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -38,32 +30,26 @@ TASK-N006
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_normalize_math_content.py tests/test_normalize_paragraphs.py tests/test_render_mini_layout.py -q
+uv run pytest tests/test_normalize_math_fallback.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `<math display="block">`(tex sourceまたはtext alternativeのいずれかがある場合)が`convert_block`経由で`MathBlock`になる
-- [x] `<math>`(display="block"以外、tex sourceまたはtext alternativeのいずれかがある場合)が`convert_inline_nodes`経由で`MathInline`になる
-- [x] tex sourceもtext alternativeも取れない`<math>`は診断コード付きの`UnsupportedBlock`/`UnsupportedInline`にfallbackする(クラッシュしない)
-- [x] Mini layout rendererが`MathBlock`を独立した行として、`MathInline`を段落内テキストの一部としてrenderする
+- [x] `render_math_with_fallback`が、レンダリング・cache・raster変換すべて成功する場合はBMPバイト列を返す(`fallback_text`は`None`)
+- [x] `MathRenderError`・`MathRasterError`いずれが発生しても例外を再送出せず、`fallback_text`に指定したplain textを設定し、`MATH_RENDER_FAILED`診断を1件返す
+- [x] cache_keyが`None`でない場合、2回目の呼び出しでレンダラが再度呼ばれない(TASK-N004のcacheがそのまま機能する)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際のgraphic byte(TASK-N003-N005のレンダリング結果)をRenderedEntry.graphics/EPWING graphicへ埋め込む配線(EPIC O)
-- MathML以外の数式表現(画像埋め込み数式等)への対応
+- 実際のgraphic byteをRenderedEntry.graphics/EPWING graphicへ埋め込む配線(EPIC O)
+- MathBlock/MathInlineへのfallback結果の再配線(既にTASK-N006でsource自体がplain textとして保存されているため、この関数は将来のEPIC O配線が使うレンダリング層のユーティリティ)
 
 ## 実施結果
 
-- `model/inline.py`に`MathInline`(`MathBlock`と同型: `source`/`source_format`)を追加し、`Inline` unionとpayload/parseへ配線した。
-- `normalize/math_content.py`(新規)に`resolve_math_source(RawMathNode) -> tuple[str, str] | None`を実装した。TASK-N002の`compute_math_cache_key`と同じ優先順位(tex source優先、なければtext alternative、canonicalize後に空ならNone)で`(source, source_format)`を返す。
-- `convert_block.py`: `is_math_node`を`_is_block_level`に追加(`display="block"`のときのみtrue)し、`convert_block`の dispatch に `_convert_math_block`(解決できれば`MathBlock`、できなければ`MATH_NO_SOURCE`診断付き`UnsupportedBlock`)を追加した。
-- `paragraphs.py`: `convert_inline_nodes`の内部dispatchに`<math>`を追加し、`MathInline`または`MATH_NO_SOURCE`診断コード付き`UnsupportedInline`を返す`_convert_math_inline`を実装した。
-- `whitespace.py`: `MathInline`を`_normalize_inline`の既存exhaustiveディスパッチに追加した(`MathBlock`同様、verbatim保持で`AssertionError`を回避)。
-- `mini_layout.py`: `MathBlock`を独立行として、`MathInline`を段落内テキストの一部として(`_inline_text`)render するようにした。
-- 新規テスト: `tests/test_normalize_math_content.py`(6件)、`tests/test_normalize_convert_block.py`/`tests/test_normalize_paragraphs.py`/`tests/test_render_mini_layout.py`/`tests/test_model_inline.py`への追記(計16件)。
-- `make check`(format-check/lint/mypy/pytest 1083件)と`git diff --check`が成功した。
-- 実際のgraphic byte(N003-N005)埋め込みはEPIC O待ちのため対象外のまま(`ImageBlock`と同じ既存方針)。
+- `src/wikiepwing/normalize/math_fallback.py`に`MathRenderOutcome`・`render_math_with_fallback`を実装した。TASK-N004の`MathCache.get_or_render`経由でTASK-N003の`render_math_to_image`(PNG)を呼び、TASK-N005の`convert_png_to_bmp`でBMP化する。`MathRenderError`/`MathRasterError`のいずれかが送出された場合は例外を再送出せず、呼び出し側が渡した`fallback_text`と`MATH_RENDER_FAILED`診断1件を返す。
+- `tests/test_normalize_math_fallback.py`(新規4件)で、成功時のBMP返却・失敗時のtext fallback+診断・cache経由での2回目呼び出し省略・`None`cache_keyでの常時レンダリングを確認した。
+- `make check`(format-check/lint/mypy/pytest 1087件)と`git diff --check`が成功した。
+- これでEPIC N(数式)のTASK-N001からN007まで完了した。

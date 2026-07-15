@@ -4646,3 +4646,38 @@ git diff --check
 **次タスク**
 
 - TASK-N007 Failure fallback(依存: N001)
+
+## 2026-07-16 TASK-N007 Failure fallback
+
+**目的**
+
+`ARCHITECTURE.md` 15.7の数式変換優先順位のステップ5「失敗時はTeX/plain textへフォールバック」を実装する。TASK-N003(レンダラ)・TASK-N004(cache)・TASK-N005(raster変換)を1つのパイプラインとして呼び出し、途中で失敗しても例外を漏らさずplain textへフォールバックする関数を用意し、EPIC N(数式)を完了させる。
+
+**変更**
+
+- `src/wikiepwing/normalize/math_fallback.py`(新規): `MathRenderOutcome`(`bitmap`/`fallback_text`/`diagnostics`)・`render_math_with_fallback`(cache経由でrender_math_to_image→convert_png_to_bmpを呼び、`MathRenderError`/`MathRasterError`を`MATH_RENDER_FAILED`診断+text fallbackへ変換)
+- `tests/test_normalize_math_fallback.py`(新規4件)
+- `TASKS.md`(TASK-N007を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_math_fallback.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 成功時のBMP返却・失敗時のtext fallback+診断・cache経由での2回目呼び出し省略・`None`cache_keyでの常時レンダリングを4件のテストで確認した。
+- 標準スイート1087件(新規4件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `render_math_with_fallback`は`MathRenderError`・`MathRasterError`(いずれも`ValueError`のサブクラス)のみを捕捉する。それ以外の予期しない例外は伝播させ、隠蔽しない。
+- fallback textの選定(text alternative優先かTeX sourceかなど)は呼び出し側の責務とした(TASK-N006の`resolve_math_source`が既にその優先順位を実装済みのため、二重実装を避けた)。
+- これでEPIC N(数式)のTASK-N001-N007が完了した。実際のgraphic埋め込み配線(RenderedEntry.graphics/EPWING `add_graphic`)はEPIC O待ち。
+
+**次タスク**
+
+- TASK-O001 MediaReference extraction(依存: G001,F004)

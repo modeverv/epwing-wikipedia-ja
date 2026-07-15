@@ -671,7 +671,7 @@
 
 **依存:** N004-N005,H007
 
-### TASK-N007 [ ] Failure fallback
+### TASK-N007 [x] Failure fallback
 
 **依存:** N001
 
