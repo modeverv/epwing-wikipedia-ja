@@ -5,10 +5,13 @@ from datetime import UTC, datetime
 import pytest
 
 from wikiepwing.model.article import Alias, Article
+from wikiepwing.model.blocks import HeadingBlock, ParagraphBlock
+from wikiepwing.model.inline import StrongInline, TextInline
 from wikiepwing.search.search_term import (
     SearchTerm,
     SearchTermError,
     category_terms_for_article,
+    heading_keyword_terms_for_article,
     sort_search_terms,
     title_terms_for_article,
 )
@@ -259,3 +262,74 @@ def test_category_terms_are_not_part_of_title_terms_for_article() -> None:
     terms = title_terms_for_article(article)
 
     assert not any(term.kind == "category" for term in terms)
+
+
+def test_heading_keyword_terms_extracted_from_heading_blocks() -> None:
+    article = _make_article(
+        blocks=(
+            HeadingBlock(level=2, anchor="overview", inlines=(TextInline(value="概要"),)),
+            ParagraphBlock(inlines=(TextInline(value="body text"),)),
+        )
+    )
+
+    terms = heading_keyword_terms_for_article(article)
+
+    assert len(terms) == 1
+    assert terms[0].key == "概要"
+    assert terms[0].kind == "keyword"
+    assert terms[0].priority == 400
+    assert terms[0].source == "heading"
+    assert terms[0].target_page_id == article.page_id
+
+
+def test_heading_keyword_terms_flatten_nested_inlines() -> None:
+    article = _make_article(
+        blocks=(
+            HeadingBlock(
+                level=2,
+                anchor="h",
+                inlines=(StrongInline(inlines=(TextInline(value="Bold Heading"),)),),
+            ),
+        )
+    )
+
+    terms = heading_keyword_terms_for_article(article)
+
+    assert terms[0].key == "Bold Heading"
+
+
+def test_heading_keyword_terms_deduplicate_by_normalized_key() -> None:
+    article = _make_article(
+        blocks=(
+            HeadingBlock(level=2, anchor="a", inlines=(TextInline(value="概要"),)),
+            HeadingBlock(level=3, anchor="b", inlines=(TextInline(value="概要"),)),
+        )
+    )
+
+    terms = heading_keyword_terms_for_article(article)
+
+    assert len(terms) == 1
+
+
+def test_heading_keyword_terms_ignore_empty_headings() -> None:
+    article = _make_article(blocks=(HeadingBlock(level=2, anchor="a", inlines=()),))
+
+    terms = heading_keyword_terms_for_article(article)
+
+    assert terms == ()
+
+
+def test_no_headings_yields_no_heading_keyword_terms() -> None:
+    article = _make_article(blocks=(ParagraphBlock(inlines=(TextInline(value="text"),)),))
+
+    assert heading_keyword_terms_for_article(article) == ()
+
+
+def test_heading_keyword_terms_use_normalized_index_key() -> None:
+    article = _make_article(
+        blocks=(HeadingBlock(level=2, anchor="a", inlines=(TextInline(value="Ｅｍａｃｓ"),)),)
+    )
+
+    terms = heading_keyword_terms_for_article(article)
+
+    assert terms[0].normalized_key == "emacs"

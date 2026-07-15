@@ -763,7 +763,7 @@
 
 ## EPIC Q — Full search and compatibility
 
-### TASK-Q001 [ ] Heading keyword extraction
+### TASK-Q001 [x] Heading keyword extraction
 
 **依存:** J007
 

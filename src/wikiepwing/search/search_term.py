@@ -5,9 +5,9 @@ its redirect-sourced aliases (`kind="redirect"`, TASK-H004), and three
 variants of each (`kind="alias"`): space-removed (TASK-J002, see
 `wikiepwing.search.space_variant`), hiragana/katakana-swapped (TASK-J003,
 see `wikiepwing.search.kana_variant`), and punctuation-removed (TASK-J004,
-see `wikiepwing.search.punctuation_variant`). heading/infobox keyword/
-cross_component terms are separate, later work (no code generates them
-yet).
+see `wikiepwing.search.punctuation_variant`). `heading_keyword_terms_for_article`
+(TASK-Q001) covers heading text; infobox keyword/cross_component terms
+remain separate, later work.
 
 `category_terms_for_article` (TASK-L005, `kind="category"`) is
 deliberately *not* folded into `title_terms_for_article`'s output: a
@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from wikiepwing.model.article import Article
+from wikiepwing.model.blocks import HeadingBlock
+from wikiepwing.model.inline import Inline
 from wikiepwing.search.kana_variant import kana_variant
 from wikiepwing.search.normalize_key import normalize_index_key
 from wikiepwing.search.punctuation_variant import punctuation_removed_variant
@@ -55,6 +57,7 @@ _REDIRECT_PRIORITY = 900
 _NORMALIZED_TITLE_VARIANT_PRIORITY = 800
 _KANA_VARIANT_PRIORITY = 600
 _CATEGORY_PRIORITY = 500
+_HEADING_KEYWORD_PRIORITY = 400
 
 _VARIANT_GENERATORS: tuple[tuple[Callable[[str], str | None], int, str], ...] = (
     (space_removed_variant, _NORMALIZED_TITLE_VARIANT_PRIORITY, "nfkc_case_space_variant"),
@@ -140,6 +143,52 @@ def category_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
         )
         for category in article.categories
     )
+
+
+def heading_keyword_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
+    """Return one `kind="keyword"` SearchTerm per distinct heading text (TASK-Q001).
+
+    Like `category_terms_for_article`, this is deliberately separate from
+    `title_terms_for_article`: a heading's text (e.g. "概要") is common
+    across many unrelated articles, a one-to-many key unlike title/redirect
+    terms.
+    """
+    terms: list[SearchTerm] = []
+    seen_normalized_keys: set[str] = set()
+    for block in article.blocks:
+        if not isinstance(block, HeadingBlock):
+            continue
+        text = _flatten_inline_text(block.inlines)
+        if not text:
+            continue
+        normalized_key = normalize_index_key(text)
+        if not normalized_key or normalized_key in seen_normalized_keys:
+            continue
+        seen_normalized_keys.add(normalized_key)
+        terms.append(
+            SearchTerm(
+                key=text,
+                normalized_key=normalized_key,
+                target_page_id=article.page_id,
+                kind="keyword",
+                priority=_HEADING_KEYWORD_PRIORITY,
+                source="heading",
+            )
+        )
+    return tuple(terms)
+
+
+def _flatten_inline_text(inlines: tuple[Inline, ...]) -> str:
+    parts: list[str] = []
+    for inline in inlines:
+        value = getattr(inline, "value", None)
+        if isinstance(value, str):
+            parts.append(value)
+            continue
+        nested = getattr(inline, "inlines", None)
+        if nested is not None:
+            parts.append(_flatten_inline_text(nested))
+    return "".join(parts).strip()
 
 
 def sort_search_terms(terms: Iterable[SearchTerm]) -> tuple[SearchTerm, ...]:

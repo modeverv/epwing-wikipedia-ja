@@ -5373,3 +5373,37 @@ git diff --check
 **次タスク**
 
 - TASK-Q001 Heading keyword extraction(依存: J007)
+
+## 2026-07-16 TASK-Q001 Heading keyword extraction
+
+**目的**
+
+`ARCHITECTURE.md` 14.3(Full profileの索引「heading keyword」)・`DATA_CONTRACTS.md`のpriority提案(`400 heading keyword`)を実装する。`title_terms_for_article`/`category_terms_for_article`と同じ形で`heading_keyword_terms_for_article`を追加する。
+
+**変更**
+
+- `src/wikiepwing/search/search_term.py`: `heading_keyword_terms_for_article`(`_HEADING_KEYWORD_PRIORITY=400`)・`_flatten_inline_text`
+- `tests/test_search_term.py`(新規6件)
+- `TASKS.md`(TASK-Q001を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 見出しからのterm抽出・ネストしたinlineの平坦化・重複除去・空見出しの無視・見出しなし記事・正規化キーを6件のテストで確認した。
+- 標準スイート1243件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `category_terms_for_article`と同じ理由(one-to-many)で`title_terms_for_article`には統合せず、独立した関数として実装した。
+- 同一記事内で同じ正規化キーの見出しが複数回出現する場合(例: 複数セクションに同じ見出し名)は重複除去した。
+
+**次タスク**
+
+- TASK-Q002 Infobox keyword extraction(依存: K009,J007)
