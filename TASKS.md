@@ -775,7 +775,7 @@
 
 **依存:** G012,J007
 
-### TASK-Q004 [ ] Cross component extraction
+### TASK-Q004 [x] Cross component extraction
 
 **依存:** J007
 

@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-Q003
+TASK-Q004
 
 ## 目的
 
-`ARCHITECTURE.md` 13(alias source「lead sentenceのbold alias」)・14.3(Full profileの索引「lead bold term」)・`DATA_CONTRACTS.md`のpriority提案(`200 lead term`)を実装する。記事本文の先頭(見出し前)の`ParagraphBlock`(lead paragraph)内で太字(`StrongInline`)になっているspanを、`kind="alias"`・`priority=200`・`source="lead"`の`SearchTerm`として抽出する`lead_alias_terms_for_article`を追加する。
+`ARCHITECTURE.md` 14.1/14.3(索引kind「cross_component」、Liteの「limited cross component」)・`DATA_CONTRACTS.md`のpriority提案(`100 cross component`)・`PLAN.md`の「クロス検索」節(候補source「redirect/alias components」)を実装する。titleおよびredirect aliasのうち複数単語(空白区切り)からなるものについて、各単語成分を個別の`kind="cross_component"`の`SearchTerm`として抽出する`cross_component_terms_for_article`を追加する。
 
 ## 事前条件
 
@@ -14,14 +14,13 @@ TASK-Q003
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-Q003(依存: G012,J007)を読んだ
-- [x] `ARCHITECTURE.md` 13(「lead sentenceのbold alias（後期実装）」)・14.3・`DATA_CONTRACTS.md`のpriority提案(`200 lead term`)を再確認した
-- [x] Wikipedia記事の典型パターン(先頭段落で記事タイトルとその別名が太字で示される、例:「**GNU Emacs**（しばしば**Emacs**と略される）は...」)を踏まえ、lead paragraphは「最初の見出しより前に出現する最初のParagraphBlock」と定義した
-- [x] タイトル自身と正規化キーが一致するbold spanは、既に`title_terms_for_article`が`priority=1000`でカバーしているため、重複除去の対象にした
+- [x] `TASKS.md`のTASK-Q004(依存: J007)を読んだ
+- [x] `ARCHITECTURE.md` 14.1(SearchTerm.kindに`cross_component`)・14.3(Liteの「limited cross component」)・`DATA_CONTRACTS.md`のpriority提案(`100 cross component`)・`PLAN.md`の「クロス検索」節(候補source「redirect/alias components」)・`TESTING.md`の「cross component」headword categoryを確認した
+- [x] 「cross component」の定義が"何を分解するか"詳細に明記されていないため、`PLAN.md`が挙げる「redirect/alias components」を一次情報源とし、title/redirect aliasを空白区切りで単語成分へ分解し、各成分を個別のsearch termにする、という解釈を採用した(例: "GNU Emacs" -> "GNU"・"Emacs")
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/search/search_term.py`(`lead_alias_terms_for_article`追加)
+- `src/wikiepwing/search/search_term.py`(`cross_component_terms_for_article`追加)
 - `tests/test_search_term.py`(追記)
 - `TASKS.md`
 - `LOG.md`
@@ -37,20 +36,20 @@ git diff --check
 
 ## 完了条件
 
-- [x] 最初の見出しより前にある最初の`ParagraphBlock`中の`StrongInline`テキストを`kind="alias"`・`priority=200`・`source="lead"`の`SearchTerm`として抽出する
-- [x] 見出しより後に現れる`ParagraphBlock`のbold spanは対象外
-- [x] 記事タイトルと同じ正規化キーのbold spanは除外する(title_termsで既にカバー済みのため)
-- [x] 同一記事内で同じ正規化キーのbold spanが複数回出現しても重複したSearchTermを生成しない
-- [x] lead paragraphが存在しない、またはbold spanがない記事は空タプルを返す
+- [x] titleが複数単語(空白区切り)の場合、各単語を`kind="cross_component"`・`priority=100`・`source="cross_component"`の`SearchTerm`として抽出する
+- [x] redirect aliasも同様に各単語成分を抽出する
+- [x] 単一単語のtitle/aliasからは何も抽出しない(分解する意味がないため)
+- [x] 同一記事内で同じ正規化キーの成分が複数回出現しても重複したSearchTermを生成しない
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Cross component extraction(TASK-Q004)
+- Search budgets and stop rules(TASK-Q005、成分数の上限・stop word除去等)
 - 実際の`rendered.sqlite3`永続化層への配線
 
 ## 実施結果
 
-- `search_term.py`に`lead_alias_terms_for_article`(`_LEAD_ALIAS_PRIORITY=200`)・`_first_lead_paragraph`(最初の見出しより前の最初の`ParagraphBlock`を返す)・`_strong_texts`(`StrongInline`のテキストを再帰的に収集)を実装した。タイトル自身と正規化キーが一致するbold spanは除外する。
-- `tests/test_search_term.py`(新規7件)で、bold spanの抽出・見出し後のparagraph除外・タイトル自身の除外・重複除去・bold spanなし/paragraphなし/blocksなしでの空タプルを確認した。
-- `make check`(format-check/lint/mypy/pytest 1255件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
+- `search_term.py`に`cross_component_terms_for_article`(`_CROSS_COMPONENT_PRIORITY=100`)を実装した。titleと各redirect aliasを空白で分割し、単語数が2以上の場合のみ各単語成分を抽出する。
+- `tests/test_search_term.py`(新規5件)で、複数単語titleの分解・単一単語titleでの空・redirect alias成分の抽出・非redirect aliasの除外・重複除去を確認した。
+- `make check`(format-check/lint/mypy/pytest 1260件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
+- 「cross component」の厳密な定義がARCHITECTURE.mdに詳細記載されていなかったため、`PLAN.md`の「クロス検索」節が挙げる「redirect/alias components」を一次情報源として採用した(空白区切りの単語成分分解という解釈)。

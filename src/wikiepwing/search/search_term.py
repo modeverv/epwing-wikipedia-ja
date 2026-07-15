@@ -60,6 +60,7 @@ _CATEGORY_PRIORITY = 500
 _HEADING_KEYWORD_PRIORITY = 400
 _INFOBOX_KEYWORD_PRIORITY = 300
 _LEAD_ALIAS_PRIORITY = 200
+_CROSS_COMPONENT_PRIORITY = 100
 
 _VARIANT_GENERATORS: tuple[tuple[Callable[[str], str | None], int, str], ...] = (
     (space_removed_variant, _NORMALIZED_TITLE_VARIANT_PRIORITY, "nfkc_case_space_variant"),
@@ -249,6 +250,43 @@ def lead_alias_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
                 source="lead",
             )
         )
+    return tuple(terms)
+
+
+def cross_component_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
+    """Return one `kind="cross_component"` SearchTerm per word in a multi-word title/alias.
+
+    PLAN.md's クロス検索 (cross search) section names "redirect/alias
+    components" as a candidate source: a title or redirect alias with more
+    than one whitespace-separated word (e.g. "GNU Emacs") also becomes
+    individually searchable by any one of those words ("GNU", "Emacs"),
+    not just the whole string. A single-word title/alias has nothing to
+    decompose, so it contributes no terms.
+    """
+    candidates = [article.title]
+    candidates.extend(alias.title for alias in article.aliases if alias.source == "redirect")
+
+    terms: list[SearchTerm] = []
+    seen_normalized_keys: set[str] = set()
+    for candidate in candidates:
+        words = candidate.split()
+        if len(words) < 2:
+            continue
+        for word in words:
+            normalized_key = normalize_index_key(word)
+            if not normalized_key or normalized_key in seen_normalized_keys:
+                continue
+            seen_normalized_keys.add(normalized_key)
+            terms.append(
+                SearchTerm(
+                    key=word,
+                    normalized_key=normalized_key,
+                    target_page_id=article.page_id,
+                    kind="cross_component",
+                    priority=_CROSS_COMPONENT_PRIORITY,
+                    source="cross_component",
+                )
+            )
     return tuple(terms)
 
 

@@ -5474,3 +5474,36 @@ git diff --check
 **次タスク**
 
 - TASK-Q004 Cross component extraction(依存: J007)
+
+## 2026-07-16 TASK-Q004 Cross component extraction
+
+**目的**
+
+`ARCHITECTURE.md` 14.1/14.3(索引kind「cross_component」)・`DATA_CONTRACTS.md`のpriority提案(`100 cross component`)・`PLAN.md`の「クロス検索」節(候補source「redirect/alias components」)を実装する。title/redirect aliasの空白区切り単語成分を個別のSearchTermとして抽出する`cross_component_terms_for_article`を追加する。
+
+**変更**
+
+- `src/wikiepwing/search/search_term.py`: `cross_component_terms_for_article`(`_CROSS_COMPONENT_PRIORITY=100`)
+- `tests/test_search_term.py`(新規5件)
+- `TASKS.md`(TASK-Q004を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 複数単語titleの分解・単一単語titleでの空・redirect alias成分の抽出・非redirect aliasの除外・重複除去を5件のテストで確認した。
+- 標準スイート1260件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 「cross component」の厳密な定義がARCHITECTURE.mdに詳細記載されていなかったため、`PLAN.md`の「クロス検索」節が挙げる「redirect/alias components」を一次情報源として採用した(空白区切りの単語成分分解)。
+
+**次タスク**
+
+- TASK-Q005 Search budgets and stop rules(依存: Q001-Q004)

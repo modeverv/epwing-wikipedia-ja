@@ -11,6 +11,7 @@ from wikiepwing.search.search_term import (
     SearchTerm,
     SearchTermError,
     category_terms_for_article,
+    cross_component_terms_for_article,
     heading_keyword_terms_for_article,
     infobox_keyword_terms_for_article,
     lead_alias_terms_for_article,
@@ -518,3 +519,54 @@ def test_lead_alias_terms_no_blocks_yields_empty() -> None:
     article = _make_article()
 
     assert lead_alias_terms_for_article(article) == ()
+
+
+def test_cross_component_terms_split_multi_word_title() -> None:
+    article = _make_article(title="GNU Emacs")
+
+    terms = cross_component_terms_for_article(article)
+
+    keys = {term.key for term in terms}
+    assert keys == {"GNU", "Emacs"}
+    assert all(term.kind == "cross_component" for term in terms)
+    assert all(term.priority == 100 for term in terms)
+    assert all(term.source == "cross_component" for term in terms)
+    assert all(term.target_page_id == article.page_id for term in terms)
+
+
+def test_cross_component_terms_single_word_title_yields_nothing() -> None:
+    article = _make_article(title="Emacs")
+
+    assert cross_component_terms_for_article(article) == ()
+
+
+def test_cross_component_terms_include_redirect_alias_components() -> None:
+    article = _make_article(
+        title="Emacs",
+        aliases=(Alias(title="Text Editor", source="redirect", confidence=1.0),),
+    )
+
+    terms = cross_component_terms_for_article(article)
+
+    keys = {term.key for term in terms}
+    assert keys == {"Text", "Editor"}
+
+
+def test_cross_component_terms_exclude_non_redirect_alias_components() -> None:
+    article = _make_article(
+        title="Emacs",
+        aliases=(Alias(title="Text Editor", source="wikidata", confidence=0.5),),
+    )
+
+    assert cross_component_terms_for_article(article) == ()
+
+
+def test_cross_component_terms_deduplicate_by_normalized_key() -> None:
+    article = _make_article(
+        title="Emacs Editor",
+        aliases=(Alias(title="Editor Emacs", source="redirect", confidence=1.0),),
+    )
+
+    terms = cross_component_terms_for_article(article)
+
+    assert len(terms) == 2
