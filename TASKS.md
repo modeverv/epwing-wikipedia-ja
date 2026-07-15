@@ -723,7 +723,7 @@
 
 **依存:** O007,H009
 
-### TASK-O012 [ ] Image plan/fetch/convert commands
+### TASK-O012 [x] Image plan/fetch/convert commands
 
 **依存:** O003-O011
 

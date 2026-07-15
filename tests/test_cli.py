@@ -684,6 +684,95 @@ class CliTest(unittest.TestCase):
             self.assertFalse(report["ok"])
             self.assertTrue(any(issue["code"] == "UNKNOWN_TARGET" for issue in report["issues"]))
 
+    def test_image_plan_help(self) -> None:
+        result = self.run_cli("image-plan", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--model-database", result.stdout)
+
+    def test_image_fetch_help(self) -> None:
+        result = self.run_cli("image-fetch", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--originals-dir", result.stdout)
+
+    def test_image_convert_help(self) -> None:
+        result = self.run_cli("image-convert", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--graphics-dir", result.stdout)
+
+    def test_image_plan_lists_media_from_model_database(self) -> None:
+        from datetime import UTC, datetime
+
+        from wikiepwing.model.article import Article, MediaReference
+        from wikiepwing.model.canonical import encode_article
+        from wikiepwing.model.database import connect_model_database, initialize_model_database
+        from wikiepwing.model.logical_hash import compute_logical_hash
+        from wikiepwing.model.repository import ModelRepository
+
+        with tempfile.TemporaryDirectory() as directory:
+            model_database_path = Path(directory) / "model.sqlite3"
+            migrations = Path(__file__).parents[1] / "migrations" / "model"
+            initialize_model_database(model_database_path, migrations)
+
+            article = Article(
+                page_id=1,
+                revision_id=100,
+                title="Emacs",
+                normalized_title="Emacs",
+                source_url="https://ja.wikipedia.org/wiki/Emacs",
+                source_date_modified=datetime(2026, 1, 1, tzinfo=UTC),
+                abstract=None,
+                blocks=(),
+                aliases=(),
+                categories=(),
+                media=(
+                    MediaReference(
+                        media_id="https://upload.wikimedia.org/a.png",
+                        source_url="https://upload.wikimedia.org/a.png",
+                        source_name="a.png",
+                        alt_text=None,
+                        caption=None,
+                        role="main",
+                        source_width=100,
+                        source_height=100,
+                    ),
+                ),
+                diagnostics=(),
+                source_license_ids=(),
+            )
+            with connect_model_database(model_database_path) as connection:
+                repository = ModelRepository(connection)
+                with repository.batch():
+                    repository.write_article(
+                        article,
+                        canonical_json=encode_article(article),
+                        logical_hash=compute_logical_hash(article),
+                        normalize_status="complete",
+                    )
+
+            result = self.run_cli("image-plan", "--model-database", str(model_database_path))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plan = json.loads(result.stdout)
+            self.assertEqual(len(plan), 1)
+            self.assertEqual(plan[0]["page_id"], 1)
+            self.assertEqual(plan[0]["source_url"], "https://upload.wikimedia.org/a.png")
+
+    def test_image_plan_empty_database_lists_no_media(self) -> None:
+        from wikiepwing.model.database import initialize_model_database
+
+        with tempfile.TemporaryDirectory() as directory:
+            model_database_path = Path(directory) / "model.sqlite3"
+            migrations = Path(__file__).parents[1] / "migrations" / "model"
+            initialize_model_database(model_database_path, migrations)
+
+            result = self.run_cli("image-plan", "--model-database", str(model_database_path))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), [])
+
 
 if __name__ == "__main__":
     unittest.main()

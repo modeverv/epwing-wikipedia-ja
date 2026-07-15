@@ -20,6 +20,16 @@ from wikiepwing.ingest.database import connect_raw_database
 from wikiepwing.ingest.orchestrate import run_ingest
 from wikiepwing.ingest.validate import ValidationLimits
 from wikiepwing.ingest.verify import verify_raw_database
+from wikiepwing.media.cache import MediaCache
+from wikiepwing.media.downloader import SecureMediaDownloader
+from wikiepwing.media.freepwing_graphics import GraphicBuildEntry, write_graphics_build_files
+from wikiepwing.media.orchestrate import (
+    convert_media,
+    fetch_media,
+    plan_media,
+    read_fetch_report,
+    write_fetch_report,
+)
 from wikiepwing.model.validate import ModelValidationLimits
 from wikiepwing.normalize.orchestrate import DEFAULT_BATCH_SIZE, run_normalize
 from wikiepwing.normalize.pipeline import NormalizeOptions
@@ -465,6 +475,70 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="path to the entries.jsonl to verify",
     )
+    image_plan = subparsers.add_parser(
+        "image-plan", help="list every non-rejected article's selected media from model.sqlite3"
+    )
+    image_plan.add_argument(
+        "--model-database",
+        type=Path,
+        required=True,
+        help="model.sqlite3 input path",
+    )
+    image_fetch = subparsers.add_parser(
+        "image-fetch", help="download and validate/sanitize an image-plan's unique media URLs"
+    )
+    image_fetch.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    image_fetch.add_argument(
+        "--model-database",
+        type=Path,
+        required=True,
+        help="model.sqlite3 input path",
+    )
+    image_fetch.add_argument(
+        "--originals-dir",
+        type=Path,
+        required=True,
+        help="directory to store fetched originals in, keyed by content hash",
+    )
+    image_fetch.add_argument(
+        "--report",
+        type=Path,
+        required=True,
+        help="fetch report JSON output path (read back by image-convert)",
+    )
+    image_convert = subparsers.add_parser(
+        "image-convert", help="raster-convert an image-fetch report's originals to BMP graphics"
+    )
+    image_convert.add_argument(
+        "--originals-dir",
+        type=Path,
+        required=True,
+        help="directory image-fetch stored originals in",
+    )
+    image_convert.add_argument(
+        "--report",
+        type=Path,
+        required=True,
+        help="fetch report JSON written by image-fetch",
+    )
+    image_convert.add_argument(
+        "--cache-dir",
+        type=Path,
+        required=True,
+        help="directory for the content-addressed BMP conversion cache",
+    )
+    image_convert.add_argument(
+        "--graphics-dir",
+        type=Path,
+        required=True,
+        help="directory to write FreePWING graphics build files (*.bmp, cgraphs.txt) into",
+    )
     return parser
 
 
@@ -867,6 +941,53 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(entries_verification.payload(), ensure_ascii=False, indent=2, sort_keys=True)
         )
         return 0 if entries_verification.ok else 1
+    if command == "image-plan":
+        plan = plan_media(cast(Path, arguments.model_database))
+        payload = [{"page_id": entry.page_id, **entry.media.payload()} for entry in plan]
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    if command == "image-fetch":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+        images_section = config.section("images")
+
+        plan = plan_media(cast(Path, arguments.model_database))
+        media_downloader = SecureMediaDownloader(
+            allowed_hosts=frozenset(cast(list[str], images_section["allowed_hosts"])),
+            max_content_length_bytes=cast(int, images_section["max_download_bytes"]),
+        )
+        outcomes = fetch_media(
+            plan,
+            downloader=media_downloader,
+            max_pixels=cast(int, images_section["max_pixels"]),
+            allow_svg=cast(bool, images_section["allow_svg"]),
+        )
+        write_fetch_report(
+            outcomes,
+            originals_dir=cast(Path, arguments.originals_dir),
+            report_path=cast(Path, arguments.report),
+        )
+        succeeded = sum(1 for outcome in outcomes if outcome.ok)
+        print(f"fetched={succeeded} failed={len(outcomes) - succeeded} total={len(outcomes)}")
+        return 0 if succeeded == len(outcomes) else 1
+    if command == "image-convert":
+        outcomes = read_fetch_report(
+            cast(Path, arguments.report), originals_dir=cast(Path, arguments.originals_dir)
+        )
+        cache = MediaCache(cast(Path, arguments.cache_dir))
+        converted = convert_media(outcomes, cache=cache)
+        write_graphics_build_files(
+            [
+                GraphicBuildEntry(name=result.content_hash, bmp_bytes=result.bmp_bytes)
+                for result in converted
+            ],
+            cast(Path, arguments.graphics_dir),
+        )
+        print(f"converted={len(converted)}")
+        return 0
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0

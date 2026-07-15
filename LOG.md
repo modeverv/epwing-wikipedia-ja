@@ -5066,3 +5066,41 @@ git diff --check
 **次タスク**
 
 - TASK-O012 Image plan/fetch/convert commands(依存: O003-O011)
+
+## 2026-07-16 TASK-O012 Image plan/fetch/convert commands (完了、EPIC O完了)
+
+**目的**
+
+EPIC O(画像)最終タスクとして、TASK-O003-O011で実装した各段階(選択・ダウンロード・検証・SVG sanitize・raster変換・cache・dedup・graphics build file書き出し)を実際に連結する`image plan/fetch/convert`コマンドを実装する。AskUserQuestionで確認した方針に従い、body-image抽出(TASK-O001)をnormalizeパイプラインへ配線するpart 1も本タスクの一部として実施した。
+
+**変更**
+
+- part 1: `src/wikiepwing/normalize/media_extraction.py`(新規)、`normalize/pipeline.py`(`normalize_html`の戻り値を`(blocks, body_media, diagnostics)`に拡張)、`normalize/orchestrate.py`(main image + body mediaを`select_media`で統合)
+- part 2: `src/wikiepwing/media/orchestrate.py`(新規): `MediaPlanEntry`/`plan_media`・`FetchOutcome`/`fetch_media`・`ConvertOutcome`/`convert_media`・`write_fetch_report`/`read_fetch_report`
+- `src/wikiepwing/cli.py`: `image-plan`/`image-fetch`/`image-convert`サブコマンド追加(`[images]` config sectionを消費)
+- `tests/test_normalize_media_extraction.py`(新規8件)、`tests/test_normalize_pipeline.py`/`tests/test_golden_normalize.py`(戻り値変更に追記)、`tests/test_media_orchestrate.py`(新規17件)、`tests/test_cli.py`(新規5件)
+- `TASKS.md`(TASK-O012を`[x]`に、EPIC O完了)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_media_extraction.py tests/test_normalize_pipeline.py tests/test_golden_normalize.py tests/test_media_orchestrate.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- body-image抽出のnormalize配線・plan/fetch/convertの各関数(実DB・fakeダウンローダ使用)・CLIのhelp表示とend-to-end動作を合計30件超のテストで確認した。
+- 標準スイート1223件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+- これでEPIC O(画像)のTASK-O001-O012が全て完了した。
+
+**判断・注意点**
+
+- AskUserQuestionで確認した通り、body-image抽出のnormalize配線(part 1)を本タスクに含めた。既存のTASK-O001の出力(`role="unknown"`固定)がこれまで実際には使われていなかったギャップを解消した。
+- `image-plan`/`image-fetch`/`image-convert`はingest/normalize/generateの重いstage manifest/resumeパターンを採用せず、`acquire`/`register-local-source`/`inspect-source`と同じ軽量なユーティリティコマンドとして実装した(ネットワークI/Oが主体で、resumable多時間バルクパイプラインではないため)。
+- distribution mode(personal/distributable)による画像除外ポリシーの実際の適用は対象外とした(`[distribution]` configスキーマ自体は既存だが、適用ロジックは別タスク)。
+
+**次タスク**
+
+- TASK-P001 Profile schema(依存: A003)
