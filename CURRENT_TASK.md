@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-Q005
+TASK-Q006
 
 ## 目的
 
-`CONFIG_REFERENCE.md`の`[search]` `max_terms_per_article`(「keyword/cross termsの爆発防止。title/redirectは別budget扱い可能」)・`max_key_bytes`・`PLAN.md`の「stop words」を実装する。TASK-Q001-Q004が生成する`keyword`/`cross_component`種別のSearchTermに対してのみ`max_terms_per_article`の上限を適用し(title/redirect/alias/category/readingは別budgetとして常に通す)、`max_key_bytes`を超えるkeyのtermと、stop word集合に含まれるtermを除外する`apply_search_budgets`を実装する。
+TASK-P002/P003で確立した方針(受け入れテストのみ、実際のconfig配線は別タスク)と同じ形で、Full profile(`config/profiles/full.toml`)を使った実際のend-to-end build(ingest→normalize→generate→verify)が完走することを確認する受け入れテストを実装する。
 
 ## 事前条件
 
@@ -14,15 +14,13 @@ TASK-Q005
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-Q005(依存: Q001-Q004)を読んだ
-- [x] `CONFIG_REFERENCE.md`の`max_terms_per_article`(「title/redirectは別budget扱い可能」)・`max_key_bytes`を再確認した
-- [x] `PLAN.md`の「stop words」(具体的な単語リストはどのドキュメントにも記載がない)を確認し、stop word集合は呼び出し側が注入するパラメータとして実装し、具体的な単語リスト自体はこのタスクの対象外とする方針にした
-- [x] `sort_search_terms`(priority降順+安定tie-break)を先に適用してから budget truncationすることで、budget超過時に優先度の高いtermが優先的に残るようにする設計にした
+- [x] `TASKS.md`のTASK-Q006(依存: O012,Q005,L005)を読んだ
+- [x] `tests/test_lite_profile_build.py`(TASK-P003)の実装を再確認した
+- [x] `config/profiles/full.toml`(TASK-P001)の内容を再確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/search/search_term.py`(`apply_search_budgets`追加)
-- `tests/test_search_term.py`(追記)
+- `tests/test_full_profile_build.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,27 +28,24 @@ TASK-Q005
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_search_term.py
+uv run pytest tests/test_full_profile_build.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `kind`が`keyword`/`cross_component`のtermのみ`max_terms_per_article`の対象になる(title/redirect/alias/category/readingは常に通る)
-- [x] budget超過時、priorityの高いtermが優先的に残る(`sort_search_terms`の順序を尊重)
-- [x] `max_key_bytes`(UTF-8バイト長)を超えるtermは種別を問わず除外される
-- [x] `stop_words`(正規化済みキーの集合)に含まれる`keyword`/`cross_component`のtermは除外される
+- [x] `config/profiles/full.toml`をoverrideとして使い、100記事fixtureに対するingest→normalize→generate→verifyの全stageが`complete`で完走する
+- [x] 生成された`entries.jsonl`が`verify_entries_jsonl`で有効と判定される
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Full profile(TASK-Q006)
-- 具体的なstop word一覧の選定(呼び出し側が注入するパラメータとして扱う)
+- `images.enabled`以外のconfig値(`search.*`/`distribution.*`等)を実際にnormalize/render pipelineへ配線すること
+- Reference comparison engine(TASK-Q007)
 
 ## 実施結果
 
-- `search_term.py`に`apply_search_budgets`(`_BUDGETED_KINDS = {"keyword", "cross_component"}`)を実装した。`sort_search_terms`で優先度降順に並べたうえで、`max_key_bytes`超過・stop word一致(budgeted kindのみ)・`max_terms_per_article`超過(budgeted kindのみ)を順にフィルタする。
-- `tests/test_search_term.py`(新規7件)で、keyword/cross_componentのbudget上限・title/redirectの除外・budget超過時の高優先度term保持・key長超過の除外・stop wordの除外(budgeted kindのみ)・空入力を確認した。
-- `make check`(format-check/lint/mypy/pytest 1267件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
-- 具体的なstop word一覧の選定は対象外とした(呼び出し側が注入するパラメータとして実装、デフォルトは空集合)。
+- `tests/test_full_profile_build.py`(新規)に`test_full_profile_build_over_hundred_article_fixture`を実装した。TASK-P003と同じ構成で、`config/profiles/full.toml`をoverrideとして使い、`config.profile == "full"`を確認したうえで全stageが完走し、有効な`entries.jsonl`(100件)が生成されることを確認した。
+- `make check`(format-check/lint/mypy/pytest 1268件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
+- TASK-P002/P003と同じ理由で、`images.enabled`以外のconfig値の実際のnormalize/render pipelineへの配線は対象外。

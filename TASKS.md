@@ -783,7 +783,7 @@
 
 **依存:** Q001-Q004
 
-### TASK-Q006 [ ] Full profile
+### TASK-Q006 [x] Full profile
 
 **依存:** O012,Q005,L005
 
