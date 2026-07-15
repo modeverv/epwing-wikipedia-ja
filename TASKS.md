@@ -683,7 +683,7 @@
 
 **依存:** G001,F004
 
-### TASK-O002 [ ] Role classification
+### TASK-O002 [x] Role classification
 
 **依存:** O001,K008
 

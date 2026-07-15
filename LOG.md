@@ -4716,3 +4716,38 @@ git diff --check
 **次タスク**
 
 - TASK-O002 Role classification(依存: O001,K008)
+
+## 2026-07-16 TASK-O002 Role classification
+
+**目的**
+
+`ARCHITECTURE.md` 15.3の選択ポリシー優先順位・除外候補(16pxなどのicon)を反映し、TASK-O001が`role="unknown"`で抽出した`MediaReference`に実際のroleを割り当てる。
+
+**変更**
+
+- `src/wikiepwing/normalize/media_role.py`(新規): `classify_media_role`(優先順位: `main`維持 > iconサイズ判定(20px以下) > infobox src集合一致 > lead flag > デフォルト`body`)、`with_classified_role`(`dataclasses.replace`で新しい`MediaReference`を返す)
+- `tests/test_normalize_media_role.py`(新規10件)
+- `TASKS.md`(TASK-O002を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_media_role.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `main`維持・icon判定(単独・infoboxより優先)・infobox判定(leadより優先)・lead判定・デフォルトbody・次元不明時のicon非該当・フィールド保持を10件のテストで確認した。
+- 標準スイート1113件(新規10件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `role="main"`(Wikimedia Enterprise Snapshotのmain image由来、`normalize/orchestrate.py`の`_read_media`が既に設定済み)は上書きしない設計にした。DOM文脈から推測したroleより、Snapshot自体が明示するmain画像の方が信頼できるため。
+- icon判定はTASK-K008の`RawInfobox.image_srcs`との一致より優先させた。小さいアイコンがinfobox内に置かれるケース(編集アイコン等)を誤ってinfobox画像として選択しないようにするため。
+- decorative flag/tracking image/blank placeholderの検出は対象外とした(現時点ではサイズによるicon判定のみ実装、必要になれば別タスク)。
+
+**次タスク**
+
+- TASK-O003 Selection policy(依存: O002)
