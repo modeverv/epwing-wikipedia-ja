@@ -189,3 +189,51 @@ def test_convert_document_propagates_fallback_diagnostics() -> None:
     assert isinstance(blocks[0], UnsupportedBlock)
     codes = {d.code for d in diagnostics}
     assert "DOM_UNKNOWN_ELEMENT" in codes
+
+
+def test_convert_block_dispatches_block_math_with_tex_source() -> None:
+    from wikiepwing.model.blocks import MathBlock
+
+    node = _body_children(
+        '<math display="block"><annotation encoding="application/x-tex">E=mc^2</annotation></math>'
+    )[0]
+    assert isinstance(node, ElementNode)
+
+    block, diagnostics = convert_block(node)
+
+    assert block == MathBlock(source="E=mc^2", source_format="tex")
+    assert diagnostics == ()
+
+
+def test_convert_block_dispatches_block_math_with_text_alternative_fallback() -> None:
+    from wikiepwing.model.blocks import MathBlock
+
+    node = _body_children('<math display="block" alttext="x^2"></math>')[0]
+    assert isinstance(node, ElementNode)
+
+    block, diagnostics = convert_block(node)
+
+    assert block == MathBlock(source="x^2", source_format="text_alternative")
+    assert diagnostics == ()
+
+
+def test_convert_block_math_with_no_source_falls_back_to_unsupported() -> None:
+    node = _body_children('<math display="block"></math>')[0]
+    assert isinstance(node, ElementNode)
+
+    block, diagnostics = convert_block(node)
+
+    assert isinstance(block, UnsupportedBlock)
+    assert block.diagnostic_code == "MATH_NO_SOURCE"
+    assert [d.code for d in diagnostics] == ["MATH_NO_SOURCE"]
+
+
+def test_convert_document_routes_block_level_math_to_its_own_block() -> None:
+    from wikiepwing.model.blocks import MathBlock
+
+    nodes = _body_children('<math display="block" alttext="x^2"></math><p>after</p>')
+
+    blocks, _ = convert_document(nodes)
+
+    assert blocks[0] == MathBlock(source="x^2", source_format="text_alternative")
+    assert blocks[1] == ParagraphBlock(inlines=(TextInline(value="after"),))

@@ -9,6 +9,7 @@ from wikiepwing.model.inline import (
     InlineError,
     InternalLinkInline,
     LineBreakInline,
+    MathInline,
     StrongInline,
     TextInline,
     UnsupportedInline,
@@ -124,6 +125,20 @@ def test_external_link_inline_round_trips() -> None:
 def test_external_link_inline_rejects_empty_url() -> None:
     with pytest.raises(InlineError, match="url"):
         ExternalLinkInline(label=(), url="")
+
+
+def test_math_inline_round_trips() -> None:
+    inline = MathInline(source="E=mc^2", source_format="tex")
+
+    restored = parse_inline(inline_payload(inline))
+
+    assert restored == inline
+    assert inline.payload() == {"type": "math", "source": "E=mc^2", "source_format": "tex"}
+
+
+def test_math_inline_rejects_empty_source_format() -> None:
+    with pytest.raises(InlineError, match="source_format"):
+        MathInline(source="x", source_format="")
 
 
 def test_unsupported_inline_round_trips() -> None:

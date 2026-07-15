@@ -16,13 +16,18 @@ from wikiepwing.model.inline import (
     EmphasisInline,
     Inline,
     LineBreakInline,
+    MathInline,
     StrongInline,
     TextInline,
+    UnsupportedInline,
 )
 from wikiepwing.normalize.html_parser import ElementNode, Node, TextNode
+from wikiepwing.normalize.math_content import resolve_math_source
+from wikiepwing.normalize.math_node import is_math_node, parse_math_node
 
 _STRONG_TAGS = frozenset({"b", "strong"})
 _EMPHASIS_TAGS = frozenset({"i", "em"})
+_MATH_NO_SOURCE_DIAGNOSTIC_CODE = "MATH_NO_SOURCE"
 
 
 def convert_inline_nodes(nodes: tuple[Node, ...]) -> tuple[Inline, ...]:
@@ -45,7 +50,21 @@ def _convert_one(node: Node) -> tuple[Inline, ...]:
         return (CodeInline(value=text),) if text else ()
     if node.tag == "br":
         return (LineBreakInline(),)
+    if is_math_node(node):
+        return (_convert_math_inline(node),)
     return convert_inline_nodes(node.children)
+
+
+def _convert_math_inline(node: ElementNode) -> Inline:
+    resolved = resolve_math_source(parse_math_node(node))
+    if resolved is None:
+        return UnsupportedInline(
+            element_name=node.tag,
+            fallback_text="",
+            diagnostic_code=_MATH_NO_SOURCE_DIAGNOSTIC_CODE,
+        )
+    source, source_format = resolved
+    return MathInline(source=source, source_format=source_format)
 
 
 def _flatten_text(node: ElementNode) -> str:

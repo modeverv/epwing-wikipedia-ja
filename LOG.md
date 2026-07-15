@@ -4606,3 +4606,43 @@ git diff --check
 **次タスク**
 
 - TASK-N006 Inline/block layout(依存: N004-N005,H007)
+
+## 2026-07-16 TASK-N006 Inline/block layout
+
+**目的**
+
+`convert_block.py`/`paragraphs.py`のdocstringに明記されていた「math conversion deferred to later epics」を解消し、TASK-N001(`RawMathNode`)・TASK-N002(`canonicalize_math_source`)を実際のDOM変換パイプラインへ配線する。block-level(`display="block"`)は`MathBlock`、inlineは新設`MathInline`として、`convert_block`/`convert_inline_nodes`から生成できるようにした。Mini layout renderer(TASK-H007)でも両方をテキストとしてrenderする。
+
+**変更**
+
+- `src/wikiepwing/model/inline.py`: `MathInline`(`source`/`source_format`)を追加、`Inline` union・payload/parseへ配線
+- `src/wikiepwing/normalize/math_content.py`(新規): `resolve_math_source(RawMathNode) -> tuple[str, str] | None`(tex優先、text_alternativeへfallback、canonicalize後空ならNone)
+- `src/wikiepwing/normalize/convert_block.py`: block-level `<math display="block">` dispatch(`MathBlock`または`MATH_NO_SOURCE`診断付き`UnsupportedBlock`)、`_is_block_level`に`display="block"`のmath判定を追加
+- `src/wikiepwing/normalize/paragraphs.py`: inline `<math>` dispatch(`MathInline`または`MATH_NO_SOURCE`診断付き`UnsupportedInline`)
+- `src/wikiepwing/normalize/whitespace.py`: `_normalize_inline`の既存exhaustive dispatchに`MathInline`(verbatim保持)を追加
+- `src/wikiepwing/render/mini_layout.py`: `MathBlock`を独立行、`MathInline`を段落内テキストの一部としてrender
+- `tests/test_normalize_math_content.py`(新規6件)、`tests/test_normalize_convert_block.py`/`tests/test_normalize_paragraphs.py`/`tests/test_render_mini_layout.py`/`tests/test_model_inline.py`への追記(計16件)
+- `TASKS.md`(TASK-N006を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_math_content.py tests/test_normalize_convert_block.py tests/test_normalize_paragraphs.py tests/test_render_mini_layout.py tests/test_model_inline.py tests/test_normalize_whitespace.py -q
+make check
+git diff --check
+```
+
+**結果**
+
+- block-level math -> MathBlock、inline math -> MathInline、両方のno-source fallback、mini layoutでのtext render、既存の`_normalize_inline`exhaustive dispatchへの追加を22件のテストで確認した。
+- 標準スイート1083件(新規22件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `resolve_math_source`はTASK-N002の`compute_math_cache_key`と全く同じ優先順位・canonicalize処理を再利用し、Block/Inlineに格納される文字列が将来のcache keyと一致するようにした。
+- 実際のgraphic byte(TASK-N003-N005のレンダリング結果)をRenderedEntry.graphics/EPWING graphicへ埋め込む配線はEPIC O(`GraphicAsset`/`add_graphic`)の責務として対象外のままとした(`ImageBlock`が同様にまだplaceholderであることに合わせた)。
+- `whitespace.py`の`_normalize_inline`はexhaustiveな`isinstance`チェックで未対応型に`AssertionError`を送出する設計だったため、`MathInline`追加に伴い明示的に分岐を追加する必要があった(見落とすとテスト以外の経路でクラッシュしていた)。
+
+**次タスク**
+
+- TASK-N007 Failure fallback(依存: N001)

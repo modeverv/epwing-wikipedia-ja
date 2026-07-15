@@ -81,3 +81,33 @@ def test_convert_inline_nodes_preserves_order_across_nested_unknown_wrappers() -
 
 def test_convert_inline_nodes_empty_input_returns_empty_tuple() -> None:
     assert convert_inline_nodes(()) == ()
+
+
+def test_convert_inline_nodes_converts_inline_math_with_tex_source() -> None:
+    from wikiepwing.model.inline import MathInline
+
+    p = _first_body_child(
+        "<html><body><p>see "
+        '<math><annotation encoding="application/x-tex">x^2</annotation></math>'
+        " here</p></body></html>"
+    )
+
+    block, _ = convert_paragraph(p)
+
+    assert block.inlines == (
+        TextInline(value="see "),
+        MathInline(source="x^2", source_format="tex"),
+        TextInline(value=" here"),
+    )
+
+
+def test_convert_inline_nodes_math_with_no_source_falls_back_to_unsupported() -> None:
+    from wikiepwing.model.inline import UnsupportedInline
+
+    p = _first_body_child("<html><body><p><math></math></p></body></html>")
+
+    block, _ = convert_paragraph(p)
+
+    assert block.inlines == (
+        UnsupportedInline(element_name="math", fallback_text="", diagnostic_code="MATH_NO_SOURCE"),
+    )

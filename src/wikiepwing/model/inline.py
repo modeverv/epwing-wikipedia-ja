@@ -119,6 +119,22 @@ class ExternalLinkInline:
 
 
 @dataclass(frozen=True, slots=True)
+class MathInline:
+    """A minimal inline math placeholder, mirroring `MathBlock` (ARCHITECTURE.md 11.3)."""
+
+    source: str
+    source_format: str
+
+    def __post_init__(self) -> None:
+        if not self.source_format:
+            raise InlineError("source_format must be a non-empty string")
+
+    def payload(self) -> dict[str, object]:
+        """Return this inline's JSON-serializable representation."""
+        return {"type": "math", "source": self.source, "source_format": self.source_format}
+
+
+@dataclass(frozen=True, slots=True)
 class UnsupportedInline:
     """A fallback for any inline content not yet modeled explicitly."""
 
@@ -150,6 +166,7 @@ Inline = (
     | LineBreakInline
     | InternalLinkInline
     | ExternalLinkInline
+    | MathInline
     | UnsupportedInline
 )
 
@@ -188,6 +205,11 @@ def parse_inline(payload: object) -> Inline:
         return ExternalLinkInline(
             label=_parse_inline_list(fields, "label"),
             url=_require_str(fields, "url"),
+        )
+    if kind == "math":
+        return MathInline(
+            source=_require_str(fields, "source"),
+            source_format=_require_str(fields, "source_format"),
         )
     if kind == "unsupported":
         return UnsupportedInline(

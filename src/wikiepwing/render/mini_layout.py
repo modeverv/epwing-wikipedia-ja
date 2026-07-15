@@ -27,6 +27,7 @@ from wikiepwing.model.blocks import (
     HeadingBlock,
     HorizontalRuleBlock,
     InfoboxBlock,
+    MathBlock,
     OrderedListBlock,
     ParagraphBlock,
     PreformattedBlock,
@@ -37,7 +38,7 @@ from wikiepwing.model.blocks import (
     UnorderedListBlock,
     UnsupportedBlock,
 )
-from wikiepwing.model.inline import Inline, InternalLinkInline
+from wikiepwing.model.inline import Inline, InternalLinkInline, MathInline
 from wikiepwing.render.entry_id import compute_entry_id
 from wikiepwing.render.render_node import RenderNode, TextRenderNode
 from wikiepwing.render.rendered_entry import RenderedEntry
@@ -160,6 +161,8 @@ def _render_block(block: Block, numberer: _HeadingNumberer, *, indent: int) -> l
         return ["----", ""]
     if isinstance(block, UnsupportedBlock):
         return [f"{prefix}{block.fallback_text}", ""] if block.fallback_text else [""]
+    if isinstance(block, MathBlock):
+        return [f"{prefix}{block.source}", ""]
     if isinstance(block, TableBlock):
         return _render_table(block, prefix)
     if isinstance(block, InfoboxBlock):
@@ -254,6 +257,8 @@ def _flatten_inlines(inlines: tuple[Inline, ...]) -> str:
 
 
 def _inline_text(inline: Inline) -> str:
+    if isinstance(inline, MathInline):
+        return inline.source
     value = getattr(inline, "value", None)
     if isinstance(value, str):
         return value

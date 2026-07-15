@@ -393,3 +393,35 @@ def test_empty_references_block_renders_no_items() -> None:
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
     assert "[1]" not in text
+
+
+def test_math_block_renders_its_source_as_a_line() -> None:
+    from wikiepwing.model.blocks import MathBlock
+
+    article = _make_article(blocks=(MathBlock(source="E=mc^2", source_format="tex"),))
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "E=mc^2" in text
+
+
+def test_math_inline_renders_its_source_within_the_paragraph_text() -> None:
+    from wikiepwing.model.inline import MathInline
+
+    article = _make_article(
+        blocks=(
+            ParagraphBlock(
+                inlines=(
+                    TextInline(value="see "),
+                    MathInline(source="x^2", source_format="tex"),
+                    TextInline(value=" here"),
+                ),
+            ),
+        )
+    )
+
+    entry = render_article_to_entry(article)
+    text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
+
+    assert "see x^2 here" in text

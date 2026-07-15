@@ -26,7 +26,13 @@ breaks the cycle since both modules are already fully loaded by then.
 
 from __future__ import annotations
 
-from wikiepwing.model.blocks import Block, HorizontalRuleBlock, ParagraphBlock, UnsupportedBlock
+from wikiepwing.model.blocks import (
+    Block,
+    HorizontalRuleBlock,
+    MathBlock,
+    ParagraphBlock,
+    UnsupportedBlock,
+)
 from wikiepwing.model.diagnostics import Diagnostic
 from wikiepwing.normalize.definition_lists import convert_definition_list, is_definition_list
 from wikiepwing.normalize.headings import convert_heading, is_heading
@@ -38,6 +44,8 @@ from wikiepwing.normalize.lists import (
     is_ordered_list,
     is_unordered_list,
 )
+from wikiepwing.normalize.math_content import resolve_math_source
+from wikiepwing.normalize.math_node import is_math_node, parse_math_node
 from wikiepwing.normalize.paragraphs import convert_inline_nodes
 from wikiepwing.normalize.quotes import (
     convert_preformatted,
@@ -48,6 +56,8 @@ from wikiepwing.normalize.quotes import (
 from wikiepwing.normalize.reference_list import is_reference_list
 from wikiepwing.normalize.references_block import build_references_block
 from wikiepwing.normalize.tables import is_table
+
+_MATH_NO_SOURCE_DIAGNOSTIC_CODE = "MATH_NO_SOURCE"
 
 
 def convert_block(node: ElementNode) -> tuple[Block, tuple[Diagnostic, ...]]:
@@ -70,6 +80,8 @@ def convert_block(node: ElementNode) -> tuple[Block, tuple[Diagnostic, ...]]:
         return convert_preformatted(node)
     if node.tag == "hr":
         return HorizontalRuleBlock(), ()
+    if is_math_node(node):
+        return _convert_math_block(node)
     if is_infobox(node):
         from wikiepwing.normalize.infobox_block import build_infobox_block
 
@@ -143,8 +155,37 @@ def _is_block_level(node: ElementNode) -> bool:
         or is_quote(node)
         or is_preformatted(node)
         or node.tag == "hr"
+        or (is_math_node(node) and parse_math_node(node).is_block)
         or node.tag in _ADDITIONAL_BLOCK_TAGS
     )
+
+
+def _convert_math_block(node: ElementNode) -> tuple[Block, tuple[Diagnostic, ...]]:
+    resolved = resolve_math_source(parse_math_node(node))
+    if resolved is None:
+        return _convert_unsupported_math(node)
+    source, source_format = resolved
+    return MathBlock(source=source, source_format=source_format), ()
+
+
+def _convert_unsupported_math(node: ElementNode) -> tuple[UnsupportedBlock, tuple[Diagnostic, ...]]:
+    block = UnsupportedBlock(
+        element_name=node.tag,
+        fallback_text="",
+        diagnostic_code=_MATH_NO_SOURCE_DIAGNOSTIC_CODE,
+    )
+    diagnostic = Diagnostic(
+        code=_MATH_NO_SOURCE_DIAGNOSTIC_CODE,
+        severity="warning",
+        stage="normalize_convert_block",
+        page_id=None,
+        title=None,
+        message="<math> element has neither a TeX source nor a text alternative",
+        source_path=None,
+        source_excerpt=None,
+        details={},
+    )
+    return block, (diagnostic,)
 
 
 def _convert_unsupported(node: ElementNode) -> tuple[UnsupportedBlock, tuple[Diagnostic, ...]]:

@@ -45,6 +45,7 @@ from wikiepwing.model.inline import (
     Inline,
     InternalLinkInline,
     LineBreakInline,
+    MathInline,
     StrongInline,
     TextInline,
     UnsupportedInline,
@@ -181,6 +182,8 @@ def _normalize_inline(inline: Inline) -> Inline:
         )
     if isinstance(inline, ExternalLinkInline):
         return ExternalLinkInline(label=_normalize_inlines(inline.label), url=inline.url)
+    if isinstance(inline, MathInline):
+        return inline
     if isinstance(inline, UnsupportedInline):
         return UnsupportedInline(
             element_name=inline.element_name,

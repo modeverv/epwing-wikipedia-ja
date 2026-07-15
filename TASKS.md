@@ -667,7 +667,7 @@
 
 **依存:** N003
 
-### TASK-N006 [ ] Inline/block layout
+### TASK-N006 [x] Inline/block layout
 
 **依存:** N004-N005,H007
 
