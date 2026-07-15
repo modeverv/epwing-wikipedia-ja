@@ -4998,3 +4998,37 @@ git diff --check
 **次タスク**
 
 - TASK-O010 Attribution model(依存: O001)
+
+## 2026-07-16 TASK-O010 Attribution model
+
+**目的**
+
+`ARCHITECTURE.md` 28.2(画像の帰属情報)・`DATA_CONTRACTS.md`の画像cacheメタデータJSONの`attribution`フィールドを実装する。Commons/Fileページからの実際の取得は別機能(28.2自身の記述)であり、本タスクはモデルと`is_licensed`述語のみを対象とした。
+
+**変更**
+
+- `src/wikiepwing/media/attribution.py`(新規): `MediaAttribution`(`source_page_url`/`author`/`license_identifier`/`license_url`)・`AttributionError`・`is_licensed`・`parse_media_attribution`
+- `tests/test_media_attribution.py`(新規8件)
+- `TASKS.md`(TASK-O010を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_attribution.py
+make check
+git diff --check
+```
+
+**結果**
+
+- round-trip・payload()のキー名一致・全フィールドnull許容・`is_licensed`のtrue/false判定・不正なJSONでのエラーを8件のテストで確認した。
+- 標準スイート1191件(新規8件を含む、ImageMagick依存3件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- フィールド名は`DATA_CONTRACTS.md`の画像cacheメタデータJSONの`attribution`フィールドとそのまま一致させた(TASK-M004で学んだ「新しいスキーマ設計時はDATA_CONTRACTS.mdを先に確認する」という教訓をここでも適用した)。
+- build profile(personal/distributable)による採否ポリシーは対象外とした。`build_profile`という概念自体がまだコードベースに存在しない(EPIC P未着手)ため、存在しない概念に依存したポリシーを先回りして実装しない方針にした。
+
+**次タスク**
+
+- TASK-O011 EPWING graphics integration(依存: O007,H009)

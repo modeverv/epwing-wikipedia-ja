@@ -715,7 +715,7 @@
 
 **依存:** O008
 
-### TASK-O010 [ ] Attribution model
+### TASK-O010 [x] Attribution model
 
 **依存:** O001
 
