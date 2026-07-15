@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,3 +123,48 @@ def _overlap_at_n(
         return None
     intersection = set(reference_headings) & set(candidate_headings)
     return len(intersection) / len(set(reference_headings))
+
+
+@dataclass(frozen=True, slots=True)
+class ThresholdConfig:
+    """The pass/fail thresholds a `ComparisonSummary` is judged against (COMPATIBILITY.md 5.3)."""
+
+    min_target_coverage: float
+    max_false_positives: int
+
+
+#: COMPATIBILITY.md 5.3's "fixed common queries target coverage: 95%以上"
+#: and "missing query returns false exact hit: 0" -- the two thresholds
+#: that apply across the whole fixed query set rather than to a specific
+#: query class (exact title/redirect breakdowns need per-query class data
+#: `reference.queries.FixedQuery` doesn't carry yet).
+DEFAULT_THRESHOLDS = ThresholdConfig(min_target_coverage=0.95, max_false_positives=0)
+
+
+@dataclass(frozen=True, slots=True)
+class ThresholdEvaluation:
+    """Whether a `ComparisonSummary` passes `config`'s thresholds (13's `status` field)."""
+
+    status: Literal["pass", "fail"]
+    target_coverage_ok: bool
+    false_positives_ok: bool
+    config: ThresholdConfig
+    summary: ComparisonSummary
+
+
+def evaluate_thresholds(
+    summary: ComparisonSummary, config: ThresholdConfig = DEFAULT_THRESHOLDS
+) -> ThresholdEvaluation:
+    """Judge `summary` against `config`, producing COMPATIBILITY.md 13's pass/fail `status`."""
+    target_coverage_ok = summary.target_coverage >= config.min_target_coverage
+    false_positives_ok = summary.false_positive_count <= config.max_false_positives
+    status: Literal["pass", "fail"] = (
+        "pass" if target_coverage_ok and false_positives_ok else "fail"
+    )
+    return ThresholdEvaluation(
+        status=status,
+        target_coverage_ok=target_coverage_ok,
+        false_positives_ok=false_positives_ok,
+        config=config,
+        summary=summary,
+    )

@@ -5608,3 +5608,36 @@ git diff --check
 **次タスク**
 
 - TASK-Q008 Compatibility thresholds(依存: Q007)
+
+## 2026-07-16 TASK-Q008 Compatibility thresholds
+
+**目的**
+
+`COMPATIBILITY.md` 5.3(Initial thresholds)・13(`thresholds`/`status`)を実装する。TASK-Q007の`ComparisonSummary`に対して閾値を適用しpass/fail判定する`evaluate_thresholds`を追加する。
+
+**変更**
+
+- `src/wikiepwing/compatibility/comparison.py`: `ThresholdConfig`・`DEFAULT_THRESHOLDS`・`ThresholdEvaluation`・`evaluate_thresholds`
+- `tests/test_compatibility_comparison.py`(新規5件)
+- `TASKS.md`(TASK-Q008を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_compatibility_comparison.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 閾値内でのpass・target coverage不足/false positiveでのfail・デフォルト閾値の使用・デフォルト値の一致を5件のテストで確認した。
+- 標準スイート1283件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- TASK-Q007と同じ理由で、query class別(exact title/redirect/common)の個別閾値評価は対象外とした。`DEFAULT_THRESHOLDS`は「fixed common queries target coverage: 95%以上」・「missing query returns false exact hit: 0」を全体に適用可能な閾値として採用した。
+
+**次タスク**
+
+- TASK-Q009 Compatibility HTML report(依存: Q008)

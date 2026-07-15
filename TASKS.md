@@ -791,7 +791,7 @@
 
 **依存:** C007,H011
 
-### TASK-Q008 [ ] Compatibility thresholds
+### TASK-Q008 [x] Compatibility thresholds
 
 **依存:** Q007
 

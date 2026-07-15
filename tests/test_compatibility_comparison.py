@@ -121,3 +121,69 @@ def test_empty_reference_yields_zero_total_and_zero_coverage() -> None:
     assert summary.false_positive_count == 0
     assert summary.overlap_at_n_mean is None
     assert summary.per_query == ()
+
+
+def test_evaluate_thresholds_passes_when_within_bounds() -> None:
+    from wikiepwing.compatibility.comparison import ThresholdConfig, evaluate_thresholds
+
+    reference = [_hit_set("q1", True, ("A",))]
+    candidate = [_hit_set("q1", True, ("A",))]
+    summary = compare_query_results(reference, candidate)
+
+    evaluation = evaluate_thresholds(
+        summary, ThresholdConfig(min_target_coverage=0.95, max_false_positives=0)
+    )
+
+    assert evaluation.status == "pass"
+    assert evaluation.target_coverage_ok is True
+    assert evaluation.false_positives_ok is True
+
+
+def test_evaluate_thresholds_fails_when_target_coverage_too_low() -> None:
+    from wikiepwing.compatibility.comparison import ThresholdConfig, evaluate_thresholds
+
+    reference = [_hit_set("q1", True, ("A",)), _hit_set("q2", True, ("B",))]
+    candidate = [_hit_set("q1", True, ("A",)), _hit_set("q2", True, ())]
+    summary = compare_query_results(reference, candidate)
+
+    evaluation = evaluate_thresholds(
+        summary, ThresholdConfig(min_target_coverage=0.95, max_false_positives=0)
+    )
+
+    assert evaluation.status == "fail"
+    assert evaluation.target_coverage_ok is False
+
+
+def test_evaluate_thresholds_fails_on_false_positives() -> None:
+    from wikiepwing.compatibility.comparison import ThresholdConfig, evaluate_thresholds
+
+    reference = [_hit_set("missing", False, ())]
+    candidate = [_hit_set("missing", False, ("Unexpected",))]
+    summary = compare_query_results(reference, candidate)
+
+    evaluation = evaluate_thresholds(
+        summary, ThresholdConfig(min_target_coverage=0.0, max_false_positives=0)
+    )
+
+    assert evaluation.status == "fail"
+    assert evaluation.false_positives_ok is False
+
+
+def test_evaluate_thresholds_uses_default_thresholds() -> None:
+    from wikiepwing.compatibility.comparison import DEFAULT_THRESHOLDS, evaluate_thresholds
+
+    reference = [_hit_set("q1", True, ("A",))]
+    candidate = [_hit_set("q1", True, ("A",))]
+    summary = compare_query_results(reference, candidate)
+
+    evaluation = evaluate_thresholds(summary)
+
+    assert evaluation.config == DEFAULT_THRESHOLDS
+    assert evaluation.status == "pass"
+
+
+def test_default_thresholds_match_compatibility_md() -> None:
+    from wikiepwing.compatibility.comparison import DEFAULT_THRESHOLDS
+
+    assert DEFAULT_THRESHOLDS.min_target_coverage == 0.95
+    assert DEFAULT_THRESHOLDS.max_false_positives == 0
