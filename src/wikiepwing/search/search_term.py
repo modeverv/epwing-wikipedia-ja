@@ -36,8 +36,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from wikiepwing.model.article import Article
-from wikiepwing.model.blocks import Block, HeadingBlock, InfoboxBlock
-from wikiepwing.model.inline import Inline
+from wikiepwing.model.blocks import Block, HeadingBlock, InfoboxBlock, ParagraphBlock
+from wikiepwing.model.inline import Inline, StrongInline
 from wikiepwing.search.kana_variant import kana_variant
 from wikiepwing.search.normalize_key import normalize_index_key
 from wikiepwing.search.punctuation_variant import punctuation_removed_variant
@@ -59,6 +59,7 @@ _KANA_VARIANT_PRIORITY = 600
 _CATEGORY_PRIORITY = 500
 _HEADING_KEYWORD_PRIORITY = 400
 _INFOBOX_KEYWORD_PRIORITY = 300
+_LEAD_ALIAS_PRIORITY = 200
 
 _VARIANT_GENERATORS: tuple[tuple[Callable[[str], str | None], int, str], ...] = (
     (space_removed_variant, _NORMALIZED_TITLE_VARIANT_PRIORITY, "nfkc_case_space_variant"),
@@ -212,6 +213,66 @@ def infobox_keyword_terms_for_article(article: Article) -> tuple[SearchTerm, ...
                 )
             )
     return tuple(terms)
+
+
+def lead_alias_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
+    """Return one `kind="alias"` SearchTerm per bold span in the article's lead paragraph.
+
+    Wikipedia articles conventionally bold the title and its synonyms in
+    the first sentence (e.g. "**GNU Emacs**（しばしば**Emacs**と略される）
+    は..."), ARCHITECTURE.md 13's "lead sentenceのbold alias". The lead
+    paragraph is the first `ParagraphBlock` appearing before any heading;
+    bold spans there matching the title itself are skipped, since
+    `title_terms_for_article` already covers that at a higher priority.
+    """
+    lead_paragraph = _first_lead_paragraph(article.blocks)
+    if lead_paragraph is None:
+        return ()
+
+    title_normalized_key = normalize_index_key(article.title)
+    terms: list[SearchTerm] = []
+    seen_normalized_keys: set[str] = set()
+    for text in _strong_texts(lead_paragraph.inlines):
+        normalized_key = normalize_index_key(text)
+        if not normalized_key or normalized_key == title_normalized_key:
+            continue
+        if normalized_key in seen_normalized_keys:
+            continue
+        seen_normalized_keys.add(normalized_key)
+        terms.append(
+            SearchTerm(
+                key=text,
+                normalized_key=normalized_key,
+                target_page_id=article.page_id,
+                kind="alias",
+                priority=_LEAD_ALIAS_PRIORITY,
+                source="lead",
+            )
+        )
+    return tuple(terms)
+
+
+def _first_lead_paragraph(blocks: tuple[Block, ...]) -> ParagraphBlock | None:
+    for block in blocks:
+        if isinstance(block, HeadingBlock):
+            return None
+        if isinstance(block, ParagraphBlock):
+            return block
+    return None
+
+
+def _strong_texts(inlines: tuple[Inline, ...]) -> list[str]:
+    texts: list[str] = []
+    for inline in inlines:
+        if isinstance(inline, StrongInline):
+            text = _flatten_inline_text(inline.inlines)
+            if text:
+                texts.append(text)
+            continue
+        nested = getattr(inline, "inlines", None)
+        if nested is not None:
+            texts.extend(_strong_texts(nested))
+    return texts
 
 
 def _flatten_block_text(blocks: tuple[Block, ...]) -> str:

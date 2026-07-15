@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-Q002
+TASK-Q003
 
 ## 目的
 
-`ARCHITECTURE.md` 14.3(Full profileの索引「infobox selected values」)・`DATA_CONTRACTS.md`のpriority提案(`300 infobox keyword`)を実装する。TASK-Q001の`heading_keyword_terms_for_article`と同じ形で、`InfoboxBlock`の各フィールドの値(name/labelではなくvalue)を平坦化して`kind="keyword"`の`SearchTerm`として抽出する`infobox_keyword_terms_for_article`を追加する。
+`ARCHITECTURE.md` 13(alias source「lead sentenceのbold alias」)・14.3(Full profileの索引「lead bold term」)・`DATA_CONTRACTS.md`のpriority提案(`200 lead term`)を実装する。記事本文の先頭(見出し前)の`ParagraphBlock`(lead paragraph)内で太字(`StrongInline`)になっているspanを、`kind="alias"`・`priority=200`・`source="lead"`の`SearchTerm`として抽出する`lead_alias_terms_for_article`を追加する。
 
 ## 事前条件
 
@@ -14,14 +14,14 @@ TASK-Q002
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-Q002(依存: K009,J007)を読んだ
-- [x] `ARCHITECTURE.md` 14.3・`DATA_CONTRACTS.md`のpriority提案(`300 infobox keyword`)を再確認した
-- [x] `model/blocks.py`の`InfoboxField.value`(`tuple[Block, ...]`、TASK-K009の`build_infobox_block`が`convert_document`で構築)を確認し、`ParagraphBlock`以外のBlock型が来る可能性があるため、`mini_layout.py`と同様のduck-typed再帰flattenを実装する方針にした
-- [x] TASK-Q001の`heading_keyword_terms_for_article`と同じ重複除去・one-to-many分離の設計を踏襲する
+- [x] `TASKS.md`のTASK-Q003(依存: G012,J007)を読んだ
+- [x] `ARCHITECTURE.md` 13(「lead sentenceのbold alias（後期実装）」)・14.3・`DATA_CONTRACTS.md`のpriority提案(`200 lead term`)を再確認した
+- [x] Wikipedia記事の典型パターン(先頭段落で記事タイトルとその別名が太字で示される、例:「**GNU Emacs**（しばしば**Emacs**と略される）は...」)を踏まえ、lead paragraphは「最初の見出しより前に出現する最初のParagraphBlock」と定義した
+- [x] タイトル自身と正規化キーが一致するbold spanは、既に`title_terms_for_article`が`priority=1000`でカバーしているため、重複除去の対象にした
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/search/search_term.py`(`infobox_keyword_terms_for_article`, `_flatten_block_text`追加)
+- `src/wikiepwing/search/search_term.py`(`lead_alias_terms_for_article`追加)
 - `tests/test_search_term.py`(追記)
 - `TASKS.md`
 - `LOG.md`
@@ -37,20 +37,20 @@ git diff --check
 
 ## 完了条件
 
-- [x] `InfoboxBlock`の各フィールドの`value`(`ParagraphBlock`等)を平坦化して`kind="keyword"`・`priority=300`・`source="infobox"`の`SearchTerm`を生成する
-- [x] フィールド名(name/label)自体はkeywordとして抽出しない(value側のみ)
-- [x] 同一記事内で同じ正規化キーが複数回出現しても重複したSearchTermを生成しない
-- [x] 空文字列になるフィールド値は無視する
-- [x] Infoboxが1つもない記事は空タプルを返す
+- [x] 最初の見出しより前にある最初の`ParagraphBlock`中の`StrongInline`テキストを`kind="alias"`・`priority=200`・`source="lead"`の`SearchTerm`として抽出する
+- [x] 見出しより後に現れる`ParagraphBlock`のbold spanは対象外
+- [x] 記事タイトルと同じ正規化キーのbold spanは除外する(title_termsで既にカバー済みのため)
+- [x] 同一記事内で同じ正規化キーのbold spanが複数回出現しても重複したSearchTermを生成しない
+- [x] lead paragraphが存在しない、またはbold spanがない記事は空タプルを返す
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Lead alias extraction(TASK-Q003)
+- Cross component extraction(TASK-Q004)
 - 実際の`rendered.sqlite3`永続化層への配線
 
 ## 実施結果
 
-- `search_term.py`に`infobox_keyword_terms_for_article`(`_INFOBOX_KEYWORD_PRIORITY=300`)と、`InfoboxField.value`(`tuple[Block,...]`)をduck-typedに再帰flattenする`_flatten_block_text`を実装した。フィールド名(label)は抽出せず、value側のみを対象にした。
-- `tests/test_search_term.py`(新規5件)で、フィールド値からのterm抽出・フィールド名の除外・重複除去・空値の無視・infoboxなし記事での空タプルを確認した。
-- `make check`(format-check/lint/mypy/pytest 1248件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
+- `search_term.py`に`lead_alias_terms_for_article`(`_LEAD_ALIAS_PRIORITY=200`)・`_first_lead_paragraph`(最初の見出しより前の最初の`ParagraphBlock`を返す)・`_strong_texts`(`StrongInline`のテキストを再帰的に収集)を実装した。タイトル自身と正規化キーが一致するbold spanは除外する。
+- `tests/test_search_term.py`(新規7件)で、bold spanの抽出・見出し後のparagraph除外・タイトル自身の除外・重複除去・bold spanなし/paragraphなし/blocksなしでの空タプルを確認した。
+- `make check`(format-check/lint/mypy/pytest 1255件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。

@@ -13,6 +13,7 @@ from wikiepwing.search.search_term import (
     category_terms_for_article,
     heading_keyword_terms_for_article,
     infobox_keyword_terms_for_article,
+    lead_alias_terms_for_article,
     sort_search_terms,
     title_terms_for_article,
 )
@@ -430,3 +431,90 @@ def test_no_infobox_yields_no_infobox_keyword_terms() -> None:
     article = _make_article(blocks=(ParagraphBlock(inlines=(TextInline(value="text"),)),))
 
     assert infobox_keyword_terms_for_article(article) == ()
+
+
+def test_lead_alias_terms_extracted_from_bold_span_in_first_paragraph() -> None:
+    article = _make_article(
+        title="GNU Emacs",
+        blocks=(
+            ParagraphBlock(
+                inlines=(
+                    TextInline(value="also known as "),
+                    StrongInline(inlines=(TextInline(value="Emacs"),)),
+                    TextInline(value="."),
+                )
+            ),
+        ),
+    )
+
+    terms = lead_alias_terms_for_article(article)
+
+    assert len(terms) == 1
+    assert terms[0].key == "Emacs"
+    assert terms[0].kind == "alias"
+    assert terms[0].priority == 200
+    assert terms[0].source == "lead"
+    assert terms[0].target_page_id == article.page_id
+
+
+def test_lead_alias_terms_ignore_paragraphs_after_a_heading() -> None:
+    article = _make_article(
+        blocks=(
+            HeadingBlock(level=2, anchor="h", inlines=(TextInline(value="概要"),)),
+            ParagraphBlock(inlines=(StrongInline(inlines=(TextInline(value="Emacs"),)),)),
+        ),
+    )
+
+    terms = lead_alias_terms_for_article(article)
+
+    assert terms == ()
+
+
+def test_lead_alias_terms_exclude_bold_span_matching_the_title() -> None:
+    article = _make_article(
+        title="Emacs",
+        blocks=(ParagraphBlock(inlines=(StrongInline(inlines=(TextInline(value="Emacs"),)),)),),
+    )
+
+    terms = lead_alias_terms_for_article(article)
+
+    assert terms == ()
+
+
+def test_lead_alias_terms_deduplicate_by_normalized_key() -> None:
+    article = _make_article(
+        title="GNU Emacs",
+        blocks=(
+            ParagraphBlock(
+                inlines=(
+                    StrongInline(inlines=(TextInline(value="Emacs"),)),
+                    TextInline(value=" "),
+                    StrongInline(inlines=(TextInline(value="Emacs"),)),
+                )
+            ),
+        ),
+    )
+
+    terms = lead_alias_terms_for_article(article)
+
+    assert len(terms) == 1
+
+
+def test_lead_alias_terms_no_bold_spans_yields_empty() -> None:
+    article = _make_article(blocks=(ParagraphBlock(inlines=(TextInline(value="plain text"),)),))
+
+    assert lead_alias_terms_for_article(article) == ()
+
+
+def test_lead_alias_terms_no_paragraph_yields_empty() -> None:
+    article = _make_article(
+        blocks=(HeadingBlock(level=2, anchor="h", inlines=(TextInline(value="概要"),)),),
+    )
+
+    assert lead_alias_terms_for_article(article) == ()
+
+
+def test_lead_alias_terms_no_blocks_yields_empty() -> None:
+    article = _make_article()
+
+    assert lead_alias_terms_for_article(article) == ()

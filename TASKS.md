@@ -771,7 +771,7 @@
 
 **依存:** K009,J007
 
-### TASK-Q003 [ ] Lead alias extraction
+### TASK-Q003 [x] Lead alias extraction
 
 **依存:** G012,J007
 

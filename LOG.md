@@ -5441,3 +5441,36 @@ git diff --check
 **次タスク**
 
 - TASK-Q003 Lead alias extraction(依存: G012,J007)
+
+## 2026-07-16 TASK-Q003 Lead alias extraction
+
+**目的**
+
+`ARCHITECTURE.md` 13(alias source「lead sentenceのbold alias」)・14.3・`DATA_CONTRACTS.md`のpriority提案(`200 lead term`)を実装する。記事本文の最初の見出し前の最初のParagraphBlock内のbold spanを`kind="alias"`のSearchTermとして抽出する`lead_alias_terms_for_article`を追加する。
+
+**変更**
+
+- `src/wikiepwing/search/search_term.py`: `lead_alias_terms_for_article`(`_LEAD_ALIAS_PRIORITY=200`)・`_first_lead_paragraph`・`_strong_texts`
+- `tests/test_search_term.py`(新規7件)
+- `TASKS.md`(TASK-Q003を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- bold spanの抽出・見出し後のparagraph除外・タイトル自身の除外・重複除去・空ケースを7件のテストで確認した。
+- 標準スイート1255件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- タイトル自身と正規化キーが一致するbold spanは除外した。`title_terms_for_article`が既に`priority=1000`でカバーしており、重複は不要なため。
+
+**次タスク**
+
+- TASK-Q004 Cross component extraction(依存: J007)
