@@ -687,7 +687,7 @@
 
 **依存:** O001,K008
 
-### TASK-O003 [ ] Selection policy
+### TASK-O003 [x] Selection policy
 
 **依存:** O002
 

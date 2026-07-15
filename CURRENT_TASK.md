@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-O002
+TASK-O003
 
 ## 目的
 
-`ARCHITECTURE.md` 15.2の`MediaReference.role`(`Literal["main","infobox","lead","body","icon","unknown"]`)を実際に分類するロジックを実装する。TASK-O001が抽出する`MediaReference`(常に`role="unknown"`)と、TASK-K008の`RawInfobox.image_srcs`(infobox内で見つかった画像src集合)を入力に、15.3の選択ポリシー優先順位・除外候補リストの一部(サイズの小さいicon)を反映してroleを決定する。`main`(Wikimedia Enterprise Snapshotのmain image由来、既に`normalize/orchestrate.py`の`_read_media`が設定済み)はこのタスクでは上書きしない。
+`ARCHITECTURE.md` 15.3の選択ポリシーを実装する。TASK-O002がroleを割り当てた`MediaReference`の並びから、除外候補(icon)を取り除き、`source_url`の重複(この段階では実バイトを未取得のため、"duplicate hash"の代替として`source_url`の重複を採用する)を除いたうえで、優先順位(主画像 > Infobox主要画像 > lead figure > 本文画像)に従って並べ替える、`Article.media`向けの最終選択リストを作る。
 
 ## 事前条件
 
@@ -14,16 +14,14 @@ TASK-O002
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-O002(依存: O001,K008)を読んだ
-- [x] `ARCHITECTURE.md` 15.3(選択ポリシー優先順位・除外候補: 16pxなどのicon等)を再確認した
-- [x] TASK-K008の`RawInfobox.image_srcs`(infobox行から見つかったimg srcの生文字列集合)を確認した
-- [x] TASK-O001の`MediaReference`(常に`role="unknown"`で返る)を確認した
-- [x] `_read_media`が`role="main"`を既に設定している箇所を確認し、本タスクではそれを上書きしない設計にした
+- [x] `TASKS.md`のTASK-O003(依存: O002)を読んだ
+- [x] `ARCHITECTURE.md` 15.3(選択ポリシー優先順位・除外候補)を再確認した
+- [x] 実際のバイトダウンロード(TASK-O004以降)が未実装であるため、"duplicate hash"は`source_url`の重複で代替する、という設計判断を確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/normalize/media_role.py`(新規: `classify_media_role`, `with_classified_role`)
-- `tests/test_normalize_media_role.py`(新規)
+- `src/wikiepwing/normalize/media_selection.py`(新規: `select_media`)
+- `tests/test_normalize_media_selection.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,29 +29,28 @@ TASK-O002
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_normalize_media_role.py
+uv run pytest tests/test_normalize_media_selection.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `role="main"`の`MediaReference`はそのまま(上書きされない)
-- [x] `source_width`/`source_height`が両方とも閾値以下(icon相当のサイズ)であれば`role="icon"`になる
-- [x] `source_url`が`infobox_source_urls`集合に含まれる場合は`role="infobox"`になる(iconサイズでない場合)
-- [x] `is_lead=True`の場合は`role="lead"`になる(icon/infoboxのいずれでもない場合)
-- [x] それ以外は`role="body"`になる
-- [x] `with_classified_role`が新しい`MediaReference`(role以外のフィールドは元のまま)を返す
+- [x] `role="icon"`の`MediaReference`は結果に含まれない
+- [x] 同じ`source_url`を持つ複数の`MediaReference`は最初の1件のみ残る
+- [x] 結果が`main` > `infobox` > `lead` > `body`(`unknown`は最後)の優先順位で並ぶ
+- [x] 同じroleの複数要素は入力順(DOM順)を保つ(安定ソート)
+- [x] 空入力は空タプルを返す
 - [x] `make check`が成功する
 
 ## 非対象
 
-- selection policy(重複除外・優先順位付けによる最終的な採用画像の決定、TASK-O003)
-- decorative flag/tracking image/blank placeholderの検出(将来必要になれば別タスク、現時点ではサイズによるicon判定のみ実装)
+- 実際のダウンロード・content hashによる本当の重複検出(TASK-O004以降)
+- decorative flag/tracking image/blank placeholderの検出
 
 ## 実施結果
 
-- `src/wikiepwing/normalize/media_role.py`に`classify_media_role`(優先順位: `main`維持 > iconサイズ判定 > infobox src集合一致 > lead flag > デフォルト`body`)と、それを適用した新しい`MediaReference`を返す`with_classified_role`(`dataclasses.replace`)を実装した。iconサイズ判定は`source_width`/`source_height`が両方とも20px以下の場合のみ真になり、片方だけ既知/両方不明な場合は`body`側にfallする。
-- `tests/test_normalize_media_role.py`(新規10件)で、`main`維持・icon判定(単独・infoboxより優先)・infobox判定(leadより優先)・lead判定・デフォルトbody・次元不明/部分的既知でのicon非該当・`with_classified_role`のフィールド保持を確認した。
-- `make check`(format-check/lint/mypy/pytest 1113件)と`git diff --check`が成功した。
-- 重複除外・最終的な採用画像決定(selection policy)はTASK-O003の対象。decorative flag/tracking image検出は対象外のまま。
+- `src/wikiepwing/normalize/media_selection.py`に`select_media`を実装した。`role="icon"`を除外し、`source_url`重複を最初の1件のみ残す形で除去したうえで、`main`(0) > `infobox`(1) > `lead`(2) > `body`(3) > `unknown`(4) > `icon`(5、実際には既に除外済み)の優先度で安定ソートする。
+- `tests/test_normalize_media_selection.py`(新規7件)で、空入力・icon除外・重複除去・優先順位ソート・unknown role・同roleでのDOM順保持・複合ケースを確認した。
+- `make check`(format-check/lint/mypy/pytest 1120件)と`git diff --check`が成功した。
+- 実際のcontent hashによる重複検出・decorative flag/tracking image検出は対象外(TASK-O004以降)。

@@ -4751,3 +4751,38 @@ git diff --check
 **次タスク**
 
 - TASK-O003 Selection policy(依存: O002)
+
+## 2026-07-16 TASK-O003 Selection policy
+
+**目的**
+
+`ARCHITECTURE.md` 15.3の選択ポリシーを実装する。TASK-O002がroleを割り当てた`MediaReference`の並びから、除外候補(icon)を取り除き、重複を除いたうえで優先順位(主画像 > Infobox主要画像 > lead figure > 本文画像)に従って並べ替え、`Article.media`向けの最終選択リストを作る。
+
+**変更**
+
+- `src/wikiepwing/normalize/media_selection.py`(新規): `select_media`(icon除外、`source_url`重複除去(実バイト未取得のためcontent hashの代替)、`main`>`infobox`>`lead`>`body`>`unknown`>`icon`の優先度で安定ソート)
+- `tests/test_normalize_media_selection.py`(新規7件)
+- `TASKS.md`(TASK-O003を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_media_selection.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 空入力・icon除外・重複除去・優先順位ソート・unknown role・同roleでのDOM順保持・複合ケースを7件のテストで確認した。
+- 標準スイート1120件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- "duplicate hash"(15.3の除外候補)は実バイトのcontent hashが必要だが、ダウンロード自体がTASK-O004以降のため、この段階では`source_url`の重複を実用的な代替として採用した。同一URLは同一ファイルであるという前提は妥当。
+- 安定ソート(Pythonの`sorted`)を使うことで、同じroleタイル内でのDOM出現順(15.3の「本文先頭の意味ある画像」→「追加本文画像」の順序)を自然に保持できる。
+- decorative flag/tracking image/blank placeholderの検出は対象外のままとした。
+
+**次タスク**
+
+- TASK-O004 Secure downloader(依存: A004)
