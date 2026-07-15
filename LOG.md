@@ -5239,3 +5239,41 @@ git diff --check
 **次タスク**
 
 - TASK-P005 100-article Lite build(依存: P004)
+
+## 2026-07-16 Bugfix: raster_converter SVG conversion via real ImageMagick (Docker verification)
+
+**目的**
+
+TASK-P005(100-article Lite build)の実施準備としてDocker toolchain imageを実際にrebuild・検証したところ、TASK-O007の`convert_to_bmp`がSVG入力で実際には動作しないバグを発見し修正した。
+
+**変更**
+
+- `src/wikiepwing/media/raster_converter.py`: `stdin`/`stdout`経由(`format:-`)でのバイト列受け渡しを、実際の一時ファイル経由に変更した。
+
+**発見の経緯・原因**
+
+- `docker/toolchain.Dockerfile`をrebuildし(ImageMagick/librsvg2-bin/policy.xmlを含む)、実際に`convert_to_bmp`をコンテナ内で呼び出したところ、SVG入力(`svg:-`)で`rsvg-convert' delegate failed`エラーが発生した。
+- 原因: ImageMagickのSVG delegate(`rsvg-convert`)は外部プロセス呼び出しであり、そのコマンドテンプレート(`-o '%o' '%i'`)が実在するファイルパスを要求する。`stdin`(`-`)経由のパイプではdelegateが読み取れるファイルが存在しないため失敗する。PNG/JPEG等のネイティブcoderはstdinから直接読めるため、この問題はSVGでのみ顕在化していた。
+- ローカル開発環境にImageMagickがなく、該当テスト(`test_converts_svg_to_bmp`)は`pytest.mark.skipif`で常にskipされていたため、このバグは一度も実行されずCIも通過していた。
+
+**修正内容**
+
+- `convert_to_bmp`が`tempfile.TemporaryDirectory()`内に入力・出力ファイルを作成し、ImageMagickへ実ファイルパスを渡すよう変更した。PNG/SVG両方をDockerコンテナ内で実際に呼び出し、正しくBMPへ変換されることを確認した(`convert_to_bmp(png_bytes, source_format="png")`・`convert_to_bmp(svg_bytes, source_format="svg")`ともに`BM`マジックで始まる出力を得た)。不正input/空inputでのエラーパスも実際に確認した。
+
+**実行コマンド**
+
+```bash
+docker build -f docker/toolchain.Dockerfile -t wikiepwing-toolchain:dev .
+docker run --rm --entrypoint sh wikiepwing-toolchain:dev -c 'python3 -c "..."'
+uv run pytest tests/test_media_raster_converter.py
+make check
+```
+
+**結果**
+
+- Docker内での実行で、PNG/SVG変換・空/不正入力のエラーパスすべてが正しく動作することを確認した。
+- 標準スイート1236件(ImageMagick依存6件はローカル環境でskip、Docker内では実際に確認済み)、format-check、ruff lint、mypy strictが成功した。
+
+**判断・注意点**
+
+- ImageMagick依存のテストがローカル環境で常にskipされる設計(TASK-M005のフォント可用性チェックと同じ前例)には、「実際に一度も実行されないコードパスのバグを見逃す」というトレードオフがあることを再確認した。今回はTASK-P005の準備としてDocker検証を行ったために発見できた。可能な限り定期的にDocker検証を行う価値があることを記録しておく。

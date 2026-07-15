@@ -10,14 +10,21 @@ imagemagick-policy.xml` locks down the dangerous coders/delegates
 (15.4's "ImageMagick delegate制限") at the image level; this module does
 not re-implement that restriction, it only invokes the CLI.
 
-Bytes stream through stdin/stdout (`format:-`) rather than temp files,
-so nothing this project converts ever touches disk outside the process.
+Input/output go through real temporary files rather than stdin/stdout
+(`format:-`): confirmed against the real toolchain image, ImageMagick's
+`rsvg-convert` delegate invokes that external process with a real file
+path (its command template substitutes `%i`/`%o` for actual paths), so
+`svg:-` on stdin fails with "unable to open file" even though direct
+raster coders (PNG/JPEG/...) can read from a pipe just fine. Temp files
+work uniformly for every format and avoid that delegate-specific gap.
 """
 
 from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
@@ -39,28 +46,30 @@ def convert_to_bmp(
         raise RasterConversionError("timeout_seconds must be positive")
 
     executable = _find_imagemagick_executable()
-    input_spec = f"{source_format}:-"
-    try:
-        result = subprocess.run(
-            [executable, input_spec, "bmp:-"],
-            input=content,
-            capture_output=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except OSError as error:
-        raise RasterConversionError(f"cannot invoke ImageMagick: {error}") from error
-    except subprocess.TimeoutExpired as error:
-        raise RasterConversionError(
-            f"ImageMagick conversion timed out after {timeout_seconds:g} seconds"
-        ) from error
+    with tempfile.TemporaryDirectory() as directory:
+        input_path = Path(directory) / f"input.{source_format}"
+        output_path = Path(directory) / "output.bmp"
+        input_path.write_bytes(content)
+        try:
+            result = subprocess.run(
+                [executable, str(input_path), str(output_path)],
+                capture_output=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except OSError as error:
+            raise RasterConversionError(f"cannot invoke ImageMagick: {error}") from error
+        except subprocess.TimeoutExpired as error:
+            raise RasterConversionError(
+                f"ImageMagick conversion timed out after {timeout_seconds:g} seconds"
+            ) from error
 
-    if result.returncode != 0:
-        stderr = result.stderr.decode("utf-8", errors="replace").strip()
-        raise RasterConversionError(f"ImageMagick conversion failed: {stderr}")
-    if not result.stdout:
-        raise RasterConversionError("ImageMagick conversion produced no output")
-    return result.stdout
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            raise RasterConversionError(f"ImageMagick conversion failed: {stderr}")
+        if not output_path.is_file() or output_path.stat().st_size == 0:
+            raise RasterConversionError("ImageMagick conversion produced no output")
+        return output_path.read_bytes()
 
 
 def is_imagemagick_available() -> bool:
