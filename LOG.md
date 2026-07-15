@@ -4681,3 +4681,38 @@ git diff --check
 **次タスク**
 
 - TASK-O001 MediaReference extraction(依存: G001,F004)
+
+## 2026-07-16 TASK-O001 MediaReference extraction
+
+**目的**
+
+EPIC O(画像)の最初のタスクとして、`ARCHITECTURE.md` 15.1/15.2を実装する。`<img>`/`<figure>`+`<figcaption>`というDOM要素から既存の`MediaReference`モデルを抽出する。normalize段階では画像参照のみを保存し、ダウンロードは行わない。
+
+**変更**
+
+- `src/wikiepwing/normalize/media_node.py`(新規): `is_image_node`・`parse_image_node`(`src`欠落時は`None`、`source_name`をURLパスからURLデコードして導出、`width`/`height`は非負整数でなければ`None`)・`is_figure_with_image`・`parse_figure_media`(`<figcaption>`テキストをcaptionに、ネストした`<img>`も探索)
+- `tests/test_normalize_media_node.py`(新規16件)
+- `TASKS.md`(TASK-O001を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_media_node.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 属性抽出・URLデコード・width/height欠落/不正値のfallback・figcaptionからのcaption抽出・ネストしたimg探索・src欠落時のNone返却を16件のテストで確認した。
+- 標準スイート1103件(新規16件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `media_id`は`source_url`をそのまま採用した。既存の`normalize/orchestrate.py`の`_read_media`(Wikimedia Enterprise Snapshotのmain image由来)が同じ前例を採用しているため、一貫性を優先した。
+- `role`は常に`"unknown"`とし、分類ロジックはTASK-O002に委ねた(TASK-O002/TASK-O010がともに本タスクの出力を入力として使う設計であることをTASKS.mdの依存関係から確認した)。
+- `convert_block`/`ImageBlock`への実際の配線は対象外とした(現時点で`ImageBlock`はまだ`media_id`のみのplaceholderで、Block treeへの本格的な画像embeddingは後続タスクの範囲と判断した)。
+
+**次タスク**
+
+- TASK-O002 Role classification(依存: O001,K008)

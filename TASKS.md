@@ -679,7 +679,7 @@
 
 ## EPIC O — Images
 
-### TASK-O001 [ ] MediaReference extraction
+### TASK-O001 [x] MediaReference extraction
 
 **依存:** G001,F004
 
