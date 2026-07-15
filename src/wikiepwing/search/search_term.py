@@ -62,6 +62,8 @@ _INFOBOX_KEYWORD_PRIORITY = 300
 _LEAD_ALIAS_PRIORITY = 200
 _CROSS_COMPONENT_PRIORITY = 100
 
+_BUDGETED_KINDS = frozenset({"keyword", "cross_component"})
+
 _VARIANT_GENERATORS: tuple[tuple[Callable[[str], str | None], int, str], ...] = (
     (space_removed_variant, _NORMALIZED_TITLE_VARIANT_PRIORITY, "nfkc_case_space_variant"),
     (kana_variant, _KANA_VARIANT_PRIORITY, "kana_variant"),
@@ -356,6 +358,40 @@ def sort_search_terms(terms: Iterable[SearchTerm]) -> tuple[SearchTerm, ...]:
             ),
         )
     )
+
+
+def apply_search_budgets(
+    terms: Iterable[SearchTerm],
+    *,
+    max_terms_per_article: int,
+    max_key_bytes: int,
+    stop_words: frozenset[str] = frozenset(),
+) -> tuple[SearchTerm, ...]:
+    """Apply TASK-Q005's per-article term budget, key-length cap, and stop-word filter.
+
+    CONFIG_REFERENCE.md's `max_terms_per_article` ("keyword/cross termsの
+    爆発防止。title/redirectは別budget扱い可能") only bounds `keyword`/
+    `cross_component` terms (TASK-Q001-Q004's extractors) -- title,
+    redirect, alias, category, and reading terms always pass through
+    unbounded, on a separate budget. `max_key_bytes` and `stop_words`
+    (normalized keys to drop) apply to every kind, though in practice only
+    keyword/cross_component terms are noisy enough to need either.
+    Truncation happens after `sort_search_terms`'s priority-descending
+    order, so the highest-priority terms survive when the budget is tight.
+    """
+    budgeted_count = 0
+    result: list[SearchTerm] = []
+    for term in sort_search_terms(terms):
+        if len(term.key.encode("utf-8")) > max_key_bytes:
+            continue
+        if term.kind in _BUDGETED_KINDS:
+            if term.normalized_key in stop_words:
+                continue
+            if budgeted_count >= max_terms_per_article:
+                continue
+            budgeted_count += 1
+        result.append(term)
+    return tuple(result)
 
 
 def _variant_terms(normalized_key: str, page_id: int) -> tuple[SearchTerm, ...]:

@@ -779,7 +779,7 @@
 
 **依存:** J007
 
-### TASK-Q005 [ ] Search budgets and stop rules
+### TASK-Q005 [x] Search budgets and stop rules
 
 **依存:** Q001-Q004
 

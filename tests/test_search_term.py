@@ -10,6 +10,7 @@ from wikiepwing.model.inline import StrongInline, TextInline
 from wikiepwing.search.search_term import (
     SearchTerm,
     SearchTermError,
+    apply_search_budgets,
     category_terms_for_article,
     cross_component_terms_for_article,
     heading_keyword_terms_for_article,
@@ -570,3 +571,131 @@ def test_cross_component_terms_deduplicate_by_normalized_key() -> None:
     terms = cross_component_terms_for_article(article)
 
     assert len(terms) == 2
+
+
+def test_apply_search_budgets_caps_keyword_and_cross_component_terms() -> None:
+    terms = [
+        SearchTerm(
+            key=key,
+            normalized_key=key,
+            target_page_id=1,
+            kind="keyword",
+            priority=400,
+            source="heading",
+        )
+        for key in ("a", "b", "c")
+    ]
+
+    result = apply_search_budgets(terms, max_terms_per_article=2, max_key_bytes=255)
+
+    assert len(result) == 2
+
+
+def test_apply_search_budgets_exempts_title_and_redirect_from_the_budget() -> None:
+    title_term = SearchTerm(
+        key="Emacs",
+        normalized_key="emacs",
+        target_page_id=1,
+        kind="title",
+        priority=1000,
+        source="normalize",
+    )
+    keyword_terms = [
+        SearchTerm(
+            key=f"kw{i}",
+            normalized_key=f"kw{i}",
+            target_page_id=1,
+            kind="keyword",
+            priority=400,
+            source="heading",
+        )
+        for i in range(5)
+    ]
+
+    result = apply_search_budgets(
+        [title_term, *keyword_terms], max_terms_per_article=2, max_key_bytes=255
+    )
+
+    assert title_term in result
+    assert sum(1 for term in result if term.kind == "keyword") == 2
+
+
+def test_apply_search_budgets_keeps_highest_priority_terms_when_over_budget() -> None:
+    low = SearchTerm(
+        key="low", normalized_key="low", target_page_id=1, kind="keyword", priority=100, source="s"
+    )
+    high = SearchTerm(
+        key="high",
+        normalized_key="high",
+        target_page_id=1,
+        kind="keyword",
+        priority=400,
+        source="heading",
+    )
+
+    result = apply_search_budgets([low, high], max_terms_per_article=1, max_key_bytes=255)
+
+    assert result == (high,)
+
+
+def test_apply_search_budgets_drops_keys_over_max_bytes() -> None:
+    short = SearchTerm(
+        key="ab", normalized_key="ab", target_page_id=1, kind="title", priority=1000, source="s"
+    )
+    long_key = "x" * 300
+    long = SearchTerm(
+        key=long_key,
+        normalized_key=long_key,
+        target_page_id=1,
+        kind="title",
+        priority=1000,
+        source="s",
+    )
+
+    result = apply_search_budgets([short, long], max_terms_per_article=10, max_key_bytes=255)
+
+    assert result == (short,)
+
+
+def test_apply_search_budgets_drops_stop_words() -> None:
+    stopped = SearchTerm(
+        key="the",
+        normalized_key="the",
+        target_page_id=1,
+        kind="keyword",
+        priority=400,
+        source="heading",
+    )
+    kept = SearchTerm(
+        key="Emacs",
+        normalized_key="emacs",
+        target_page_id=1,
+        kind="keyword",
+        priority=400,
+        source="heading",
+    )
+
+    result = apply_search_budgets(
+        [stopped, kept],
+        max_terms_per_article=10,
+        max_key_bytes=255,
+        stop_words=frozenset({"the"}),
+    )
+
+    assert result == (kept,)
+
+
+def test_apply_search_budgets_stop_words_do_not_affect_title_terms() -> None:
+    title_term = SearchTerm(
+        key="The", normalized_key="the", target_page_id=1, kind="title", priority=1000, source="s"
+    )
+
+    result = apply_search_budgets(
+        [title_term], max_terms_per_article=10, max_key_bytes=255, stop_words=frozenset({"the"})
+    )
+
+    assert result == (title_term,)
+
+
+def test_apply_search_budgets_empty_input_returns_empty() -> None:
+    assert apply_search_budgets([], max_terms_per_article=10, max_key_bytes=255) == ()

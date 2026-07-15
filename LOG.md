@@ -5507,3 +5507,37 @@ git diff --check
 **次タスク**
 
 - TASK-Q005 Search budgets and stop rules(依存: Q001-Q004)
+
+## 2026-07-16 TASK-Q005 Search budgets and stop rules
+
+**目的**
+
+`CONFIG_REFERENCE.md`の`[search]` `max_terms_per_article`(「keyword/cross termsの爆発防止。title/redirectは別budget扱い可能」)・`max_key_bytes`・`PLAN.md`の「stop words」を実装する。TASK-Q001-Q004が生成するkeyword/cross_component種別のSearchTermにのみbudgetを適用する`apply_search_budgets`を追加する。
+
+**変更**
+
+- `src/wikiepwing/search/search_term.py`: `apply_search_budgets`(`_BUDGETED_KINDS`)
+- `tests/test_search_term.py`(新規7件)
+- `TASKS.md`(TASK-Q005を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_search_term.py
+make check
+git diff --check
+```
+
+**結果**
+
+- keyword/cross_componentのbudget上限・title/redirectの除外・budget超過時の高優先度term保持・key長超過の除外・stop wordの除外・空入力を7件のテストで確認した。
+- 標準スイート1267件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 具体的なstop word一覧の選定は対象外とした。呼び出し側が注入するパラメータ(`stop_words: frozenset[str] = frozenset()`)として実装し、内容自体はどのドキュメントにも記載がないため決め打ちしなかった。
+- `sort_search_terms`の優先度降順を先に適用してからbudget truncationすることで、budget超過時に優先度の高いtermが優先的に残るようにした。
+
+**次タスク**
+
+- TASK-Q006 Full profile(依存: 未確認)
