@@ -776,6 +776,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             remove_edit_ui=cast(bool, normalize_section["remove_edit_ui"]),
             remove_navboxes=cast(bool, normalize_section["remove_navboxes"]),
             remove_authority_control=cast(bool, normalize_section["remove_authority_control"]),
+            images_enabled=cast(bool, config.section("images")["enabled"]),
         )
         run_id = cast(str | None, arguments.run_id) or (
             f"{config.project}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
@@ -904,6 +905,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 remove_edit_ui=cast(bool, normalize_section["remove_edit_ui"]),
                 remove_navboxes=cast(bool, normalize_section["remove_navboxes"]),
                 remove_authority_control=cast(bool, normalize_section["remove_authority_control"]),
+                images_enabled=cast(bool, config.section("images")["enabled"]),
             )
             normalize_result = run_normalize(
                 raw_database_path=raw_database_path,

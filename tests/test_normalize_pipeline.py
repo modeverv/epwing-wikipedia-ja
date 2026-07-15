@@ -77,3 +77,28 @@ def test_normalize_html_empty_document_produces_no_blocks() -> None:
 
     assert blocks == ()
     assert diagnostics == ()
+
+
+def test_normalize_html_extracts_body_media_by_default() -> None:
+    html = '<html><body><img src="https://example.org/a.png"></body></html>'
+
+    _blocks, media, _diagnostics = normalize_html(html, _DEFAULT_OPTIONS)
+
+    assert len(media) == 1
+    assert media[0].source_url == "https://example.org/a.png"
+
+
+def test_normalize_html_skips_body_media_when_images_disabled() -> None:
+    options = NormalizeOptions(
+        max_dom_depth=64,
+        html_recover=True,
+        remove_edit_ui=True,
+        remove_navboxes=True,
+        remove_authority_control=True,
+        images_enabled=False,
+    )
+    html = '<html><body><img src="https://example.org/a.png"></body></html>'
+
+    _blocks, media, _diagnostics = normalize_html(html, options)
+
+    assert media == ()

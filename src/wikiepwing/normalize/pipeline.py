@@ -4,6 +4,15 @@
 unsafe/UI node removal (G003) -> document assembly with unknown-DOM fallback
 (G004-G010) -> whitespace normalization (G011) -> body media extraction/role
 classification (TASK-O012, wiring TASK-O001-O002's `classify_body_media`).
+
+`images_enabled` (TASK-P004, ARCHITECTURE.md 21.3's "同じコードパスを使い、
+profile設定で差を作ります") is the one config-driven behavior difference
+this pipeline currently applies: when the `[images]` section's `enabled`
+is false (the Mini profile's `mini.toml`), body media extraction is
+skipped entirely and `normalize/orchestrate.py` skips reading the
+Snapshot's main image too, so `Article.media` ends up empty -- matching
+21.1's "imageなし" for Mini -- rather than scattering `if profile ==
+"mini"` checks through the codebase.
 """
 
 from __future__ import annotations
@@ -30,6 +39,7 @@ class NormalizeOptions:
     remove_edit_ui: bool
     remove_navboxes: bool
     remove_authority_control: bool
+    images_enabled: bool = True
 
     def _removal_options(self) -> UnsafeNodeRemovalOptions:
         return UnsafeNodeRemovalOptions(
@@ -61,6 +71,6 @@ def normalize_html(
     diagnostics.extend(document_diagnostics)
 
     normalized_blocks = tuple(normalize_block_whitespace(block) for block in blocks)
-    body_media = classify_body_media(filtered_children)
+    body_media = classify_body_media(filtered_children) if options.images_enabled else ()
 
     return normalized_blocks, body_media, tuple(diagnostics)

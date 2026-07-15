@@ -385,3 +385,55 @@ def _run_normalize_slowly(
 
 def test_read_manifest_status_returns_none_when_missing(tmp_path: Path) -> None:
     assert read_manifest_status(tmp_path / "missing.json") is None
+
+
+def test_images_enabled_true_populates_media(tmp_path: Path) -> None:
+    raw_database_path = _build_raw_database(tmp_path)
+
+    result = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=tmp_path / "work" / "model.sqlite3",
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=tmp_path / "manifests" / "40-normalize.json",
+        run_id="test-normalize-run",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+    )
+
+    with connect_model_database(result.model_database_path) as connection:
+        row = connection.execute(
+            "SELECT article_json_zstd FROM articles WHERE page_id = 900002"
+        ).fetchone()
+        article = decode_article(decompress(row["article_json_zstd"]))
+        assert len(article.media) > 0
+
+
+def test_images_enabled_false_produces_no_media(tmp_path: Path) -> None:
+    raw_database_path = _build_raw_database(tmp_path)
+    config = load_config(DEFAULT_CONFIG)
+    normalize_section = config.section("normalize")
+    options = NormalizeOptions(
+        max_dom_depth=normalize_section["max_dom_depth"],  # type: ignore[arg-type]
+        html_recover=normalize_section["html_recover"],  # type: ignore[arg-type]
+        remove_edit_ui=normalize_section["remove_edit_ui"],  # type: ignore[arg-type]
+        remove_navboxes=normalize_section["remove_navboxes"],  # type: ignore[arg-type]
+        remove_authority_control=normalize_section["remove_authority_control"],  # type: ignore[arg-type]
+        images_enabled=False,
+    )
+
+    result = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=tmp_path / "work" / "model.sqlite3",
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=tmp_path / "manifests" / "40-normalize.json",
+        run_id="test-normalize-run",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=options,
+    )
+
+    with connect_model_database(result.model_database_path) as connection:
+        row = connection.execute(
+            "SELECT article_json_zstd FROM articles WHERE page_id = 900002"
+        ).fetchone()
+        article = decode_article(decompress(row["article_json_zstd"]))
+        assert article.media == ()

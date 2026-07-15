@@ -5203,3 +5203,39 @@ git diff --check
 **次タスク**
 
 - TASK-P004 Profile-driven renderer(依存: P002-P003)
+
+## 2026-07-16 TASK-P004 Profile-driven renderer
+
+**目的**
+
+`ARCHITECTURE.md` 21.3(「同じコードパスを使い、profile設定で差を作ります」)を実装する最初の一歩として、AskUserQuestionで確認した方針に従い`[images].enabled`のみを実際にnormalizeパイプラインへ配線する。
+
+**変更**
+
+- `src/wikiepwing/normalize/pipeline.py`: `NormalizeOptions`に`images_enabled: bool = True`を追加、`normalize_html`が無効時は本文画像抽出をスキップ
+- `src/wikiepwing/normalize/orchestrate.py`: `images_enabled`が偽の場合main image読み出しも含めて`media=()`にする
+- `src/wikiepwing/cli.py`: `normalize`/`build`サブコマンドで`images_enabled=config.section("images")["enabled"]`を渡す
+- `tests/test_normalize_pipeline.py`/`tests/test_normalize_orchestrate.py`(各2件追記)、`tests/test_mini_profile_build.py`/`tests/test_lite_profile_build.py`(実際のend-to-end buildでmedia件数を確認するassertion追加)
+- `TASKS.md`(TASK-P004を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_pipeline.py tests/test_normalize_orchestrate.py tests/test_mini_profile_build.py tests/test_lite_profile_build.py tests/test_golden_normalize.py tests/test_mini_end_to_end_build.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- `images_enabled`のtrue/falseそれぞれで本文画像抽出・main image読み出し・`Article.media`の挙動を単体テストと実際のend-to-end build(Mini/Lite profile)の両方で確認した。Mini profileは実際に`media_references`テーブルが0件になり、ARCHITECTURE.md 21.1の「imageなし」を満たすことを確認した。
+- 標準スイート1236件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- AskUserQuestionで確認した通り、`images.enabled`のみを配線し、`math.render_graphics`/`tables.*`/`search.*`/`references.*`は対象外とした。前者は既に現在の出力がMini相当(mathは常にtext)であり、後者は「何を削るか」の仕様上の判断が必要なため。
+- `images_enabled`のデフォルトを`True`にすることで、既存の`NormalizeOptions(...)`呼び出し箇所すべて(テスト含む)を変更せずに済ませた。
+
+**次タスク**
+
+- TASK-P005 100-article Lite build(依存: P004)

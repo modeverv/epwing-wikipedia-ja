@@ -9,6 +9,7 @@ from pathlib import Path
 from wikiepwing.config import load_config
 from wikiepwing.ingest.orchestrate import run_ingest
 from wikiepwing.ingest.validate import ValidationLimits
+from wikiepwing.model.database import connect_model_database
 from wikiepwing.model.validate import ModelValidationLimits
 from wikiepwing.normalize.orchestrate import run_normalize
 from wikiepwing.normalize.pipeline import NormalizeOptions
@@ -82,6 +83,7 @@ def test_lite_profile_build_over_hundred_article_fixture(tmp_path: Path) -> None
         remove_edit_ui=normalize_section["remove_edit_ui"],  # type: ignore[arg-type]
         remove_navboxes=normalize_section["remove_navboxes"],  # type: ignore[arg-type]
         remove_authority_control=normalize_section["remove_authority_control"],  # type: ignore[arg-type]
+        images_enabled=config.section("images")["enabled"],  # type: ignore[arg-type]
     )
     model_database_path = tmp_path / "work" / "model.sqlite3"
     normalize_result = run_normalize(
@@ -96,6 +98,10 @@ def test_lite_profile_build_over_hundred_article_fixture(tmp_path: Path) -> None
     )
     assert normalize_result.manifest.status == "complete"
     assert normalize_result.manifest.metrics.articles_read == 100
+
+    with connect_model_database(model_database_path) as connection:
+        media_count = connection.execute("SELECT COUNT(*) FROM media_references").fetchone()[0]
+        assert media_count > 0, "Lite profile (images.enabled=true) should still produce images"
 
     entries_path = tmp_path / "entries.jsonl"
     generate_result = run_generate(

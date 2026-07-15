@@ -743,7 +743,7 @@
 
 **依存:** N007,O012,P001
 
-### TASK-P004 [ ] Profile-driven renderer
+### TASK-P004 [x] Profile-driven renderer
 
 **依存:** P002-P003
 

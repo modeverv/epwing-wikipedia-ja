@@ -383,7 +383,11 @@ def _normalize_one(
         blocks=blocks,
         aliases=extract_redirect_aliases(raw_connection, page_id),
         categories=_read_categories(raw_connection, page_id),
-        media=select_media(_read_media(raw_connection, page_id) + body_media),
+        media=(
+            select_media(_read_media(raw_connection, page_id) + body_media)
+            if normalize_options.images_enabled
+            else ()
+        ),
         diagnostics=stamped_pipeline_diagnostics,
         source_license_ids=_read_license_ids(raw_connection, page_id),
     )
