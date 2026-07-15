@@ -5277,3 +5277,37 @@ make check
 **判断・注意点**
 
 - ImageMagick依存のテストがローカル環境で常にskipされる設計(TASK-M005のフォント可用性チェックと同じ前例)には、「実際に一度も実行されないコードパスのバグを見逃す」というトレードオフがあることを再確認した。今回はTASK-P005の準備としてDocker検証を行ったために発見できた。可能な限り定期的にDocker検証を行う価値があることを記録しておく。
+
+## 2026-07-16 TASK-P005 100-article Lite build
+
+**目的**
+
+TASK-H013の`mini-end-to-end-smoke.sh`と同じ形の、Lite profile向けDocker smoke testを追加し、実際にDockerで検証する。
+
+**変更**
+
+- `docker/toolchain/lite-100-article-smoke.sh`(新規): `config/profiles/lite.toml`をoverrideとして使い、実toolchain image内でPython pipeline→fpwmake→ebinfo→eb-searchまで検証するスクリプト
+- `TASKS.md`(TASK-P005を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+docker build -f docker/toolchain.Dockerfile -t wikiepwing-toolchain:dev .
+sh docker/toolchain/lite-100-article-smoke.sh wikiepwing-toolchain:dev
+make check
+git diff --check
+```
+
+**結果**
+
+- `wikiepwing-toolchain:dev`を実際にrebuildし(この過程でTASK-O007のSVGバグを発見・修正、別コミット)、本スクリプトを実行してPython pipeline・fpwmake honmon構築・ebinfo・eb-searchでの複数title検索確認まで全て実際に完走することを確認した。
+- 標準スイート1236件(変更なし)、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `RenderedEntry.graphics`が現時点で常に空(実際のFreePWING graphics統合はEPIC O012で対象外とした)であるため、このsmoke testはMini版と実質的に同じ内容になる。画像embeddingの差異はまだ検証できない、既知のギャップとして記録する。
+- Dockerが実際に利用可能な環境だったため、これまでの多くのタスクで「Docker検証は別途」としていた箇所を実際に検証する貴重な機会になった。今後もDockerが使える場合は積極的に実検証することを推奨する。
+
+**次タスク**
+
+- TASK-P006 10,000-article sample builder(依存: P005)

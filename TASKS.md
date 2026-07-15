@@ -747,7 +747,7 @@
 
 **依存:** P002-P003
 
-### TASK-P005 [ ] 100-article Lite build
+### TASK-P005 [x] 100-article Lite build
 
 **依存:** P004
 
