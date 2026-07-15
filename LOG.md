@@ -4893,3 +4893,41 @@ git diff --check
 **次タスク**
 
 - TASK-O007 Raster converter(依存: O005-O006)
+
+## 2026-07-16 TASK-O007 Raster converter
+
+**目的**
+
+`ARCHITECTURE.md` 15.4/17.3の「image conversion tools」「ImageMagick delegate制限」を実装する。ユーザーにAskUserQuestionで方式を確認し、ImageMagick(+librsvg2-bin delegate)をDocker toolchain imageへ追加する方式を選択した。TASK-O005/O006で検証済みのラスター画像・sanitize済みSVGをEPWING toolchain互換のBMPへ変換する。
+
+**変更**
+
+- `docker/toolchain.Dockerfile`: runtime stageに`imagemagick=8:6.9.11.60+dfsg-1.6+deb12u9`・`librsvg2-bin=2.54.7+dfsg-1~deb12u1`を追加。apt-get installの後に`docker/toolchain/imagemagick-policy.xml`を`/etc/ImageMagick-6/policy.xml`へCOPYして上書き
+- `docker/toolchain/imagemagick-policy.xml`(新規): 危険なcoder(MSL/URL/HTTPS/HTTP/FTP/EPHEMERAL/MVG/TEXT/SHOW/WIN/PLT/PS系/PDF/XPS)を無効化、resource上限を設定
+- `src/wikiepwing/media/raster_converter.py`(新規): `RasterConversionError`・`convert_to_bmp`・`is_imagemagick_available`
+- `tests/test_media_raster_converter.py`(新規8件)、`tests/test_media_toolchain_definition.py`(新規5件)
+- `TASKS.md`(TASK-O007を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_raster_converter.py tests/test_media_toolchain_definition.py
+make check
+git diff --check
+```
+
+**結果**
+
+- PNG/SVG→BMP変換(ImageMagick未検出時はskip)・空バイト列拒否・変換失敗時のエラー・timeout・実行ファイル未検出時のエラーを8件、Dockerfile/policy.xmlの内容検証を5件のテストで確認した。
+- 標準スイート1171件(新規13件を含む、ImageMagick依存3件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- imagemagick/librsvg2-binのバージョンはsnapshot.debian.orgの`dists/bookworm/main/binary-amd64/Packages`インデックス(実際にそのsnapshot日時でaptが解決する値)から採用した。pool配下のディレクトリ一覧に見える最新版(deb12u11)とは異なり、pin日時のsuiteインデックスはu9を指していたため、再現性のためインデックスの値を優先した。
+- policy.xmlはapt-get installの**後**にCOPYする順序にした。先に置くとdpkgのパッケージ展開で標準policy.xmlに上書きされ、制限が効かなくなるため。
+- テスト作成中、policy.xmlのコメント内に含まれるem-dash(`--`)がXML仕様上コメント内で使用不可であることを発見し、実際にパースエラーになることをテストで検出・修正した。気づかなければDocker build自体は通っても、ImageMagickがpolicy.xmlの読み込みに失敗し制限が無効になっていた可能性がある。
+- ImageMagickバイナリがローカル開発環境(macOS)に存在しないため、実変換系テストは`pytest.mark.skipif`でskipする設計にした(TASK-M005のフォント可用性チェックと同じ前例)。実際の動作確認はDocker環境で行う想定。
+
+**次タスク**
+
+- TASK-O008 Content-addressed cache(依存: O007)

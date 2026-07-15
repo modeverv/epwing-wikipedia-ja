@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policymap [
+  <!ELEMENT policymap (policy)*>
+  <!ATTLIST policymap xmlns CDATA #FIXED ''>
+  <!ELEMENT policy EMPTY>
+  <!ATTLIST policy xmlns CDATA #FIXED '' domain NMTOKEN #REQUIRED
+    name NMTOKEN #IMPLIED pattern CDATA #IMPLIED rights NMTOKEN #IMPLIED
+    stealth NMTOKEN #IMPLIED value CDATA #IMPLIED>
+]>
+<!--
+  TASK-O007 (ARCHITECTURE.md 15.4 "ImageMagick delegate制限"): a locked-down
+  policy.xml for the ImageMagick install this project shells out to for
+  raster conversion. Bounds resource usage against a decompression-bomb
+  input, and disables the coders responsible for the "ImageTragick"
+  (CVE-2016-3714) class of vulnerabilities: MSL/URL/HTTPS/HTTP/FTP/EPHEMERAL
+  invoke external processes or fetch network resources from what should be
+  a pure local file conversion; PS/PDF/EPS/XPS shell out to Ghostscript,
+  a large and historically exploitable attack surface this project has no
+  need for. SVG conversion (via the librsvg2-bin delegate) is intentionally
+  left enabled.
+-->
+<policymap>
+  <policy domain="resource" name="memory" value="256MiB"/>
+  <policy domain="resource" name="map" value="512MiB"/>
+  <policy domain="resource" name="width" value="16KP"/>
+  <policy domain="resource" name="height" value="16KP"/>
+  <policy domain="resource" name="area" value="128MB"/>
+  <policy domain="resource" name="disk" value="1GiB"/>
+  <policy domain="resource" name="time" value="30"/>
+  <policy domain="coder" rights="none" pattern="MSL"/>
+  <policy domain="coder" rights="none" pattern="URL"/>
+  <policy domain="coder" rights="none" pattern="HTTPS"/>
+  <policy domain="coder" rights="none" pattern="HTTP"/>
+  <policy domain="coder" rights="none" pattern="FTP"/>
+  <policy domain="coder" rights="none" pattern="EPHEMERAL"/>
+  <policy domain="coder" rights="none" pattern="MVG"/>
+  <policy domain="coder" rights="none" pattern="TEXT"/>
+  <policy domain="coder" rights="none" pattern="SHOW"/>
+  <policy domain="coder" rights="none" pattern="WIN"/>
+  <policy domain="coder" rights="none" pattern="PLT"/>
+  <policy domain="coder" rights="none" pattern="PS"/>
+  <policy domain="coder" rights="none" pattern="PS2"/>
+  <policy domain="coder" rights="none" pattern="PS3"/>
+  <policy domain="coder" rights="none" pattern="EPS"/>
+  <policy domain="coder" rights="none" pattern="PDF"/>
+  <policy domain="coder" rights="none" pattern="XPS"/>
+  <policy domain="path" rights="none" pattern="@*"/>
+</policymap>

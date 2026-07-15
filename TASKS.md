@@ -703,7 +703,7 @@
 
 **依存:** O005
 
-### TASK-O007 [ ] Raster converter
+### TASK-O007 [x] Raster converter
 
 **依存:** O005-O006
 

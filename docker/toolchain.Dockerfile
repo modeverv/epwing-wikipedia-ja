@@ -67,6 +67,8 @@ RUN printf '%s\n' \
     && apt-get -o Acquire::Check-Valid-Until=false update \
     && apt-get install --yes --no-install-recommends \
         fonts-noto-cjk=1:20220127+repack1-1 \
+        imagemagick=8:6.9.11.60+dfsg-1.6+deb12u9 \
+        librsvg2-bin=2.54.7+dfsg-1~deb12u1 \
         make=4.3-4.1 \
         perl=5.36.0-7+deb12u3 \
         zip=3.0-13 \
@@ -80,6 +82,11 @@ RUN printf '%s\n' \
     && chown --recursive wikiepwing:wikiepwing /data/work /data/reports \
     && chmod 0555 /data/reference /usr/local/bin/toolchain-version \
     && /usr/local/bin/toolchain-version
+
+# Overwrites imagemagick's own default policy.xml (installed above) with a
+# locked-down one -- must run after the apt-get install, or dpkg's unpack
+# would just replace this file with its own default again.
+COPY docker/toolchain/imagemagick-policy.xml /etc/ImageMagick-6/policy.xml
 
 USER 10001:10001
 
