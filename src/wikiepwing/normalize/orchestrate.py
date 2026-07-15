@@ -33,6 +33,7 @@ from wikiepwing.model.diagnostics import Diagnostic
 from wikiepwing.model.logical_hash import compute_logical_hash
 from wikiepwing.model.repository import ModelRepository
 from wikiepwing.model.validate import ModelValidationLimits, validate_article
+from wikiepwing.normalize.media_selection import select_media
 from wikiepwing.normalize.pipeline import NormalizeOptions, normalize_html
 from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
 from wikiepwing.pipeline.resume import decide_resume
@@ -362,9 +363,9 @@ def _normalize_one(
 
     if row["html_zstd"] is not None:
         html = decompress(row["html_zstd"]).decode("utf-8")
-        blocks, pipeline_diagnostics = normalize_html(html, normalize_options)
+        blocks, body_media, pipeline_diagnostics = normalize_html(html, normalize_options)
     else:
-        blocks, pipeline_diagnostics = (), ()
+        blocks, body_media, pipeline_diagnostics = (), (), ()
 
     stamped_pipeline_diagnostics = tuple(
         _stamp_diagnostic(diagnostic, page_id=page_id, title=title)
@@ -382,7 +383,7 @@ def _normalize_one(
         blocks=blocks,
         aliases=extract_redirect_aliases(raw_connection, page_id),
         categories=_read_categories(raw_connection, page_id),
-        media=_read_media(raw_connection, page_id),
+        media=select_media(_read_media(raw_connection, page_id) + body_media),
         diagnostics=stamped_pipeline_diagnostics,
         source_license_ids=_read_license_ids(raw_connection, page_id),
     )

@@ -19,7 +19,7 @@ _DEFAULT_OPTIONS = NormalizeOptions(
 def test_normalize_html_produces_paragraph_and_heading() -> None:
     html = "<html><body><h2>Title</h2><p>Body text</p></body></html>"
 
-    blocks, diagnostics = normalize_html(html, _DEFAULT_OPTIONS)
+    blocks, _media, diagnostics = normalize_html(html, _DEFAULT_OPTIONS)
 
     assert isinstance(blocks[0], HeadingBlock)
     assert blocks[1] == ParagraphBlock(inlines=(TextInline(value="Body text"),))
@@ -34,7 +34,7 @@ def test_normalize_html_selects_mw_parser_output_and_strips_edit_ui() -> None:
         "</div></body></html>"
     )
 
-    blocks, diagnostics = normalize_html(html, _DEFAULT_OPTIONS)
+    blocks, _media, diagnostics = normalize_html(html, _DEFAULT_OPTIONS)
 
     assert blocks == (ParagraphBlock(inlines=(TextInline(value="keep"),)),)
     codes = {d.code for d in diagnostics}
@@ -44,7 +44,7 @@ def test_normalize_html_selects_mw_parser_output_and_strips_edit_ui() -> None:
 def test_normalize_html_collapses_whitespace() -> None:
     html = "<html><body><p>a   b\n\n c</p></body></html>"
 
-    blocks, _ = normalize_html(html, _DEFAULT_OPTIONS)
+    blocks, _media, _ = normalize_html(html, _DEFAULT_OPTIONS)
 
     assert blocks == (ParagraphBlock(inlines=(TextInline(value="a b c"),)),)
 
@@ -52,7 +52,7 @@ def test_normalize_html_collapses_whitespace() -> None:
 def test_normalize_html_falls_back_for_unknown_block_elements() -> None:
     html = "<html><body><figure>cell</figure></body></html>"
 
-    blocks, diagnostics = normalize_html(html, _DEFAULT_OPTIONS)
+    blocks, _media, diagnostics = normalize_html(html, _DEFAULT_OPTIONS)
 
     assert isinstance(blocks[0], UnsupportedBlock)
     codes = {d.code for d in diagnostics}
@@ -73,7 +73,7 @@ def test_normalize_html_disables_recovery_raises_on_malformed_html() -> None:
 
 
 def test_normalize_html_empty_document_produces_no_blocks() -> None:
-    blocks, diagnostics = normalize_html("", _DEFAULT_OPTIONS)
+    blocks, _media, diagnostics = normalize_html("", _DEFAULT_OPTIONS)
 
     assert blocks == ()
     assert diagnostics == ()

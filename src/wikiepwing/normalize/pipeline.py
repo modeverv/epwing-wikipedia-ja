@@ -2,17 +2,20 @@
 
 `normalize_html` runs: safe parse (G001) -> root content selection (G002) ->
 unsafe/UI node removal (G003) -> document assembly with unknown-DOM fallback
-(G004-G010) -> whitespace normalization (G011).
+(G004-G010) -> whitespace normalization (G011) -> body media extraction/role
+classification (TASK-O012, wiring TASK-O001-O002's `classify_body_media`).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from wikiepwing.model.article import MediaReference
 from wikiepwing.model.blocks import Block
 from wikiepwing.model.diagnostics import Diagnostic
 from wikiepwing.normalize.convert_block import convert_document
 from wikiepwing.normalize.html_parser import parse_html
+from wikiepwing.normalize.media_extraction import classify_body_media
 from wikiepwing.normalize.root_selection import select_root_content
 from wikiepwing.normalize.unsafe_nodes import UnsafeNodeRemovalOptions, remove_unsafe_nodes
 from wikiepwing.normalize.whitespace import normalize_block_whitespace
@@ -38,8 +41,8 @@ class NormalizeOptions:
 
 def normalize_html(
     html: str, options: NormalizeOptions
-) -> tuple[tuple[Block, ...], tuple[Diagnostic, ...]]:
-    """Convert one article's raw HTML into normalized Blocks, plus all diagnostics found."""
+) -> tuple[tuple[Block, ...], tuple[MediaReference, ...], tuple[Diagnostic, ...]]:
+    """Convert one article's raw HTML into normalized Blocks, body media, and diagnostics."""
     diagnostics: list[Diagnostic] = []
 
     parse_result = parse_html(
@@ -58,5 +61,6 @@ def normalize_html(
     diagnostics.extend(document_diagnostics)
 
     normalized_blocks = tuple(normalize_block_whitespace(block) for block in blocks)
+    body_media = classify_body_media(filtered_children)
 
-    return normalized_blocks, tuple(diagnostics)
+    return normalized_blocks, body_media, tuple(diagnostics)

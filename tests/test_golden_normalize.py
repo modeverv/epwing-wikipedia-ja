@@ -38,7 +38,7 @@ def test_normalize_html_matches_golden_snapshot(html_path: Path) -> None:
     html = html_path.read_text(encoding="utf-8")
     expected = json.loads(html_path.with_suffix(".json").read_text(encoding="utf-8"))
 
-    blocks, diagnostics = normalize_html(html, _OPTIONS)
+    blocks, _media, diagnostics = normalize_html(html, _OPTIONS)
     actual = [block_payload(block) for block in blocks]
 
     assert actual == expected
