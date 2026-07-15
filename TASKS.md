@@ -787,7 +787,7 @@
 
 **依存:** O012,Q005,L005
 
-### TASK-Q007 [ ] Reference comparison engine
+### TASK-Q007 [x] Reference comparison engine
 
 **依存:** C007,H011
 

@@ -5573,3 +5573,38 @@ git diff --check
 **次タスク**
 
 - TASK-Q007 Reference comparison engine(依存: C007,H011)
+
+## 2026-07-16 TASK-Q007 Reference comparison engine
+
+**目的**
+
+`COMPATIBILITY.md` 5(固定query比較: Result presence/Overlap@N/Target coverage)・13(Compatibility report schema)を実装する。reference側とcandidate側の固定query検索結果を比較するcompute engineを実装する(実際の検索実行harnessは対象外)。
+
+**変更**
+
+- `src/wikiepwing/compatibility/`(新規パッケージ): `comparison.py`(`QueryHitSet`・`QueryComparison`・`ComparisonSummary`・`compare_query_results`)
+- `tests/test_compatibility_comparison.py`(新規10件)
+- `TASKS.md`(TASK-Q007を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_compatibility_comparison.py
+make check
+git diff --check
+```
+
+**結果**
+
+- presence一致/不一致・偽陽性検出・target coverage・overlap@N(交差なし/一部/reference側空)・overlap_at_n_mean・candidate側query_key欠落エラー・空入力を10件のテストで確認した。
+- 標準スイート1278件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `reference/queries.py`の`FixedQuery`には「正解heading」のような詳細フィールドがなく、`expected_presence`(bool)のみが利用可能なため、target coverageを「`expected_presence`と実際のhit有無の一致率」として操作的に定義した。これは`COMPATIBILITY.md` 5.3の「missing query returns false exact hit: 0」と整合する。
+- overlap@Nの比較キーは`heading`テキストを採用した。`entry_locator`はbackend/build固有であり、異なるbuild間で比較不可能なため。
+- 実際にcandidate側の検索を実行するharness(自分のbuildに対するEB search adapter実行)は対象外とした。`reference/searches.py`(検索実行)と`reference/report.py`(レポート生成)が責務分離されているのと同じ設計判断。
+
+**次タスク**
+
+- TASK-Q008 Compatibility thresholds(依存: Q007)
