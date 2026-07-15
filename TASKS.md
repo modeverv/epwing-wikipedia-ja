@@ -735,7 +735,7 @@
 
 **依存:** A003
 
-### TASK-P002 [ ] Mini profile finalize
+### TASK-P002 [x] Mini profile finalize
 
 **依存:** H013,J007,K010,L004,M009
 

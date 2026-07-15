@@ -5139,3 +5139,35 @@ git diff --check
 **次タスク**
 
 - TASK-P002 Mini profile finalize(依存: H013,J007,K010,L004,M009)
+
+## 2026-07-16 TASK-P002 Mini profile finalize
+
+**目的**
+
+TASK-P001で作成した`config/profiles/mini.toml`を使い、Mini profileでの実際のend-to-end build(ingest→normalize→generate→verify)が完走することを確認する受け入れテストを実装する。AskUserQuestionで確認した方針に従い、config値の実際のnormalize/render pipelineへの配線(TASK-P004の対象)は行わず、受け入れテストに限定した。
+
+**変更**
+
+- `tests/test_mini_profile_build.py`(新規): TASK-H013と同じ100記事gate構成で、`config/profiles/mini.toml`をoverrideとして使うend-to-endテスト
+- `TASKS.md`(TASK-P002を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_mini_profile_build.py
+make check
+git diff --check
+```
+
+**結果**
+
+- Mini profile configでのregister→ingest→normalize→generate→verifyの全stage完走、有効な`entries.jsonl`(100件)生成を1件のテストで確認した。
+- 標準スイート1231件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `images.enabled`/`math.render_graphics`等のconfig値を実際にnormalize/render pipelineへ配線する作業(Mini profile固有の出力差異を実現すること)はTASK-P004(Profile-driven renderer)の対象として明確に切り分けた。現時点ではMini profile configを使っても出力はdefault/lite相当と同じだが、これは既知のギャップとして記録し、隠蔽しない。
+
+**次タスク**
+
+- TASK-P003 Lite profile(依存: N007,O012,P001)
