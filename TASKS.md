@@ -795,7 +795,7 @@
 
 **依存:** Q007
 
-### TASK-Q009 [ ] Compatibility HTML report
+### TASK-Q009 [x] Compatibility HTML report
 
 **依存:** Q008
 

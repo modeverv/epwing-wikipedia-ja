@@ -5641,3 +5641,38 @@ git diff --check
 **次タスク**
 
 - TASK-Q009 Compatibility HTML report(依存: Q008)
+
+## 2026-07-16 TASK-Q009 Compatibility HTML report (EPIC Q完了)
+
+**目的**
+
+`COMPATIBILITY.md` 13(Compatibility report schema)のJSON+HTML出力を実装する。TASK-C007の`reference/report.py`と同じ原子的書き込みパターンを踏襲する。
+
+**変更**
+
+- `src/wikiepwing/compatibility/report.py`(新規): `build_compatibility_report`・`write_compatibility_report`・`_render_html`
+- `tests/test_compatibility_report.py`(新規8件)
+- `TASKS.md`(TASK-Q009を`[x]`に、EPIC Q完了)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_compatibility_report.py
+make check
+git diff --check
+```
+
+**結果**
+
+- schema fieldの一致・JSON serializable・JSON/HTML書き込み・pass/fail両方のHTML反映・ディレクトリ自動作成・overlap Noneの扱いを8件のテストで確認した。
+- 標準スイート1290件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+- これでEPIC Q(Full search and compatibility)のTASK-Q001-Q009が全て完了した。
+
+**判断・注意点**
+
+- `articles`(記事比較)・`viewers`(手動viewer確認)セクション、`redirect_coverage`は実データを計算するengineがまだ存在しないため、偽の`0`を書かずpayloadから省略した。「測定してゼロだった」と「未測定」を混同させないため。
+- `wikiepwing.pipeline.atomic_write.atomic_write_text`を再利用し、`reference/report.py`独自の一時ファイル+`os.replace`パターンを重複実装しなかった。
+
+**次タスク**
+
+- TASK-R001 Stratified 10,000 sample report(依存: P007,Q009)
