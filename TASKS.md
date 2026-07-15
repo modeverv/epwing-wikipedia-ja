@@ -755,7 +755,7 @@
 
 **依存:** P005
 
-### TASK-P007 [ ] 10,000-article Lite run
+### TASK-P007 [x] 10,000-article Lite run
 
 **依存:** P006
 

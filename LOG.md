@@ -5340,3 +5340,36 @@ git diff --check
 **次タスク**
 
 - TASK-P007 10,000-article Lite run(依存: P006)
+
+## 2026-07-16 TASK-P007 10,000-article Lite run (EPIC P完了)
+
+**目的**
+
+TASK-P006で生成した`ten_thousand_articles.ndjson`を使い、Lite profileでのend-to-end buildを10,000記事規模で実行し完走することを確認する。ADR-015の次段階(10,000記事gate)。
+
+**変更**
+
+- `tests/test_lite_profile_10000_build.py`(新規): TASK-P003と同じ構成で10,000記事規模のend-to-endテスト
+- `TASKS.md`(TASK-P007を`[x]`に、EPIC P完了)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_lite_profile_10000_build.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 10,000記事規模でのregister→ingest→normalize→generate→verifyの全stage完走、有効な`entries.jsonl`(10,000件)生成を確認した。実行時間は約3.4秒。
+- 標準スイート1237件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+- これでEPIC P(Profiles and Lite)のTASK-P001-P007が全て完了した。
+
+**判断・注意点**
+
+- 実toolchain(fpwmake/eb-search)での10,000-entry honmon構築は対象外とした。Docker smoke testとして実施すると時間がかかる可能性があり、今回はPython pipelineレベルのend-to-endに限定した。
+
+**次タスク**
+
+- TASK-Q001 Heading keyword extraction(依存: J007)
