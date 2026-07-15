@@ -4538,3 +4538,36 @@ git diff --check
 **次タスク**
 
 - TASK-N004 Math cache(依存: N003)
+
+### 2026-07-16 00:35 UTC — TASK-N004
+
+**目的**
+
+- `ARCHITECTURE.md` 15.5(画像Cache keyの`converter_version`を含める慣習)・22.3("math cache"ディレクトリ)を数式向けに実装する。TASK-N002のcontent-basedなcache keyに、レンダラバージョンを組み合わせたファイルシステムcacheを実装する。
+
+**変更**
+
+- `src/wikiepwing/normalize/math_cache.py`に`MathCache`・`MATH_CACHE_VERSION`を実装した。`get_or_render(cache_key, image_format, render)`は、cache_keyが`None`なら常にレンダリングし(TASK-N002の契約通りcacheしない)、それ以外はcache_key+`MATH_CACHE_VERSION`+image_formatから計算したファイルパスでhit/miss判定し、miss時はTASK-I004の`atomic_write_bytes`で原子的に保存する。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_math_cache.py
+make check
+git diff --check
+```
+
+**結果**
+
+- cache miss時のrender呼び出し・cache hit時のrender非呼び出し・`None`キーでの常時レンダリング・異なるキー/フォーマットの独立した格納・ディレクトリ自動作成・`MATH_CACHE_VERSION`変更による既存cacheの無効化を7件のテストで確認した。
+- 標準スイート1060件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `MATH_CACHE_VERSION`を含めることで、TASK-N003のレンダラ実装が将来変わった場合(バグ修正等でレンダリング結果のバイト列が変わる場合)に、既存cacheを安全に無効化できる設計にした(画像cache keyの`converter_version`と同じ考え方)。
+- cacheの自動expire・容量上限は対象外とした(必要になれば別タスク)。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-N005 Raster conversion(依存: N003)

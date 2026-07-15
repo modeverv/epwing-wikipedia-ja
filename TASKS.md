@@ -659,7 +659,7 @@
 
 **依存:** N002
 
-### TASK-N004 [ ] Math cache
+### TASK-N004 [x] Math cache
 
 **依存:** N003
 
