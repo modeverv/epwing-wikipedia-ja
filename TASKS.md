@@ -695,7 +695,7 @@
 
 **依存:** A004
 
-### TASK-O005 [ ] MIME/magic/pixel validation
+### TASK-O005 [x] MIME/magic/pixel validation
 
 **依存:** O004
 

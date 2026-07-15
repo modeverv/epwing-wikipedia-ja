@@ -4823,3 +4823,38 @@ git diff --check
 **次タスク**
 
 - TASK-O005 MIME/magic/pixel validation(依存: O004)
+
+## 2026-07-16 TASK-O005 MIME/magic/pixel validation
+
+**目的**
+
+`ARCHITECTURE.md` 15.4の「MIMEとmagic byte検証」「実デコード後pixel上限」を実装する。TASK-O004がダウンロードした生バイト列を、magic byteによるフォーマット判定・宣言Content-Typeとの整合性確認・Pillowによる実デコードとpixel数上限チェックの3段階で検証する。
+
+**変更**
+
+- `src/wikiepwing/media/validation.py`(新規): `MediaValidationError`・`MediaValidationResult`(`detected_format`/`width`/`height`)・`validate_media_bytes`(magic byte判定→Content-Type整合性→Pillowデコード→pixel上限)
+- `tests/test_media_validation.py`(新規13件)
+- `TASKS.md`(TASK-O005を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_validation.py
+make check
+git diff --check
+```
+
+**結果**
+
+- PNG/JPEG/GIF/WEBP各magic byteの認識・未対応フォーマットの拒否・Content-Type一致/不一致/未知値/未指定・デコード失敗・pixel上限超過/境界値・コンストラクタバリデーションを13件のテストで確認した。
+- 標準スイート1149件(新規13件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- サーバ提供の`Content-Type`ヘッダを単独では信頼せず、magic byteによる実フォーマット判定を主とし、Content-Typeは矛盾チェックのみに使う設計にした。
+- SVGはXMLベースで固定long magic byteを持たず、外部entity等の別の脅威モデルを持つため対象外とし、TASK-O006のSVG sanitizerに委ねた。
+- 新規依存は追加していない(TASK-M005で追加済みのPillowを再利用)。
+
+**次タスク**
+
+- TASK-O006 SVG sanitizer(依存: O005)
