@@ -4931,3 +4931,37 @@ git diff --check
 **次タスク**
 
 - TASK-O008 Content-addressed cache(依存: O007)
+
+## 2026-07-16 TASK-O008 Content-addressed cache
+
+**目的**
+
+`ARCHITECTURE.md` 15.5のcache key設計(`converter_version`を含めて安全に無効化できるようにする)を、TASK-N004の`MathCache`と同じ形でmedia向けに実装する。TASK-O007のraster変換結果を、ダウンロードした生バイト列自体のcontent hash(sha256)をキーとしてfilesystemにcacheする。
+
+**変更**
+
+- `src/wikiepwing/media/cache.py`(新規): `compute_content_hash`・`MediaCache`(`MEDIA_CACHE_VERSION`)
+- `tests/test_media_cache.py`(新規7件)
+- `TASKS.md`(TASK-O008を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_cache.py
+make check
+git diff --check
+```
+
+**結果**
+
+- content hashの決定性・cache miss/hitでの`convert()`呼び出し回数・異なるhashの独立した格納・ディレクトリ自動作成・`MEDIA_CACHE_VERSION`変更による既存cacheの無効化を7件のテストで確認した。
+- 標準スイート1178件(新規7件を含む、ImageMagick依存3件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- TASK-N004の`MathCache`と全く同じ設計パターン(`get_or_*`によるhit/miss判定、`*_CACHE_VERSION`によるinvalidation、`atomic_write_bytes`の再利用)を踏襲した。プロジェクト内で一貫したcache実装パターンを保つため。
+- cache keyをダウンロードした生バイト列自体のcontent hashにしたことで、異なるURLが同じファイルを指している場合に自動的に同じcache entryを共有する(「content-addressed」の本質)。これがTASK-O009(Dedup)の基盤になる。
+
+**次タスク**
+
+- TASK-O009 Dedup(依存: O008)

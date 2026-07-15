@@ -707,7 +707,7 @@
 
 **依存:** O005-O006
 
-### TASK-O008 [ ] Content-addressed cache
+### TASK-O008 [x] Content-addressed cache
 
 **依存:** O007
 
