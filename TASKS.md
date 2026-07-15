@@ -751,7 +751,7 @@
 
 **依存:** P004
 
-### TASK-P006 [ ] 10,000-article sample builder
+### TASK-P006 [x] 10,000-article sample builder
 
 **依存:** P005
 

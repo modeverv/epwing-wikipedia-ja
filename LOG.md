@@ -5311,3 +5311,32 @@ git diff --check
 **次タスク**
 
 - TASK-P006 10,000-article sample builder(依存: P005)
+
+## 2026-07-16 TASK-P006 10,000-article sample builder
+
+**目的**
+
+`generate_hundred_articles.py`(TASK-H012)と同じ決定論的パターンを10,000記事規模へ拡張し、TASK-P007(10,000-article Lite run)向けのfixtureを生成する。
+
+**変更**
+
+- `tests/fixtures/enterprise/generate_ten_thousand_articles.py`(新規)
+- `tests/fixtures/enterprise/ten_thousand_articles.ndjson`(新規、生成物、10,000行/14.7MB)
+- `TASKS.md`(TASK-P006を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+python3 tests/fixtures/enterprise/generate_ten_thousand_articles.py
+make check
+git diff --check
+```
+
+**結果**
+
+- page_id/titleとも10,000件全てユニーク、既存fixtureのpage_id範囲(900001-940000の範囲外)と衝突なし、スクリプト再実行でbyte-identicalな出力(同一md5)を確認した。
+- 標準スイート1236件(変更なし)、`git diff --check`が成功した。
+
+**次タスク**
+
+- TASK-P007 10,000-article Lite run(依存: P006)

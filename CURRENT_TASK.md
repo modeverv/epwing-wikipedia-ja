@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-P005
+TASK-P006
 
 ## 目的
 
-TASK-H013の`docker/toolchain/mini-end-to-end-smoke.sh`(実toolchain image内でfpwmake/eb-searchまで通す100記事gate)と同じ形の、Lite profile(`config/profiles/lite.toml`)向けDocker smoke testを追加する。TASK-P004でwikiepwing-toolchain:devイメージを実際にrebuild・検証した際にTASK-O007の`convert_to_bmp`のSVGバグを発見・修正済みであり、そのイメージを引き続き使ってこのタスクを検証する。
+`tests/fixtures/enterprise/generate_hundred_articles.py`(TASK-H012)と同じ決定論的な生成パターンを10,000記事規模へ拡張した`generate_ten_thousand_articles.py`を実装し、`ten_thousand_articles.ndjson`を生成する。TASK-P007(10,000-article Lite run)がこの fixture を使う前提。
 
 ## 事前条件
 
@@ -14,14 +14,14 @@ TASK-H013の`docker/toolchain/mini-end-to-end-smoke.sh`(実toolchain image内で
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-P005(依存: P004)を読んだ
-- [x] `docker/toolchain/mini-end-to-end-smoke.sh`(TASK-H013)の実装を確認した
-- [x] `RenderedEntry.graphics`が現時点で常に空(実際のFreePWING graphics統合はEPIC O012で対象外とした)であるため、Lite profileのDocker smoke testはMini版とほぼ同じ形(fpwmake/eb-searchでの検索確認)になる。実画像埋め込みの差異は検証できないことを明記する
-- [x] Dockerが実際に利用可能で、`wikiepwing-toolchain:dev`イメージが直前のbugfix検証でrebuild済みであることを確認した
+- [x] `TASKS.md`のTASK-P006(依存: P005)を読んだ
+- [x] `tests/fixtures/enterprise/generate_hundred_articles.py`(TASK-H012)の実装(20 topicsの繰り返し+世代サフィックス、決定論的なlink/alias/category/image割り当て)を確認した
+- [x] 既存fixtureのpage_id範囲(`normal_articles.ndjson`: 900001-900010, `edge_case_articles.ndjson`: 910001-910008付近, `hundred_articles.ndjson`: 920001-920100)を確認し、衝突しない`930001`を新fixtureの開始page_idとした
 
 ## 変更予定ファイル
 
-- `docker/toolchain/lite-100-article-smoke.sh`(新規)
+- `tests/fixtures/enterprise/generate_ten_thousand_articles.py`(新規)
+- `tests/fixtures/enterprise/ten_thousand_articles.ndjson`(新規、生成物)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -29,25 +29,24 @@ TASK-H013の`docker/toolchain/mini-end-to-end-smoke.sh`(実toolchain image内で
 ## 実行予定コマンド
 
 ```bash
-sh docker/toolchain/lite-100-article-smoke.sh wikiepwing-toolchain:dev
+python3 tests/fixtures/enterprise/generate_ten_thousand_articles.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `docker/toolchain/lite-100-article-smoke.sh`が`config/profiles/lite.toml`を使ってPython pipeline(register→ingest→normalize→generate→verify)を実行する
-- [x] 実toolchain image内で`fpwmake`によるhonmon構築、`ebinfo`、`wikiepwing-eb-search`による複数titleの検索確認まで実際に完走する
+- [x] `generate_ten_thousand_articles.py`が10,000件のユニークなpage_id/title/URLを持つ決定論的なNDJSONを生成する
+- [x] スクリプトを再実行してもbyte-identicalな出力になる
+- [x] 既存fixtureのpage_id範囲と衝突しない
 - [x] `make check`が成功する
 
 ## 非対象
 
-- 実際の画像embedding(`RenderedEntry.graphics`は依然空のため、Lite/Mini間でこのsmoke testに実質的な差はない)
-- TASK-P006/P007(10,000記事規模のビルド)
+- TASK-P007(この fixture を使った実際の10,000-article Lite run)
 
 ## 実施結果
 
-- `docker/toolchain/lite-100-article-smoke.sh`(新規)を、TASK-H013の`mini-end-to-end-smoke.sh`と同じ構成で作成した(`config/profiles/lite.toml`をoverrideとして使い、`NormalizeOptions`に`images_enabled=config.section("images")["enabled"]`を渡す)。
-- `wikiepwing-toolchain:dev`イメージを実際にrebuildし(この過程でTASK-O007の`convert_to_bmp`のSVGバグを発見・修正、別コミット済み)、本スクリプトを実際に実行した。Python pipeline(register→ingest→normalize→generate→verify)・`fpwmake`によるhonmon構築・`ebinfo`・`wikiepwing-eb-search`での複数title("Emacs"/"Linux"/"Vim alias"/"GNU Project")検索確認まで全て実際に完走することを確認した。
-- `RenderedEntry.graphics`が現時点で常に空(実際のFreePWING graphics統合はEPIC O012で対象外とした)であるため、このsmoke testはMini版と実質的に同じ内容になる(画像embeddingの差異は検証できない)ことを明記した。
+- `tests/fixtures/enterprise/generate_ten_thousand_articles.py`(新規)を`generate_hundred_articles.py`と同じ決定論的パターンで実装した(`FIRST_PAGE_ID=930001`、`ARTICLE_COUNT=10000`、既存fixtureのpage_id範囲と衝突しない)。
+- 生成した`ten_thousand_articles.ndjson`(10,000行、14.7MB)は、page_id/titleとも10,000件全てユニークで、スクリプトを2回実行してbyte-identical(同一md5)であることを確認した。
 - `make check`(1236件、変更なし)と`git diff --check`が成功した。
