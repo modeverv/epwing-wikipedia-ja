@@ -4503,3 +4503,38 @@ git diff --check
 **次タスク**
 
 - TASK-N003 Isolated renderer(依存: N002)
+
+### 2026-07-16 00:15 UTC — TASK-N003
+
+**目的**
+
+- `ARCHITECTURE.md` 15.7の"3. SVG/PNGへ安全にレンダリング"を実装する。ユーザーに新規依存導入の方針を確認し、外部LaTeXツールチェーンではなくmatplotlib mathtext(プロセス内、新規依存はmatplotlibのみ)を採用する承認を得た。
+
+**変更**
+
+- `pyproject.toml`に`matplotlib==3.11.0`を追加した(`uv add`)。
+- `src/wikiepwing/normalize/math_renderer.py`に`MathRenderError`・`render_math_to_image()`を実装した。`matplotlib.mathtext.math_to_image`を呼び出し、失敗を1数式単位で`MathRenderError`として隔離する(ARCHITECTURE.md 3.5の劣化表示原則に従う)。
+
+**実行コマンド**
+
+```bash
+uv add "matplotlib==3.11.0"
+uv run pytest tests/test_normalize_math_renderer.py
+make check
+git diff --check
+```
+
+**結果**
+
+- SVG/PNGレンダリング・デフォルトフォーマット・異なる数式での異なる出力・SVG/PNG双方の決定性・空/空白のみのsourceでのエラー・未対応マクロでのエラー・失敗後の後続レンダリングの正常動作を10件のテストで確認した。
+- 標準スイート1053件(新規10件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 実装中に発見した重要な問題: matplotlibのSVG出力は壁時計タイムスタンプ(`<dc:date>`)とプロセスごとにランダムなglyph-idソルト(`svg.hashsalt`)を埋め込むため、同じ数式でも実行のたびに異なるバイト列になっていた。本プロジェクトが重視する再現可能ビルド(pinされたDocker snapshot等の既存方針)と相容れないため、`svg.hashsalt`を固定値に設定し、出力後に`<dc:date>`要素を正規表現で除去することで決定論的な出力にした。この修正が無ければ、同一入力から生成されるTASK-N004のcacheキーとbitmap内容が実行ごとに変わってしまい、cacheの意味が失われるところだった。
+- mathtextはMediaWikiのtexvcが許す完全なTeXマクロ集合をサポートしない(実用的なサブセットのみ)。未対応の数式は本タスクの隔離設計により1つずつエラーとして扱われ、記事全体のビルドは止まらない。
+- 既存の未追跡`.DS_Store`と`v1/`配下は変更していない。
+
+**次タスク**
+
+- TASK-N004 Math cache(依存: N003)

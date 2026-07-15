@@ -655,7 +655,7 @@
 
 **依存:** N001
 
-### TASK-N003 [ ] Isolated renderer
+### TASK-N003 [x] Isolated renderer
 
 **依存:** N002
 
