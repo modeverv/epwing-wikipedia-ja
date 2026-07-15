@@ -4571,3 +4571,38 @@ git diff --check
 **次タスク**
 
 - TASK-N005 Raster conversion(依存: N003)
+
+## 2026-07-16 TASK-N005 Raster conversion
+
+**目的**
+
+`ARCHITECTURE.md` 15.7の数式変換パイプラインのステップ4(EPWING graphicへ変換)を実装する。TASK-N003がレンダリングするPNG(透過背景)を、実toolchain互換の標準BMP(`tests/fixtures/handcrafted/generate_bitmap.pl`が示す`BM`マジック始まりの24bit color BMP)へ変換する。
+
+**変更**
+
+- `src/wikiepwing/normalize/math_raster.py`(新規): `MathRasterError`・`convert_png_to_bmp`(Pillowでpngをデコードし、RGBAのalphaチャンネルをmaskにして不透明背景色へ合成後BMPとして書き出す)・`render_math_to_bmp`(TASK-N003の`render_math_to_image(..., image_format="png")`をラップ)
+- `tests/test_normalize_math_raster.py`(新規7件)
+- `TASKS.md`(TASK-N005を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_math_raster.py
+make check
+git diff --check
+```
+
+**結果**
+
+- BMPマジックの確認・透過ピクセルの背景合成・不透明ピクセルの保持・空/不正バイト列でのエラー・エンドツーエンドの決定論的レンダリングを7件のテストで確認した。
+- 標準スイート1067件(新規7件を含む)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- 新規依存は追加していない(TASK-M005で追加済みのPillowを再利用)。
+- 透過部分の合成先背景色はデフォルトで白(255,255,255)としたが、実際にEPWINGで使う紙面色は将来設定可能にしてもよい(現時点では対象外)。
+- 実際のFreePWING `add_graphic`/EPIC Oへの配線は対象外(このタスクはバイトフォーマット変換のみ)。
+
+**次タスク**
+
+- TASK-N006 Inline/block layout(依存: N004-N005,H007)
