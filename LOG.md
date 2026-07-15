@@ -4965,3 +4965,36 @@ git diff --check
 **次タスク**
 
 - TASK-O009 Dedup(依存: O008)
+
+## 2026-07-16 TASK-O009 Dedup
+
+**目的**
+
+`ARCHITECTURE.md` 15.3の除外候補「duplicate hash」を、TASK-O008で得られる実際のcontent hash(ダウンロード済みバイト列のsha256)で本来の意味通りに実装する。TASK-O003の`source_url`重複除去(実バイト未取得時点での代替)を置き換えるのではなく、実バイト取得後の追加dedupとして位置づけた。
+
+**変更**
+
+- `src/wikiepwing/media/dedup.py`(新規): `HashedMedia`(`MediaReference`+content hash)・`deduplicate_media`(同じcontent hashは最初の1件のみ残す、入力順保持)
+- `tests/test_media_dedup.py`(新規5件)
+- `TASKS.md`(TASK-O009を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_dedup.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 空入力・異なるhashの保持・同じhash異なるURLでの重複除去・入力順保持・3件重複での動作を5件のテストで確認した。
+- 標準スイート1183件(新規5件を含む、ImageMagick依存3件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- TASK-O003の`select_media`は削除・置き換えせず、両方とも残す設計にした。役割が異なる(ダウンロード前のURL単位の重複除去 vs ダウンロード後の実バイト単位の重複除去)ため。
+
+**次タスク**
+
+- TASK-O010 Attribution model(依存: O001)
