@@ -5032,3 +5032,37 @@ git diff --check
 **次タスク**
 
 - TASK-O011 EPWING graphics integration(依存: O007,H009)
+
+## 2026-07-16 TASK-O011 EPWING graphics integration
+
+**目的**
+
+`ARCHITECTURE.md` 17.2(FreePWING adapterの責務「graphic/gaiji登録」)を実装する。TASK-M007の`write_gaiji_build_files`と同じパターンで、TASK-O007がBMP化した画像を`fpwmake`が読むビルド入力(`*.bmp`+`cgraphs.txt`)として書き出す。
+
+**変更**
+
+- `src/wikiepwing/media/freepwing_graphics.py`(新規): `GraphicBuildEntry`(name/bmp_bytesの検証)・`FreePwingGraphicsError`・`write_graphics_build_files`
+- `tests/test_media_freepwing_graphics.py`(新規8件)
+- `TASKS.md`(TASK-O011を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_freepwing_graphics.py
+make check
+git diff --check
+```
+
+**結果**
+
+- BMP/catalog書き出し・空入力での空catalog・ディレクトリ自動作成・入力順保持・不正なname/空bmp_bytesの拒否を8件のテストで確認した。
+- 標準スイート1199件(新規8件を含む、ImageMagick依存3件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `tests/fixtures/handcrafted/cgraphs.txt`(`wiki-mark bitmap.bmp`)・`build_fixture.pl`の`add_color_graphic_start("wiki-mark")`/`add_color_graphic_end()`呼び出し(実toolchainで検証済み)を出力形式の一次情報源とした。
+- `RenderedEntry.graphics`への実際のデータ設定・本文中への`add_color_graphic_start`/`add_color_graphic_end`呼び出し生成は対象外とした。TASK-M006(gaiji code割り当て)/M007(ビルドファイル書き出し)が本文への実配線と分離されていたのと同じ設計判断。
+
+**次タスク**
+
+- TASK-O012 Image plan/fetch/convert commands(依存: O003-O011)

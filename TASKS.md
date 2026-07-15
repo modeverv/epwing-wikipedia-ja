@@ -719,7 +719,7 @@
 
 **依存:** O001
 
-### TASK-O011 [ ] EPWING graphics integration
+### TASK-O011 [x] EPWING graphics integration
 
 **依存:** O007,H009
 
