@@ -58,6 +58,21 @@ def test_rejects_non_https_url() -> None:
         downloader.download("http://example.org/a.png")
 
 
+def test_resolves_protocol_relative_url_to_https() -> None:
+    # Real rendered HTML overwhelmingly uses `<img src="//host/path">` (no
+    # scheme) rather than a full https:// URL.
+    resolved = "https://example.org/a.png"
+    transport = _FakeTransport(
+        {resolved: _FakeResponse(status=200, headers={"Content-Type": "image/png"}, body=b"x")}
+    )
+    downloader = _downloader(transport)
+
+    result = downloader.download("//example.org/a.png")
+
+    assert result.content == b"x"
+    assert transport.opened_urls == [resolved]
+
+
 def test_rejects_host_not_in_allowlist() -> None:
     downloader = _downloader(_FakeTransport({}))
 

@@ -12,6 +12,13 @@ against a server that lies about its own `Content-Length`).
 "実デコード後pixel上限" and "MIMEとmagic byte検証" need the bytes
 actually decoded, so they're TASK-O005's job; "SVG sanitize" is
 TASK-O006's. This module only gets the raw bytes home safely.
+
+Real rendered HTML overwhelmingly uses protocol-relative `<img src>`
+values (`//upload.wikimedia.org/...`, no explicit scheme) rather than
+`https://...`; `download()` resolves those to `https://` before
+validating/fetching (the sole scheme this project ever allows, so the
+resolution is unambiguous), rather than rejecting a URL shape normal
+browsers already treat as https on an https page.
 """
 
 from __future__ import annotations
@@ -88,6 +95,7 @@ class SecureMediaDownloader:
         """Fetch `url`, following redirects safely, and return its validated bytes."""
         current_url = url
         for _ in range(self._max_redirects + 1):
+            current_url = _resolve_protocol_relative(current_url)
             self._validate_url(current_url)
             response = self._transport.open(current_url, timeout_seconds=self._timeout_seconds)
             try:
@@ -135,6 +143,11 @@ class SecureMediaDownloader:
                 )
             chunks.append(chunk)
         return b"".join(chunks)
+
+
+def _resolve_protocol_relative(url: str) -> str:
+    """Resolve a `//host/path` URL to `https://host/path`; leave every other URL as-is."""
+    return f"https:{url}" if url.startswith("//") else url
 
 
 class _UrllibTransport:
