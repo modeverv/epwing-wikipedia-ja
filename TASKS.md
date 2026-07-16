@@ -831,7 +831,7 @@
 
 **依存:** R006,P003
 
-### TASK-R008 [ ] Full Lite generate/verify
+### TASK-R008 [x] Full Lite generate/verify
 
 **依存:** R007
 
