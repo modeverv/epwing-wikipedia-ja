@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
 from pathlib import Path
+
+from wikiepwing.cli import _latest_source_lock_path
 
 
 class CliTest(unittest.TestCase):
@@ -835,6 +839,41 @@ class CliTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((runs / "run-a").exists())
             self.assertFalse((runs / "run-b").exists())
+
+    def test_update_help(self) -> None:
+        result = self.run_cli("update", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--previous-lock-path", result.stdout)
+        self.assertIn("--report-path", result.stdout)
+        self.assertIn("--snapshot-version", result.stdout)
+
+
+class LatestSourceLockPathTest(unittest.TestCase):
+    def test_missing_directory_returns_none(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertIsNone(_latest_source_lock_path(Path(directory) / "jawiki"))
+
+    def test_no_locks_returns_none(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project_dir = Path(directory) / "jawiki"
+            project_dir.mkdir()
+            self.assertIsNone(_latest_source_lock_path(project_dir))
+
+    def test_returns_most_recently_modified_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project_dir = Path(directory) / "jawiki"
+            older = project_dir / "v1" / "source.lock.json"
+            newer = project_dir / "v2" / "source.lock.json"
+            older.parent.mkdir(parents=True)
+            newer.parent.mkdir(parents=True)
+            older.write_text("{}", encoding="utf-8")
+            newer.write_text("{}", encoding="utf-8")
+            now = time.time()
+            os.utime(older, (now - 100, now - 100))
+            os.utime(newer, (now, now))
+
+            self.assertEqual(_latest_source_lock_path(project_dir), newer)
 
 
 if __name__ == "__main__":

@@ -863,7 +863,7 @@
 
 **依存:** S004
 
-### TASK-S006 [ ] Update command
+### TASK-S006 [x] Update command
 
 **依存:** D007,I006
 

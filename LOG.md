@@ -5909,3 +5909,34 @@ git diff --check
 **次タスク**
 
 - TASK-S006 Update command(依存: D007,I006、両方完了済みのため着手可能) — S009はS006に依存するため先にS006を進める
+
+## 2026-07-16 TASK-S006 Update command
+
+**目的**
+
+`PLAN.md` 29(`wikiepwing update --project jawiki --profile full`、出口条件「source version naming」「update report」)を実装する。既存の`source.lock.json`と新規acquire結果を比較し、差分とレポートを書き出す。
+
+**変更**
+
+- `src/wikiepwing/source_diff.py`(新規): `SourceDiff`・`compute_source_diff`・`build_update_report`・`write_update_report`
+- `src/wikiepwing/cli.py`: `update`サブコマンド追加(既存`acquire`ロジックを再利用)、`_latest_source_lock_path`ヘルパー追加
+- `tests/test_source_diff.py`(新規6件)、`tests/test_cli.py`(新規4件)
+- `TASKS.md`(TASK-S006を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_source_diff.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 初回acquire・同一バージョン無変化・chunk追加/削除/sha256変更・サイズ差分・timezone-aware必須・決定的JSON書き出し・`_latest_source_lock_path`のmtimeベース自動検出を10件のテストで確認した。
+- 標準スイート1374件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+- 「same media/math cache reuse」は既存のcontent-hashキー付きcacheで既に満たされており追加実装不要、「old runs cleanup」はTASK-S008の`clean`が担当、「old outputを自動削除しない」は`update`が`paths.output`に触れない設計で満たしていることをCURRENT_TASK.mdに記録した。
+
+**次タスク**
+
+- TASK-S009 Monthly update report(依存: S006、完了済みのため着手可能)

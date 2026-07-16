@@ -53,6 +53,7 @@ from wikiepwing.source.enterprise import HttpSnapshotMetadataTransport, Snapshot
 from wikiepwing.source.inspect import inspect_source
 from wikiepwing.source.lockfile import SourceLockError, parse_source_lock
 from wikiepwing.source.register import LocalSourceFile, register_local_source
+from wikiepwing.source_diff import build_update_report, compute_source_diff, write_update_report
 
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{4,64}$")
 
@@ -572,6 +573,44 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="list what would be removed without deleting anything",
     )
+    update = subparsers.add_parser(
+        "update", help="acquire the latest Snapshot version and report what changed"
+    )
+    update.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    update.add_argument(
+        "--namespace",
+        type=int,
+        help="override configured source.namespace",
+    )
+    update.add_argument(
+        "--snapshot-version",
+        type=str,
+        help="override configured source.snapshot ('latest' or a concrete version)",
+    )
+    update.add_argument(
+        "--previous-lock-path",
+        type=Path,
+        help=(
+            "source.lock.json to diff against "
+            "(default: the most recently modified paths.sources/<project>/*/source.lock.json)"
+        ),
+    )
+    update.add_argument(
+        "--report-path",
+        type=Path,
+        help="update report output path (default: paths.reports/update-report.json)",
+    )
+    update.add_argument(
+        "--git-commit",
+        type=str,
+        help="git commit recorded in source.lock.json (default: `git rev-parse HEAD`)",
+    )
     return parser
 
 
@@ -1048,6 +1087,67 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{action}: {run_dir}")
         print(f"{action} {len(removed)} run(s)")
         return 0
+    if command == "update":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+        secrets = load_enterprise_secrets(os.environ)
+        source_section = config.section("source")
+        enterprise_section = cast(Mapping[str, object], source_section["enterprise"])
+        namespace = cast(int | None, arguments.namespace)
+        if namespace is None:
+            namespace = cast(int, source_section["namespace"])
+        requested_version = cast(str | None, arguments.snapshot_version) or cast(
+            str, source_section["snapshot"]
+        )
+        git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+        request_timeout_seconds = float(cast(int, enterprise_section["request_timeout_seconds"]))
+
+        previous_lock_path = cast(Path | None, arguments.previous_lock_path)
+        if previous_lock_path is None:
+            previous_lock_path = _latest_source_lock_path(config.paths.sources / config.project)
+        previous_lock = None
+        if previous_lock_path is not None:
+            previous_lock = parse_source_lock(previous_lock_path.read_bytes())
+
+        auth_client = EnterpriseAuthClient(
+            HttpAuthTransport(cast(str, enterprise_section["auth_base"])),
+            timeout_seconds=request_timeout_seconds,
+        )
+        metadata_client = SnapshotMetadataClient(
+            HttpSnapshotMetadataTransport(cast(str, enterprise_section["api_base"])),
+            timeout_seconds=request_timeout_seconds,
+        )
+        downloader = ResumableChunkDownloader(
+            HttpChunkTransport(cast(str, enterprise_section["api_base"])),
+            timeout_seconds=float(cast(int, enterprise_section["download_timeout_seconds"])),
+            max_retries=int(cast(int, enterprise_section["max_retries"])),
+        )
+        result = acquire_snapshot(
+            secrets,
+            auth_client=auth_client,
+            metadata_client=metadata_client,
+            downloader=downloader,
+            project=config.project,
+            namespace=namespace,
+            requested_version=requested_version,
+            sources_root=config.paths.sources,
+            acquirer_name="wikiepwing",
+            acquirer_version=__version__,
+            acquirer_git_commit=git_commit,
+        )
+
+        diff = compute_source_diff(previous_lock, result.lock)
+        update_report = build_update_report(diff, updated_at=datetime.now(UTC))
+        report_path = cast(Path | None, arguments.report_path) or (
+            config.paths.reports / "update-report.json"
+        )
+        write_update_report(update_report, report_path)
+        print(result.lock_path)
+        print(report_path)
+        return 0
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
     return 0
@@ -1082,6 +1182,18 @@ def _resolve_git_commit() -> str:
             "`git rev-parse HEAD` returned an unexpected value; pass --git-commit explicitly"
         )
     return commit
+
+
+def _latest_source_lock_path(project_sources_dir: Path) -> Path | None:
+    """Return the most recently modified `source.lock.json` under a project's sources, if any."""
+    if not project_sources_dir.is_dir():
+        return None
+    candidates = sorted(
+        project_sources_dir.glob("*/source.lock.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
 
 
 def _parse_file_argument(value: str) -> LocalSourceFile:
