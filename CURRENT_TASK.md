@@ -46,10 +46,10 @@ uv run python /private/tmp/.../scratchpad/sample_image_fetch.py
 
 ## 完了条件
 
-- [ ] 約20,000件のサンプル画像に対し`fetch_media`(ダウンロード・検証・SVGサニタイズ)が実行される
-- [ ] `convert_media`(ラスタ変換・content-addressed cache・重複排除)が実行される
-- [ ] FreePWING graphics build files(`*.bmp`, `cgraphs.txt`)が生成される
-- [ ] 実行中に実データ固有のクラッシュ・バグが見つかった場合は原因を特定し、コード修正・テスト追加・commitしてから再実行する(TASK-R003〜R005で確立したパターンを踏襲)
+- [x] 約20,000件のサンプル画像に対し`fetch_media`(ダウンロード・検証・SVGサニタイズ)が実行される
+- [x] `convert_media`(ラスタ変換・content-addressed cache・重複排除)が実行される
+- [x] FreePWING graphics build files(`*.bmp`, `cgraphs.txt`)が生成される
+- [x] 実行中に実データ固有のクラッシュ・バグが見つかった場合は原因を特定し、コード修正・テスト追加・commitしてから再実行する(TASK-R003〜R005で確立したパターンを踏襲)
 
 ## 非対象
 
@@ -59,4 +59,14 @@ uv run python /private/tmp/.../scratchpad/sample_image_fetch.py
 
 ## 実施結果
 
-(未着手)
+系統サンプリング(全6,333,316件のmedia参照から間隔316で間引き、20,043件・ユニークURL10,964件)に対し`fetch_media`/`convert_media`を実行する過程で、実データでのみ再現する3件のバグを発見・修正した(いずれも`src/wikiepwing/media/downloader.py`):
+
+1. プロトコル相対URL(`//upload.wikimedia.org/...`、`<img src>`の大多数を占める)が`https://`スキーム必須のチェックで全て拒否されていたバグ
+2. `_UrllibTransport`がUser-Agentを送っておらず、Wikimedia側のUser-Agentポリシーにより全リクエストが`403`で拒否されていたバグ
+3. HTTP 429 Too Many Requestsをリトライせず即座に失敗にしていたため、逐次リクエストで大半がrate limitに阻まれていたバグ(`Retry-After`ヘッダ優先、無ければ指数バックオフで最大5回リトライするよう修正)
+
+3件すべて修正・回帰テスト追加・`make check`成功を確認してからcommitし、そのうえで4回目の実行で成功した: `fetched=8403 failed=2561 total=10964`(成功率76.6%、1回目のスキーム修正前は`fetched=0`、2〜3回目のUser-Agent/429修正前後でも大半が失敗していたことと対比すると大幅な改善)。`converted=8319`(84件は内容が重複するBMPとして`convert_media`のcontent-addressed dedupeで自然に除外)。
+
+残る2,561件の失敗内訳を確認し、いずれもソフトウェアのバグではなく想定内の実データ特性であることを確認した: HTTP 400(1,564件、Commons側のサムネイル参照が古くなっている実データの特性。`curl`でも同じ400を再現し確認済み)、host not in allowlist(901件、`/w/...`というja.wikipedia.org自身の相対パス、`upload.wikimedia.org`のみを許可する設計通り)、SVG DOCTYPE/ENTITY拒否(33件、XXE対策のセキュリティ機構が意図通り動作)、HTTP 404(6件、実際に削除されたファイル)、magic bytes不一致(5件)、Content-Length上限超過(数件)。
+
+`$SCRATCH/data/work/graphics-sample/`に8,320個の`*.bmp`ファイルと`cgraphs.txt`が生成され、FreePWING graphics build filesの生成まで一気通貫で成功したことを確認した。全2,546,801件ではなくサンプルのみのため、Lite画像パイプライン(image-plan→image-fetch→image-convert)のロジック検証が目的であり、実データ・実画像はスクラッチパッドのみに保持しgitにはコミットしない。

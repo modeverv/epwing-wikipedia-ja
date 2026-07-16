@@ -827,7 +827,7 @@
 
 **依存:** R005
 
-### TASK-R007 [ ] Full Lite media run
+### TASK-R007 [x] Full Lite media run
 
 **依存:** R006,P003
 

@@ -6152,3 +6152,41 @@ uv run python3 -c "..." # 5件のDUPLICATE_HEADWORDペアそれぞれのpage_id/
 **次タスク**
 
 - TASK-R007 Full Lite media run(依存: R004、完了) — Liteプロファイルの画像処理(image-plan/image-fetch/image-convert)を全件データに対して実行する
+
+## 2026-07-17 TASK-R007 Full Lite media run
+
+**目的**
+
+TASK-R004の`model.sqlite3`(全1,508,200記事)に対する画像パイプライン(image-plan/image-fetch/image-convert)を実行する。`image-plan`で判明した2,546,801件のユニーク画像URL全件は逐次ダウンロードで4〜12日規模になるため、ユーザーの判断で約20,000件の代表サンプルによる検証に切り替えた。
+
+**変更**
+
+サンプル画像fetch/convertの実行過程で、実データでのみ再現する3件のバグを発見・修正した(すべて`src/wikiepwing/media/downloader.py`):
+
+1. プロトコル相対URL(`//upload.wikimedia.org/...`)が`https://`必須チェックで全拒否されていたバグ(`_resolve_protocol_relative`追加)
+2. `_UrllibTransport`がUser-Agentを送らずWikimedia側のUser-Agentポリシーで全リクエストが403になっていたバグ(説明的なUser-Agent送信)
+3. HTTP 429を即座に失敗としていたバグ(`Retry-After`優先、指数バックオフで最大5回リトライ)
+
+`tests/test_media_downloader.py`に各バグの回帰テストを追加。`TASKS.md`(TASK-R007を`[x]`に)、`CURRENT_TASK.md`。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_downloader.py
+make check
+git diff --check
+
+uv run python /private/tmp/.../scratchpad/sample_image_fetch.py  # 一回限りスクリプト、コミット対象外
+```
+
+**結果**
+
+- 3件のバグはそれぞれ発見→修正→回帰テスト→`make check`成功確認→commitのサイクルを経てから次の実行に進んだ(標準スイートは1382→1390→1395件と増加、ImageMagickインストール後は全skipが解消)。
+- `brew install imagemagick`でImageMagickをインストールし、既存のskippedテスト21件が成功するようになった。
+- 4回目の実行(全修正適用後)で20,043件のサンプル(ユニークURL10,964件)に対し`fetched=8403 failed=2561`(成功率76.6%)、`converted=8319`(84件はcontent-addressed dedupeで自然除外)。
+- 残る2,561件の失敗はすべて実データの特性(古いサムネイル参照、許可ホスト外、XXE対策、削除済みファイル等)であり、ソフトウェアのバグではないことを確認した。
+- `graphics-sample/`にBMP 8,320個+`cgraphs.txt`が生成され、Lite画像パイプラインの一気通貫動作を確認した。実データ・実画像はスクラッチパッドのみに保持し、gitにはコミットしていない。
+
+**次タスク**
+
+- TASK-R008 Full Lite generate/verify(依存: R007、完了)
