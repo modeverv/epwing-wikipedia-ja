@@ -30,6 +30,9 @@ TASK-R007
 - 実行中に実データで発見したバグの修正(2件目):
   - `src/wikiepwing/media/downloader.py`(`_UrllibTransport`がUser-Agentヘッダを送っておらず、Wikimedia側のUser-Agentポリシーにより全リクエストが`403`で拒否されていたバグを修正。プロジェクトを識別する説明的なUser-Agentを送るようにした)
   - `tests/test_media_downloader.py`(回帰テスト追加)
+- 実行中に実データで発見したバグの修正(3件目):
+  - `src/wikiepwing/media/downloader.py`(`SecureMediaDownloader.download`が429 Too Many Requestsをリトライせず即座に失敗にしていたため、逐次大量リクエストで実データの過半数がrate limitで失敗していたバグを修正。`Retry-After`ヘッダがあればそれに従い、無ければ指数バックオフで`max_rate_limit_retries`回までリトライするようにした)
+  - `tests/test_media_downloader.py`(回帰テスト追加)
 - 実行結果として: `/private/tmp/.../scratchpad/sample_image_fetch.py`という一回限りのスクリプト(コミット対象外)で約20,000件のサンプル画像を取得・変換する
 - `TASKS.md`
 - `LOG.md`

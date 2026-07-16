@@ -44,7 +44,21 @@ class _FakeTransport:
         return self._responses_by_url[url]
 
 
-def _downloader(transport: _FakeTransport, **overrides: object) -> SecureMediaDownloader:
+class _SequentialTransport:
+    """Returns each queued response in order, regardless of URL (for retry tests)."""
+
+    def __init__(self, responses: list[_FakeResponse]) -> None:
+        self._responses = list(responses)
+        self.opened_urls: list[str] = []
+
+    def open(self, url: str, *, timeout_seconds: float) -> _FakeResponse:
+        self.opened_urls.append(url)
+        if not self._responses:
+            raise AssertionError(f"no more queued responses, but {url} was requested")
+        return self._responses.pop(0)
+
+
+def _downloader(transport: object, **overrides: object) -> SecureMediaDownloader:
     defaults: dict[str, object] = {
         "allowed_hosts": frozenset({"example.org"}),
         "transport": transport,
@@ -225,6 +239,72 @@ def test_rejects_negative_max_redirects() -> None:
 def test_rejects_non_positive_max_content_length() -> None:
     with pytest.raises(MediaDownloadError, match="max_content_length_bytes"):
         _downloader(_FakeTransport({}), max_content_length_bytes=0)
+
+
+def test_rejects_negative_max_rate_limit_retries() -> None:
+    with pytest.raises(MediaDownloadError, match="max_rate_limit_retries"):
+        _downloader(_FakeTransport({}), max_rate_limit_retries=-1)
+
+
+def test_retries_429_and_succeeds_within_budget() -> None:
+    transport = _SequentialTransport(
+        [
+            _FakeResponse(status=429, headers={"Retry-After": "0"}),
+            _FakeResponse(status=429, headers={"Retry-After": "0"}),
+            _FakeResponse(status=200, headers={"Content-Type": "image/png"}, body=b"ok"),
+        ]
+    )
+    sleeps: list[float] = []
+    downloader = _downloader(transport, max_rate_limit_retries=5, sleep=sleeps.append)
+
+    result = downloader.download("https://example.org/a.png")
+
+    assert result.content == b"ok"
+    assert sleeps == [0.0, 0.0]
+
+
+def test_429_retry_uses_retry_after_header_when_present() -> None:
+    transport = _SequentialTransport(
+        [
+            _FakeResponse(status=429, headers={"Retry-After": "7"}),
+            _FakeResponse(status=200, body=b"ok"),
+        ]
+    )
+    sleeps: list[float] = []
+    downloader = _downloader(transport, sleep=sleeps.append)
+
+    downloader.download("https://example.org/a.png")
+
+    assert sleeps == [7.0]
+
+
+def test_429_retry_falls_back_to_exponential_backoff_without_retry_after() -> None:
+    transport = _SequentialTransport(
+        [
+            _FakeResponse(status=429),
+            _FakeResponse(status=429),
+            _FakeResponse(status=200, body=b"ok"),
+        ]
+    )
+    sleeps: list[float] = []
+    downloader = _downloader(transport, sleep=sleeps.append)
+
+    downloader.download("https://example.org/a.png")
+
+    assert sleeps == [2.0, 4.0]
+
+
+def test_gives_up_after_exhausting_rate_limit_retries() -> None:
+    transport = _SequentialTransport(
+        [
+            _FakeResponse(status=429, headers={"Retry-After": "0"}),
+            _FakeResponse(status=429, headers={"Retry-After": "0"}),
+        ]
+    )
+    downloader = _downloader(transport, max_rate_limit_retries=1, sleep=lambda _seconds: None)
+
+    with pytest.raises(MediaDownloadError, match="rate-limited"):
+        downloader.download("https://example.org/a.png")
 
 
 def test_urllib_transport_sends_a_descriptive_user_agent() -> None:

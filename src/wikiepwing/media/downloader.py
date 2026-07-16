@@ -25,13 +25,22 @@ Wikimedia's CDN (upload.wikimedia.org) enforces its User-Agent policy
 403 -- not a helpful error body -- for requests using a generic library
 default (e.g. `Python-urllib/3.x`). `_UrllibTransport` sends a
 descriptive User-Agent identifying this project for that reason.
+
+A bulk fetch run (thousands of sequential requests, no client-side
+pacing) reliably trips Wikimedia's rate limiter (HTTP 429). `download()`
+retries a 429 with backoff (honoring a numeric `Retry-After` header when
+the server sends one, otherwise exponential backoff) up to
+`max_rate_limit_retries` times before giving up, rather than treating
+every rate-limited URL as a permanent failure.
 """
 
 from __future__ import annotations
 
 import http.client
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Protocol, cast
@@ -40,8 +49,12 @@ from urllib.parse import urlsplit
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_REDIRECTS = 5
 DEFAULT_MAX_CONTENT_LENGTH_BYTES = 20 * 1024 * 1024
+DEFAULT_MAX_RATE_LIMIT_RETRIES = 5
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+_RATE_LIMITED_STATUS = 429
 _READ_CHUNK_BYTES = 1 << 16
+_BASE_BACKOFF_SECONDS = 2.0
+_MAX_BACKOFF_SECONDS = 60.0
 _USER_AGENT = (
     f"wikiepwing/{version('wikiepwing')} "
     "(https://github.com/modeverv/epwing-wikipedia-ja; batch dictionary build)"
@@ -89,6 +102,8 @@ class SecureMediaDownloader:
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         max_content_length_bytes: int = DEFAULT_MAX_CONTENT_LENGTH_BYTES,
+        max_rate_limit_retries: int = DEFAULT_MAX_RATE_LIMIT_RETRIES,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if timeout_seconds <= 0:
             raise MediaDownloadError("timeout_seconds must be positive")
@@ -96,25 +111,43 @@ class SecureMediaDownloader:
             raise MediaDownloadError("max_redirects must not be negative")
         if max_content_length_bytes < 1:
             raise MediaDownloadError("max_content_length_bytes must be positive")
+        if max_rate_limit_retries < 0:
+            raise MediaDownloadError("max_rate_limit_retries must not be negative")
         self._allowed_hosts = allowed_hosts
         self._transport = transport or _UrllibTransport()
         self._timeout_seconds = timeout_seconds
         self._max_redirects = max_redirects
         self._max_content_length_bytes = max_content_length_bytes
+        self._max_rate_limit_retries = max_rate_limit_retries
+        self._sleep = sleep
 
     def download(self, url: str) -> MediaDownloadResult:
-        """Fetch `url`, following redirects safely, and return its validated bytes."""
+        """Fetch `url`, following redirects and 429 backoff, and return its validated bytes."""
         current_url = url
-        for _ in range(self._max_redirects + 1):
+        redirects_used = 0
+        rate_limit_retries = 0
+        while True:
             current_url = _resolve_protocol_relative(current_url)
             self._validate_url(current_url)
             response = self._transport.open(current_url, timeout_seconds=self._timeout_seconds)
             try:
+                if response.status == _RATE_LIMITED_STATUS:
+                    if rate_limit_retries >= self._max_rate_limit_retries:
+                        raise MediaDownloadError(
+                            f"rate-limited (429) after {rate_limit_retries} retries: "
+                            f"{current_url!r}"
+                        )
+                    self._sleep(_backoff_seconds(response, attempt=rate_limit_retries))
+                    rate_limit_retries += 1
+                    continue
                 if response.status in _REDIRECT_STATUSES:
+                    if redirects_used >= self._max_redirects:
+                        raise MediaDownloadError(f"too many redirects (max {self._max_redirects})")
                     location = response.getheader("Location")
                     if not location:
                         raise MediaDownloadError("redirect response is missing a Location header")
                     current_url = location
+                    redirects_used += 1
                     continue
                 if response.status != 200:
                     raise MediaDownloadError(f"unexpected HTTP status: {response.status}")
@@ -124,7 +157,6 @@ class SecureMediaDownloader:
                 )
             finally:
                 response.close()
-        raise MediaDownloadError(f"too many redirects (max {self._max_redirects})")
 
     def _validate_url(self, url: str) -> None:
         parts = urlsplit(url)
@@ -159,6 +191,14 @@ class SecureMediaDownloader:
 def _resolve_protocol_relative(url: str) -> str:
     """Resolve a `//host/path` URL to `https://host/path`; leave every other URL as-is."""
     return f"https:{url}" if url.startswith("//") else url
+
+
+def _backoff_seconds(response: MediaResponse, *, attempt: int) -> float:
+    """How long to wait before retrying a 429: `Retry-After` if present, else backoff."""
+    retry_after = response.getheader("Retry-After")
+    if retry_after is not None and retry_after.isdigit():
+        return float(retry_after)
+    return min(_MAX_BACKOFF_SECONDS, _BASE_BACKOFF_SECONDS * float(2**attempt))
 
 
 class _UrllibTransport:
