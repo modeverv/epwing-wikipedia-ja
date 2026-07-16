@@ -114,8 +114,12 @@ def _read_records(path: Path) -> list[dict[str, object]]:
     except OSError as error:
         raise EntriesVerificationError(f"cannot read {path}: {error}") from error
 
+    # JSONL records are separated by ASCII "\n" only. `str.splitlines()` also
+    # breaks on Unicode line/paragraph separators (e.g. U+2029), which real
+    # Wikipedia article bodies legitimately contain inside a JSON string,
+    # splitting one valid record into several invalid fragments.
     records: list[dict[str, object]] = []
-    for line_number, line in enumerate(text.splitlines(), start=1):
+    for line_number, line in enumerate(text.split("\n"), start=1):
         if not line.strip():
             continue
         try:

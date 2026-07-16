@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-R004
+TASK-R005
 
 ## 目的
 
-`TASKS.md`のTASK-R004(Full jawiki normalize、依存: R003完了済み)を実施する。TASK-R003で生成した`raw.sqlite3`(全81チャンク、accepted_articles=1,508,200)を`wikiepwing normalize`で`model.sqlite3`へ正規化する。
+`TASKS.md`のTASK-R005(Full Mini generate、依存: R004完了済み, P002 Mini profile完了済み)を実施する。TASK-R004で生成した`model.sqlite3`(全1,508,200記事)から、Miniプロファイル設定で`wikiepwing generate`を実行し`entries.jsonl`を生成する。
 
 ## 事前条件
 
@@ -14,16 +14,16 @@ TASK-R004
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-R004(依存: R003、完了済み)を読んだ
-- [x] TASK-R003で生成した`raw.sqlite3`(スクラッチパッド内、約27GB、`verify-raw`で`integrity_check=ok`確認済み)を入力に使う
-- [x] 150万件規模の実データ変換はBashツールの10分タイムアウトを超える可能性が高いため、nohup+disownでバックグラウンド起動し、`Monitor`(persistent)で進捗を監視する
+- [x] `TASKS.md`のTASK-R005(依存: R004,P002、両方完了済み)を読んだ
+- [x] `config/profiles/mini.toml`(画像無効・数式graphics無効・table fallback・検索語を絞る設定)を`--config`で重ねる
+- [x] 150万件規模のgenerateはBashツールの10分タイムアウトを超える可能性が高いため、nohup+disownでバックグラウンド起動し、`Monitor`(persistent、10分間隔)で進捗を監視する
 
 ## 変更予定ファイル
 
 - 実行中に実データで発見したバグの修正:
-  - `src/wikiepwing/normalize/media_node.py`(`parse_image_node`が`<img src>`の`data:` URI(実データではSVGプレースホルダー画像で最大約10KB超)をそのまま`MediaReference`化しており、`model.sqlite3`の`media_references.media_id/source_url`のCHECK制約(8192バイト)違反でnormalize全体が失敗していたバグを修正。`data:`スキームのsrcは参照すべき外部リソースではないため`None`を返しスキップするようにした)
-  - `tests/test_normalize_media_node.py`(回帰テスト追加)
-- 実行結果として: スクラッチパッド内に`model.sqlite3`と関連レポートを生成する
+  - `src/wikiepwing/render/verify.py`(`_read_records`が`text.splitlines()`を使っており、JSON文字列内に現れる正当なUnicode改行文字(U+2029 PARAGRAPH SEPARATORなど、実データの本文に実在する)を行区切りとして誤って分割し、1つの正常なJSONLレコードを複数の不正な断片に壊していたバグを修正。JSONLの本来の区切り文字である`\n`のみで分割するよう`text.split("\n")`に変更)
+  - `tests/test_render_verify.py`(回帰テスト追加)
+- 実行結果として: スクラッチパッド内に`entries-mini.jsonl`と関連レポートを生成する
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,27 +31,27 @@ TASK-R004
 ## 実行予定コマンド
 
 ```bash
-uv run python -m wikiepwing.cli normalize \
+uv run python -m wikiepwing.cli generate \
   --config "$SCRATCH/full-ingest-override.toml" \
-  --raw-database "$SCRATCH/data/work/raw.sqlite3" \
+  --config config/profiles/mini.toml \
   --model-database "$SCRATCH/data/work/model.sqlite3" \
+  --entries-output "$SCRATCH/data/output/entries-mini.jsonl" \
   --git-commit "$(git rev-parse HEAD)" \
-  --run-id full-r004
+  --run-id full-r005-mini
 ```
 
 ## 完了条件
 
-- [x] `model.sqlite3`が生成され、`raw.sqlite3`のaccepted articles全件が正規化される
-- [x] normalizeステージのmanifestが`completed`状態で書かれる
-- [x] 実行中に実データ固有のクラッシュ・バグが見つかった場合は原因を特定し、コード修正・テスト追加・commitしてから再実行する(TASK-R003で確立したパターンを踏襲)
+- [ ] `entries-mini.jsonl`が生成され、`model.sqlite3`の非rejected記事全件が変換される
+- [ ] generateステージのmanifestが`completed`状態で書かれる
+- [ ] 実行中に実データ固有のクラッシュ・バグが見つかった場合は原因を特定し、コード修正・テスト追加・commitしてから再実行する(TASK-R003/R004で確立したパターンを踏襲)
 
 ## 非対象
 
-- Mini/Lite/Full生成(TASK-R005以降)
+- Mini検証・レポート(TASK-R006)
+- Lite/Full生成(TASK-R007以降)
 - 実データを`git`にコミットすること
 
 ## 実施結果
 
-実データ(`raw.sqlite3`、accepted_articles=1,508,200)に対して`wikiepwing normalize`を実行し、1件の実データ限定バグを発見・修正した: `parse_image_node`が`<img src>`の`data:` URI(実データではSVGプレースホルダー画像で最大約10KB超)をそのまま`MediaReference`化しており、`model.sqlite3`の`media_references`テーブルのCHECK制約(8192バイト)違反でnormalize全体が約2500件目(page_id 4406)で失敗した。`data:`スキームのsrcをスキップするよう`media_node.py`を修正し、回帰テストを追加した(TASK-R003と同じ「実データでバグ発見→修正・テスト・commit→再実行」パターン)。
-
-修正適用後の再実行(`run-id=full-r004-retry`)で全1,508,200記事が正規化され、normalizeステージmanifestが`status=complete`(articles_read=1,508,200, articles_written=1,508,200, articles_rejected=0, errors=0, fatals=0, warnings=8,923,739)。`model.sqlite3`内の`diagnostics`テーブルを確認したところ、警告の大半(8,923,739件全て)は既存の`DOM_UNKNOWN_ELEMENT`(TASK-G010の「未知DOM要素のフォールバック」機構、既存実装済み・意図した警告レベルの動作)であり、新規バグではないことを確認した。`model.sqlite3`(約12.3GB)はスクラッチパッドのみに保持し、gitにはコミットしない。
+(未着手)

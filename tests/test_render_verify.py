@@ -38,6 +38,31 @@ def test_verify_entries_jsonl_accepts_valid_entries(tmp_path: Path) -> None:
     assert result.issues == ()
 
 
+def test_verify_entries_jsonl_tolerates_unicode_line_separators_in_body(tmp_path: Path) -> None:
+    # U+2029 PARAGRAPH SEPARATOR is a valid, unescaped character inside a JSON
+    # string and real Wikipedia article bodies contain it; str.splitlines()
+    # (unlike JSONL's actual "\n"-only record separator) treats it as a line
+    # break and previously shredded this single record into invalid fragments.
+    path = tmp_path / "entries.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {
+                "tag": "p1",
+                "title": "X",
+                "aliases": [],
+                "body": "before after",
+                "targets": [],
+            }
+        ],
+    )
+
+    result = verify_entries_jsonl(path)
+
+    assert result.ok is True
+    assert result.entry_count == 1
+
+
 def test_verify_entries_jsonl_detects_empty_tag(tmp_path: Path) -> None:
     path = tmp_path / "entries.jsonl"
     _write_jsonl(path, [{"tag": "", "title": "X", "aliases": [], "body": "", "targets": []}])
