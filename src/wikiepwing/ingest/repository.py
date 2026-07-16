@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 from wikiepwing.ingest.deduplicate import DuplicateRecord, ExistingArticleState
@@ -21,6 +21,20 @@ class RawRepositoryError(RuntimeError):
 def normalize_title(title: str) -> str:
     """Apply the baseline title normalization used for lookups (NFKC, trimmed)."""
     return unicodedata.normalize("NFKC", title).strip()
+
+
+def _dedupe_by_key(names: tuple[str, ...], key: Callable[[str], str], seen: set[str]) -> list[str]:
+    """Keep the first occurrence of each name whose `key(name)` collides (real Enterprise
+    Snapshot data has repeated the same title with distinct byte-level variants that
+    normalize identically -- e.g. duplicate redirects)."""
+    kept = []
+    for name in names:
+        normalized = key(name)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        kept.append(name)
+    return kept
 
 
 class RawRepository:
@@ -196,7 +210,10 @@ class RawRepository:
     def _replace_children(self, article: RawArticle) -> None:
         page_id = article.page_id
         self._delete_children(page_id)
-        for ordinal, name in enumerate(article.redirects):
+        seen_redirects: set[str] = set()
+        for ordinal, name in enumerate(
+            _dedupe_by_key(article.redirects, normalize_title, seen_redirects)
+        ):
             self._connection.execute(
                 """
                 INSERT INTO redirects (
@@ -205,7 +222,10 @@ class RawRepository:
                 """,
                 (page_id, name, normalize_title(name), ordinal),
             )
-        for ordinal, name in enumerate(article.categories):
+        seen_categories: set[str] = set()
+        for ordinal, name in enumerate(
+            _dedupe_by_key(article.categories, normalize_title, seen_categories)
+        ):
             self._connection.execute(
                 """
                 INSERT INTO categories (page_id, category_name, normalized_category_name, ordinal)
@@ -213,7 +233,10 @@ class RawRepository:
                 """,
                 (page_id, name, normalize_title(name), ordinal),
             )
-        for ordinal, name in enumerate(article.templates):
+        seen_templates: set[str] = set()
+        for ordinal, name in enumerate(
+            _dedupe_by_key(article.templates, normalize_title, seen_templates)
+        ):
             self._connection.execute(
                 """
                 INSERT INTO templates (page_id, template_name, normalized_template_name, ordinal)
@@ -221,12 +244,18 @@ class RawRepository:
                 """,
                 (page_id, name, normalize_title(name), ordinal),
             )
-        for ordinal, license_record in enumerate(article.licenses):
+        seen_license_ids: set[int] = set()
+        ordinal = 0
+        for license_record in article.licenses:
             license_id = self._get_or_create_license(license_record)
+            if license_id in seen_license_ids:
+                continue
+            seen_license_ids.add(license_id)
             self._connection.execute(
                 "INSERT INTO article_licenses (page_id, license_id, ordinal) VALUES (?, ?, ?)",
                 (page_id, license_id, ordinal),
             )
+            ordinal += 1
         if article.main_image is not None:
             self._connection.execute(
                 "INSERT INTO main_images (page_id, content_url, width, height) VALUES (?, ?, ?, ?)",

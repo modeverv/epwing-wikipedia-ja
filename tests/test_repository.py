@@ -273,6 +273,46 @@ def test_batch_commits_multiple_writes_together(tmp_path: Path) -> None:
     assert count == 5
 
 
+def test_write_accepted_article_dedupes_children_with_colliding_normalized_names(
+    tmp_path: Path,
+) -> None:
+    connection = _connection(tmp_path)
+    repository = RawRepository(connection)
+    license_record = LicenseRecord("CC-BY-SA-4.0", "CC BY-SA 4.0", "https://example/license")
+    article = _article(
+        redirects=("GNU Emacs", "GNU Emacs "),
+        categories=("Category:Emacs", "Category:Emacs"),
+        templates=("Template:Infobox", "Template:Infobox　"),
+        licenses=(license_record, license_record),
+    )
+
+    with repository.batch():
+        repository.write_accepted_article(article)
+
+    redirects = connection.execute(
+        "SELECT redirect_title FROM redirects WHERE target_page_id = ?", (article.page_id,)
+    ).fetchall()
+    assert [r["redirect_title"] for r in redirects] == ["GNU Emacs"]
+
+    categories = connection.execute(
+        "SELECT category_name FROM categories WHERE page_id = ?", (article.page_id,)
+    ).fetchall()
+    assert [c["category_name"] for c in categories] == ["Category:Emacs"]
+
+    templates = connection.execute(
+        "SELECT template_name FROM templates WHERE page_id = ?", (article.page_id,)
+    ).fetchall()
+    assert [t["template_name"] for t in templates] == ["Template:Infobox"]
+
+    licenses = connection.execute(
+        "SELECT license_id FROM article_licenses WHERE page_id = ?", (article.page_id,)
+    ).fetchall()
+    assert len(licenses) == 1
+
+    assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_writes_all_ten_normal_fixture_articles(tmp_path: Path) -> None:
     connection = _connection(tmp_path)
     repository = RawRepository(connection)
