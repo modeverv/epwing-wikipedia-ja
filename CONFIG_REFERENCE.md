@@ -16,6 +16,8 @@
 
 秘密情報をTOMLへ書きません。
 
+現時点で`config/`配下に実在するのは`default.toml`と`profiles/{mini,lite,full}.toml`のみです(`config/projects/<project>.toml`は未実装)。実行例はsection 20を参照してください。
+
 ---
 
 ## 2. 全体例
@@ -485,3 +487,66 @@ WIKIEPWING_FAIL_AFTER_RECORDS # test only
 - output inside read-only path: error
 - worker count > configured max: error
 - snapshot `latest` in build stage: error; acquire stage only
+
+---
+
+## 20. プロファイル別の設定合成例(TASK-T002)
+
+`load_config(default_path, override_paths)`(`src/wikiepwing/config.py`)は`default_path`を最初に読み、`override_paths`を渡された順にdeep-mergeします(後勝ち)。CLIの`--config`は複数回指定でき、指定順に`override_paths`へ積まれます。プロファイルを選ぶには、`config/profiles/<profile>.toml`を`--config`で渡すだけです(`profile`キーも含め、section 17の差分だけが上書きされます)。
+
+以降の例は`config/default.toml`の`[paths]`が`/data/...`を指している前提です。ローカル開発では、これらのパスを実在するディレクトリへ差し替えた別のTOMLをさらに`--config`で重ねてください(TASK-R001のスクラッチパッド運用で使った`[paths]`のみのoverrideファイルと同じ手法)。
+
+パイプライン全体の逐次実行手順(ingest→normalize→generate、画像処理、full build前ゲート)はTASK-T001(Build guide)の対象です。ここでは「どのプロファイルにどの設定ファイルを渡すか」の合成例のみを示します。
+
+### mini
+
+画像・数式graphicsを無効化し、検索語を絞った最小構成です。
+
+```bash
+wikiepwing ingest \
+  --config config/profiles/mini.toml \
+  --lock-path /data/sources/jawiki/<version>/source.lock.json
+wikiepwing normalize --config config/profiles/mini.toml
+wikiepwing generate --config config/profiles/mini.toml
+```
+
+または`build`サブコマンドで`ingest`→`normalize`→`generate`を1回にまとめられます:
+
+```bash
+wikiepwing build \
+  --config config/profiles/mini.toml \
+  --lock-path /data/sources/jawiki/<version>/source.lock.json
+```
+
+### lite
+
+画像(`max_per_article=3`)・数式graphicsを有効化した中間構成です。
+
+```bash
+wikiepwing build \
+  --config config/profiles/lite.toml \
+  --lock-path /data/sources/jawiki/<version>/source.lock.json
+```
+
+### full
+
+画像(`max_per_article=8`)・カテゴリ検索・帰属表示付録をすべて有効化した最大構成です。
+
+```bash
+wikiepwing build \
+  --config config/profiles/full.toml \
+  --lock-path /data/sources/jawiki/<version>/source.lock.json
+```
+
+### 複数`--config`の合成(プロファイル + ローカルパスoverride)
+
+`--config`は複数回指定可能で、指定順に後勝ちで合成されます。プロファイルとローカル環境固有のパス上書きを両方渡す場合:
+
+```bash
+wikiepwing build \
+  --config config/profiles/lite.toml \
+  --config local-paths-override.toml \
+  --lock-path /path/to/source.lock.json
+```
+
+`local-paths-override.toml`は`[paths]`セクションのみを含む最小ファイルで構いません(section 2の全体例の`[paths]`ブロックを参照)。

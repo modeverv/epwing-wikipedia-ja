@@ -887,7 +887,7 @@
 
 **依存:** R006
 
-### TASK-T002 [ ] Configuration examples
+### TASK-T002 [x] Configuration examples
 
 **依存:** P003,Q006
 

@@ -5971,3 +5971,35 @@ git diff --check
 **次タスク**
 
 - EPIC T(Release documentation)のうち依存関係が揃っているタスクへ進む(TASK-T002はP003/Q006に依存、両方完了済みのため着手可能)
+
+## 2026-07-16 TASK-T002 Configuration examples
+
+**目的**
+
+`TASKS.md`のTASK-T002(依存: P003,Q006、両方完了済み)を実装する。`CONFIG_REFERENCE.md`のプロファイル定義(section 17)はすでに実装済みの`config/profiles/*.toml`と一致していたため、設定ファイルの合成方法と実行可能なCLI呼び出し例を追加した。
+
+**変更**
+
+- `CONFIG_REFERENCE.md`: section 1に`config/projects/<project>.toml`が未実装であることを注記、section 20(新規)にmini/lite/full各プロファイルの`--config`合成例・複数`--config`合成例を追加
+- `TASKS.md`(TASK-T002を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run python -m wikiepwing.cli ingest --help
+uv run python -m wikiepwing.cli build --help
+uv run python -m wikiepwing.cli normalize --help
+uv run python -m wikiepwing.cli generate --help
+make check
+git diff --check
+```
+
+**結果**
+
+- 例で使用したCLIフラグを実際の`--help`出力と突き合わせて一致を確認した。
+- ドキュメントのみの変更のため既存の標準スイート1378件(ImageMagick依存6件はローカル環境でskip)・`git diff --check`が引き続き成功することを確認した。
+- TASK-T001(Build guide)と役割が重複しないよう、全パイプラインの逐次実行解説は書かず設定合成に限定したことをCURRENT_TASK.mdに記録した。
+
+**次タスク**
+
+- 残るEPIC Tタスク(T001,T003,T004,T005)はいずれもTASK-R006/R009(全件ビルド、未着手)に依存するため着手不可。TASK-R003(Full jawiki ingest)以降、バックグラウンドで進行中の全件snapshot取得(Monitor task b3zh3vb03)が完了次第、EPIC R(R003〜R009)を継続する
