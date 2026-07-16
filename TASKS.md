@@ -867,7 +867,7 @@
 
 **依存:** D007,I006
 
-### TASK-S007 [ ] Disk usage command
+### TASK-S007 [x] Disk usage command
 
 **依存:** A007
 

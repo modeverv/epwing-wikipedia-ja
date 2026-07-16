@@ -15,6 +15,7 @@ from typing import cast
 
 from wikiepwing import __version__
 from wikiepwing.config import load_config
+from wikiepwing.disk_usage import compute_disk_usage
 from wikiepwing.doctor import render_doctor_text, run_doctor
 from wikiepwing.ingest.database import connect_raw_database
 from wikiepwing.ingest.orchestrate import run_ingest
@@ -539,6 +540,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="directory to write FreePWING graphics build files (*.bmp, cgraphs.txt) into",
     )
+    disk_usage = subparsers.add_parser(
+        "disk-usage", help="report on-disk size of every configured paths.* directory"
+    )
+    disk_usage.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
     return parser
 
 
@@ -989,6 +1000,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             cast(Path, arguments.graphics_dir),
         )
         print(f"converted={len(converted)}")
+        return 0
+    if command == "disk-usage":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+        disk_usage_report = compute_disk_usage(config)
+        print(json.dumps(disk_usage_report.payload(), ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")

@@ -5849,3 +5849,33 @@ git diff --check
 **次タスク**
 
 - TASK-S007 Disk usage command(依存: A007) — S004/S005はTASK-R006(未着手、全件buildが前提)に依存するため後回しにし、依存関係が既に揃っているS006-S009を先に進める
+
+## 2026-07-16 TASK-S007 Disk usage command
+
+**目的**
+
+`PLAN.md` 29(`wikiepwing disk-usage`)を実装する。`config.paths`配下の各ディレクトリのディスク使用量を集計・報告する。
+
+**変更**
+
+- `src/wikiepwing/disk_usage.py`(新規): `PathUsage`・`DiskUsageReport`・`compute_disk_usage`
+- `src/wikiepwing/cli.py`: `disk-usage`サブコマンド追加
+- `tests/test_disk_usage.py`(新規7件)、`tests/test_cli.py`(新規2件)
+- `TASKS.md`(TASK-S007を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_disk_usage.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 欠落ディレクトリ・存在するディレクトリの集計・再帰・symlink非二重計上・total_bytesの一致・JSON serializable・free_bytesの非負性・CLIのhelp/実行を9件のテストで確認した。
+- 標準スイート1353件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**次タスク**
+
+- TASK-S008 Safe clean command(依存: S007)

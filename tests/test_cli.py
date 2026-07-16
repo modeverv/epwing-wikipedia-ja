@@ -773,6 +773,29 @@ class CliTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout), [])
 
+    def test_disk_usage_help(self) -> None:
+        result = self.run_cli("disk-usage", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--config", result.stdout)
+
+    def test_disk_usage_reports_configured_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            work = temporary / "work"
+            work.mkdir()
+            (work / "raw.sqlite3").write_bytes(b"x" * 42)
+            config = temporary / "disk-usage.toml"
+            config.write_text(f'[paths]\nwork = "{work}"\n', encoding="utf-8")
+
+            result = self.run_cli("disk-usage", "--config", str(config))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            work_usage = next(entry for entry in report["paths"] if entry["name"] == "work")
+            self.assertTrue(work_usage["exists"])
+            self.assertEqual(work_usage["size_bytes"], 42)
+
 
 if __name__ == "__main__":
     unittest.main()
