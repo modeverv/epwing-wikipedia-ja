@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import urllib.request
 from dataclasses import dataclass, field
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from wikiepwing.media.downloader import (
     MediaDownloadError,
     SecureMediaDownloader,
+    _UrllibTransport,
 )
 
 
@@ -223,3 +225,23 @@ def test_rejects_negative_max_redirects() -> None:
 def test_rejects_non_positive_max_content_length() -> None:
     with pytest.raises(MediaDownloadError, match="max_content_length_bytes"):
         _downloader(_FakeTransport({}), max_content_length_bytes=0)
+
+
+def test_urllib_transport_sends_a_descriptive_user_agent() -> None:
+    # Wikimedia's CDN returns a bare 403 for a generic library User-Agent
+    # (e.g. "Python-urllib/3.x"); the real transport must identify itself.
+    transport = _UrllibTransport()
+    captured: dict[str, urllib.request.Request] = {}
+
+    class _FakeOpener:
+        def open(self, request: urllib.request.Request, *, timeout: float) -> _FakeResponse:
+            captured["request"] = request
+            return _FakeResponse(status=200, body=b"x")
+
+    transport._opener = _FakeOpener()  # type: ignore[assignment]
+
+    transport.open("https://example.org/a.png", timeout_seconds=1.0)
+
+    user_agent = captured["request"].get_header("User-agent")
+    assert user_agent is not None
+    assert user_agent.startswith("wikiepwing/")

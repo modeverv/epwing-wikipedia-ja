@@ -24,8 +24,11 @@ TASK-R007
 
 ## 変更予定ファイル
 
-- 実行中に実データで発見したバグの修正:
+- 実行中に実データで発見したバグの修正(1件目):
   - `src/wikiepwing/media/downloader.py`(`SecureMediaDownloader.download`が`https://`スキーム必須のURLしか許可しておらず、実データの`<img src>`の大多数(6,333,316件中5,481,961件)を占めるプロトコル相対URL(`//upload.wikimedia.org/...`)を全て拒否していたバグを修正。`_resolve_protocol_relative`でリクエスト直前に`https:`を補完する。`media_id`/`source_url`として保存済みの値自体は変更しない)
+  - `tests/test_media_downloader.py`(回帰テスト追加)
+- 実行中に実データで発見したバグの修正(2件目):
+  - `src/wikiepwing/media/downloader.py`(`_UrllibTransport`がUser-Agentヘッダを送っておらず、Wikimedia側のUser-Agentポリシーにより全リクエストが`403`で拒否されていたバグを修正。プロジェクトを識別する説明的なUser-Agentを送るようにした)
   - `tests/test_media_downloader.py`(回帰テスト追加)
 - 実行結果として: `/private/tmp/.../scratchpad/sample_image_fetch.py`という一回限りのスクリプト(コミット対象外)で約20,000件のサンプル画像を取得・変換する
 - `TASKS.md`

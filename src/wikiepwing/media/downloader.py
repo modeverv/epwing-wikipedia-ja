@@ -19,6 +19,12 @@ values (`//upload.wikimedia.org/...`, no explicit scheme) rather than
 validating/fetching (the sole scheme this project ever allows, so the
 resolution is unambiguous), rather than rejecting a URL shape normal
 browsers already treat as https on an https page.
+
+Wikimedia's CDN (upload.wikimedia.org) enforces its User-Agent policy
+(https://meta.wikimedia.org/wiki/User-Agent_policy) and returns a bare
+403 -- not a helpful error body -- for requests using a generic library
+default (e.g. `Python-urllib/3.x`). `_UrllibTransport` sends a
+descriptive User-Agent identifying this project for that reason.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ import http.client
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from importlib.metadata import version
 from typing import Protocol, cast
 from urllib.parse import urlsplit
 
@@ -35,6 +42,10 @@ DEFAULT_MAX_REDIRECTS = 5
 DEFAULT_MAX_CONTENT_LENGTH_BYTES = 20 * 1024 * 1024
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 _READ_CHUNK_BYTES = 1 << 16
+_USER_AGENT = (
+    f"wikiepwing/{version('wikiepwing')} "
+    "(https://github.com/modeverv/epwing-wikipedia-ja; batch dictionary build)"
+)
 
 
 class MediaDownloadError(RuntimeError):
@@ -157,7 +168,7 @@ class _UrllibTransport:
         self._opener = _build_no_redirect_opener()
 
     def open(self, url: str, *, timeout_seconds: float) -> MediaResponse:
-        request = urllib.request.Request(url, method="GET")
+        request = urllib.request.Request(url, method="GET", headers={"User-Agent": _USER_AGENT})
         try:
             return cast(MediaResponse, self._opener.open(request, timeout=timeout_seconds))
         except urllib.error.HTTPError as error:
