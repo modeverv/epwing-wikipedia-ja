@@ -6048,3 +6048,42 @@ uv run python -m wikiepwing.cli verify-raw \
 **次タスク**
 
 - TASK-R004 Full jawiki normalize(依存: R003、完了)
+
+## 2026-07-16 TASK-R004 Full jawiki normalize
+
+**目的**
+
+TASK-R003で生成した`raw.sqlite3`(全81チャンク、accepted_articles=1,508,200)を`wikiepwing normalize`で`model.sqlite3`へ正規化する。
+
+**変更**
+
+実行中に実データでのみ再現するバグを発見・修正した:
+
+- `src/wikiepwing/normalize/media_node.py`: `parse_image_node`が`<img src>`の`data:` URI(実データのSVGプレースホルダー画像、最大約10KB超)をそのまま`MediaReference`化しており、`model.sqlite3`の`media_references.media_id/source_url`のCHECK制約(8192バイト)違反でnormalize全体が失敗していたバグを修正(`data:`スキームはスキップ)。`tests/test_normalize_media_node.py`に回帰テスト追加。
+- `TASKS.md`(TASK-R004を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_normalize_media_node.py
+make check
+git diff --check
+
+uv run python -m wikiepwing.cli normalize \
+  --config "$SCRATCH/full-ingest-override.toml" \
+  --raw-database "$SCRATCH/data/work/raw.sqlite3" \
+  --model-database "$SCRATCH/data/work/model.sqlite3" \
+  --git-commit "$(git rev-parse HEAD)" \
+  --run-id full-r004-retry
+```
+
+**結果**
+
+- 1回目の実行はpage_id 4406(約2500件目)でmedia_referencesのCHECK制約違反により失敗。修正後にコードレベルのテスト(標準スイート1381件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功することを確認した。
+- 2回目の実行(`run-id=full-r004-retry`)で全1,508,200記事が正規化され、normalizeステージmanifestが`status=complete`(articles_read=1,508,200, articles_written=1,508,200, articles_rejected=0, errors=0, fatals=0, warnings=8,923,739)。
+- 警告の内訳を`diagnostics`テーブルで確認し、大半(8,923,739件)が既存の`DOM_UNKNOWN_ELEMENT`(TASK-G010の意図した警告レベルのフォールバック機構)であり新規バグでないことを確認した。
+- `model.sqlite3`(約12.3GB)はスクラッチパッドのみに保持し、gitにはコミットしていない。
+
+**次タスク**
+
+- TASK-R005 Full Mini generate(依存: R004、完了)

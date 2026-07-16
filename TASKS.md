@@ -815,7 +815,7 @@
 
 **依存:** R002
 
-### TASK-R004 [ ] Full jawiki normalize
+### TASK-R004 [x] Full jawiki normalize
 
 **依存:** R003
 

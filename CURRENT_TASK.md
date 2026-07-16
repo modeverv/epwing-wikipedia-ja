@@ -41,8 +41,8 @@ uv run python -m wikiepwing.cli normalize \
 
 ## 完了条件
 
-- [ ] `model.sqlite3`が生成され、`raw.sqlite3`のaccepted articles全件が正規化される
-- [ ] normalizeステージのmanifestが`completed`状態で書かれる
+- [x] `model.sqlite3`が生成され、`raw.sqlite3`のaccepted articles全件が正規化される
+- [x] normalizeステージのmanifestが`completed`状態で書かれる
 - [x] 実行中に実データ固有のクラッシュ・バグが見つかった場合は原因を特定し、コード修正・テスト追加・commitしてから再実行する(TASK-R003で確立したパターンを踏襲)
 
 ## 非対象
@@ -52,4 +52,6 @@ uv run python -m wikiepwing.cli normalize \
 
 ## 実施結果
 
-(未着手)
+実データ(`raw.sqlite3`、accepted_articles=1,508,200)に対して`wikiepwing normalize`を実行し、1件の実データ限定バグを発見・修正した: `parse_image_node`が`<img src>`の`data:` URI(実データではSVGプレースホルダー画像で最大約10KB超)をそのまま`MediaReference`化しており、`model.sqlite3`の`media_references`テーブルのCHECK制約(8192バイト)違反でnormalize全体が約2500件目(page_id 4406)で失敗した。`data:`スキームのsrcをスキップするよう`media_node.py`を修正し、回帰テストを追加した(TASK-R003と同じ「実データでバグ発見→修正・テスト・commit→再実行」パターン)。
+
+修正適用後の再実行(`run-id=full-r004-retry`)で全1,508,200記事が正規化され、normalizeステージmanifestが`status=complete`(articles_read=1,508,200, articles_written=1,508,200, articles_rejected=0, errors=0, fatals=0, warnings=8,923,739)。`model.sqlite3`内の`diagnostics`テーブルを確認したところ、警告の大半(8,923,739件全て)は既存の`DOM_UNKNOWN_ELEMENT`(TASK-G010の「未知DOM要素のフォールバック」機構、既存実装済み・意図した警告レベルの動作)であり、新規バグではないことを確認した。`model.sqlite3`(約12.3GB)はスクラッチパッドのみに保持し、gitにはコミットしない。
