@@ -6087,3 +6087,41 @@ uv run python -m wikiepwing.cli normalize \
 **次タスク**
 
 - TASK-R005 Full Mini generate(依存: R004、完了)
+
+## 2026-07-16 TASK-R005 Full Mini generate
+
+**目的**
+
+TASK-R004で生成した`model.sqlite3`(全1,508,200記事)から、Miniプロファイル設定で`wikiepwing generate`を実行し`entries.jsonl`を生成する。
+
+**変更**
+
+生成後の`verify`実行中に実データでのみ再現するバグを発見・修正した:
+
+- `src/wikiepwing/render/verify.py`: `_read_records`が`text.splitlines()`を使っており、JSON文字列内の正当なUnicode改行文字(U+2029等、実データの本文に実在する)を行区切りと誤認識し、1つの正常なJSONLレコードを複数の不正な断片に分割していたバグを修正(`\n`のみで分割するよう変更)。`tests/test_render_verify.py`に回帰テスト追加。
+- `TASKS.md`(TASK-R005を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run python -m wikiepwing.cli generate \
+  --config "$SCRATCH/full-ingest-override.toml" \
+  --config config/profiles/mini.toml \
+  --model-database "$SCRATCH/data/work/model.sqlite3" \
+  --entries-output "$SCRATCH/data/output/entries-mini.jsonl" \
+  --git-commit "$(git rev-parse HEAD)" \
+  --run-id full-r005-mini
+
+uv run python -m wikiepwing.cli verify --entries "$SCRATCH/data/output/entries-mini.jsonl"
+```
+
+**結果**
+
+- generateステージmanifestが`status=complete`(articles_read=1,508,200, entries_written=1,508,200, articles_skipped=0)。`entries-mini.jsonl`は約12.9GB。
+- 1回目の`verify`実行はline 33734(page_id 61417)でJSONパースエラーにより失敗。修正後にコードレベルのテスト(標準スイート1382件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功することを確認した。
+- 2回目の`verify`実行で全1,508,200件のJSONパースに成功し、5件の`DUPLICATE_HEADWORD`を検出(`ok=false`)。これはverifyが意図通り検出すべき実データの品質課題であり、調査・報告はTASK-R006の対象とする。
+- `entries-mini.jsonl`はスクラッチパッドのみに保持し、gitにはコミットしていない。
+
+**次タスク**
+
+- TASK-R006 Full Mini verify/report(依存: R005、完了) — 検出された5件のDUPLICATE_HEADWORDの調査を含む

@@ -819,7 +819,7 @@
 
 **依存:** R003
 
-### TASK-R005 [ ] Full Mini generate
+### TASK-R005 [x] Full Mini generate
 
 **依存:** R004,P002
 

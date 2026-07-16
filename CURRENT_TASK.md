@@ -42,9 +42,9 @@ uv run python -m wikiepwing.cli generate \
 
 ## 完了条件
 
-- [ ] `entries-mini.jsonl`が生成され、`model.sqlite3`の非rejected記事全件が変換される
-- [ ] generateステージのmanifestが`completed`状態で書かれる
-- [ ] 実行中に実データ固有のクラッシュ・バグが見つかった場合は原因を特定し、コード修正・テスト追加・commitしてから再実行する(TASK-R003/R004で確立したパターンを踏襲)
+- [x] `entries-mini.jsonl`が生成され、`model.sqlite3`の非rejected記事全件が変換される
+- [x] generateステージのmanifestが`completed`状態で書かれる
+- [x] 実行中に実データ固有のクラッシュ・バグが見つかった場合は原因を特定し、コード修正・テスト追加・commitしてから再実行する(TASK-R003/R004で確立したパターンを踏襲)
 
 ## 非対象
 
@@ -54,4 +54,8 @@ uv run python -m wikiepwing.cli generate \
 
 ## 実施結果
 
-(未着手)
+`model.sqlite3`(1,508,200記事)に対してMiniプロファイル設定で`wikiepwing generate`を実行し、`entries-mini.jsonl`(約12.9GB)を生成した。generateステージmanifestは`status=complete`(articles_read=1,508,200, entries_written=1,508,200, articles_skipped=0)。
+
+生成後の`wikiepwing verify`実行時に実データ限定バグを発見・修正した: `_read_records`が`text.splitlines()`を使っており、JSON文字列内に現れる正当なUnicode改行文字(U+2029 PARAGRAPH SEPARATORなど)を行区切りとして誤認識し、1つの正常なJSONLレコード(page_id 61417、line 33734)を複数の不正な断片に分割してJSONパースエラーになっていた。JSONLの区切り文字である`\n`のみで分割するよう修正し、回帰テストを追加した。
+
+修正後の`verify`再実行で全1,508,200件のJSONパースに成功し(`entry_count=1508200`)、5件の`DUPLICATE_HEADWORD`(異なるpage_id間で同一見出し語)を検出した(`ok=false`)。これは`verify`が意図通り検出すべき実データの品質課題であり、この検出結果の調査・報告はTASK-R006(Full Mini verify/report)の対象とする。`entries-mini.jsonl`はスクラッチパッドのみに保持し、gitにはコミットしない。
