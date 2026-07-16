@@ -6125,3 +6125,30 @@ uv run python -m wikiepwing.cli verify --entries "$SCRATCH/data/output/entries-m
 **次タスク**
 
 - TASK-R006 Full Mini verify/report(依存: R005、完了) — 検出された5件のDUPLICATE_HEADWORDの調査を含む
+
+## 2026-07-16 TASK-R006 Full Mini verify/report
+
+**目的**
+
+TASK-R005で得た`entries-mini.jsonl`の`verify`結果(全1,508,200件のJSONパース成功、5件の`DUPLICATE_HEADWORD`検出、`ok=false`)を調査し、実データ由来かソフトウェアのバグかを切り分けて報告する。
+
+**変更**
+
+コード変更なし。`model.sqlite3`/`raw.sqlite3`への直接クエリによる調査のみ。
+
+**実行コマンド**
+
+```bash
+uv run python3 -c "..." # 5件のDUPLICATE_HEADWORDペアそれぞれのpage_id/title/source_url/revision_id/source_date_modifiedを確認
+```
+
+**結果**
+
+- 5件すべてが「page_id・revision_id・source_sequenceが異なるが、titleとsource_urlが完全一致、date_modifiedが数日ずれている」という同一パターンだった。
+- これはWikimedia Enterprise Snapshot自体の特性(記事の削除・再作成による同一タイトルへの新page_id割り当てが、Snapshot取得期間内に新旧両方含まれるケース)であり、wikiepwingのソフトウェア側の重複生成バグではないと判断した。
+- `ingest/deduplicate.py`のdedup処理はpage_id単位で正しく機能しており、`verify`の`DUPLICATE_HEADWORD`検出は意図通り(FreePWINGツールチェーンのbuild時チェックの事前再現)動作していることを確認した。
+- 追加のコード変更は不要と判断。1,508,200件中5件(0.0003%)という頻度であり、実際の見出し語衝突解消は既存のFreePWINGツールチェーン(`freepwing_build_entries.pl`)に委ねる。
+
+**次タスク**
+
+- TASK-R007 Full Lite media run(依存: R004、完了) — Liteプロファイルの画像処理(image-plan/image-fetch/image-convert)を全件データに対して実行する

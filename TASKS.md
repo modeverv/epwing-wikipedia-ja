@@ -823,7 +823,7 @@
 
 **依存:** R004,P002
 
-### TASK-R006 [ ] Full Mini verify/report
+### TASK-R006 [x] Full Mini verify/report
 
 **依存:** R005
 
