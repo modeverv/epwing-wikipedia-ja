@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-S002
+TASK-S003
 
 ## 目的
 
-`ARCHITECTURE.md` 26.1(「logical hash: entry/index/graphicのcanonical stream hash」)を実装する。ZIP timestampやfilesystem orderingに左右される物理SHA-256とは別に、entries.jsonl(TASK-H010)・gaiji build files(TASK-M007)・graphics build files(TASK-O011)という「canonical stream」の集合を、順序に依存しない安定した方法でhashする`compute_stream_set_hash`(汎用primitive)と、実際のbuild成果物ディレクトリから呼び出す`compute_logical_build_hash`を実装する。
+`ARCHITECTURE.md` 26.2(決定論: 「archive timestamp固定」等)・`DATA_CONTRACTS.md` 12(build artifact contractのZIP配置)を実装する。EPWING辞書ディレクトリ(TASK-H010が生成したentries由来のbuild成果物一式)を、固定タイムスタンプ・固定ファイル順序・固定permission bitsでZIP化し、内容が同一であれば常にbyte-identicalなarchiveになる`build_deterministic_archive`を実装する。
 
 ## 事前条件
 
@@ -14,14 +14,14 @@ TASK-S002
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-S002(依存: H010,M007,O011)を読んだ
-- [x] `ARCHITECTURE.md` 26.1(物理SHA-256とlogical hashの違い、logical hashはcanonical stream単位)を再確認した
-- [x] EB indexの実バイナリ構築はDocker内`fpwmake`が担い、この段階のPythonコードは直接生成物を持たないため、本タスクでは「entry(entries.jsonl)」「gaiji build files」「graphics build files」の3つのcanonical streamを対象とし、「index」自体は対象外とする(スコープを誠実に限定する)方針にした
+- [x] `TASKS.md`のTASK-S003(依存: H010)を読んだ
+- [x] `ARCHITECTURE.md` 26.2(「archive timestamp固定」)・`CONFIG_REFERENCE.md`の`[epwing] archive_timestamp`(deterministic archive用に既にconfig schemaへ追加済み)・`DATA_CONTRACTS.md` 12(ZIP internal root構造)を再確認した
+- [x] Python標準の`zipfile`モジュールの`ZipInfo(date_time=...)`でタイムスタンプを固定し、`external_attr`でpermission bitsを固定し、ファイルをsorted relative path順で追加することで決定論的なZIPが作れることを確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/build_logical_hash.py`(新規: `compute_stream_set_hash`, `collect_build_streams`, `compute_logical_build_hash`)。`model/logical_hash.py`(TASK-F008、Article単位のhash)とは別の関心事であり、命名衝突を避けるためモジュール名・関数名を明確に分けた
-- `tests/test_logical_hash.py`(新規)
+- `src/wikiepwing/archive.py`(新規: `build_deterministic_archive`)
+- `tests/test_archive.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -29,28 +29,27 @@ TASK-S002
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_logical_hash.py
+uv run pytest tests/test_archive.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `compute_stream_set_hash`が`(name, content)`のペアの集合から、入力順序に依存しない(name昇順でsortしてからhashする)安定したsha256 hex digestを返す
-- [x] 異なるnameの組み合わせ(例: `"ab"`+`"c"` vs `"a"`+`"bc"`)が異なるhashになる(length-prefixed framingで曖昧さを排除する)
-- [x] `collect_build_streams`がentries.jsonl・gaiji directory・graphics directory(いずれもoptional)から`(name, content)`ペアをファイル名昇順で収集する
-- [x] `compute_logical_build_hash`が上記を組み合わせて1つのhex digestを返す
+- [x] `build_deterministic_archive`が`source_dir`配下の全ファイルを`root_directory_name/`prefix付きでZIPへ追加する
+- [x] 全entryのタイムスタンプが`archive_timestamp`で固定される
+- [x] 同一内容のsource_dirから2回buildして、生成されるZIPのバイト列が完全に一致する(byte-identical)
+- [x] ファイル内容やファイル名が変わればZIPのバイト列も変わる
+- [x] `archive_timestamp`がtimezone-awareでない場合は`ValueError`を送出する
 - [x] `make check`が成功する
 
 ## 非対象
 
-- EB indexバイナリ自体のcanonical hash(Docker内`fpwmake`が生成するバイナリのため対象外)
-- 実際のbuild pipelineへの統合配線(TASK-S001と同様、構築・計算機能のみ)
+- Same-host/cross-host rebuild comparison(TASK-S004/S005)
+- 実際のbuild pipelineへの統合配線(構築機能のみ)
 
 ## 実施結果
 
-- `src/wikiepwing/build_logical_hash.py`(新規)に`compute_stream_set_hash`(name昇順sort+length-prefixed framingで曖昧さを排除)・`collect_build_streams`(entries.jsonl+gaiji/graphics directoryを収集)・`compute_logical_build_hash`を実装した。
-- テスト作成中、`collect_build_streams`内の`(prefix, directory)`のループ変数順序を取り違えるバグ(`"gaiji"`という文字列自体を`Path`として扱おうとして`AttributeError`)を実際にテストで検出・修正した。
-- `tests/test_build_logical_hash.py`(新規11件)で、順序非依存性・決定性・内容差異での変化・境界曖昧さの排除・空入力・entries.jsonl/gaiji/graphics収集・再帰・欠落ディレクトリの無視を確認した。
-- `make check`(format-check/lint/mypy/pytest 1335件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
-- EB indexバイナリ自体(Docker内`fpwmake`が生成)は対象外。
+- `src/wikiepwing/archive.py`(新規)に`build_deterministic_archive`を実装した。固定`archive_timestamp`(全entry共通)・固定permission bits(0644)・sorted relative path順でのファイル追加により、内容が同一なら常にbyte-identicalなZIPになる。一時ファイル+`os.replace`で原子的に書き込む。
+- `tests/test_archive.py`(新規9件)で、全ファイルのroot prefix付き格納・固定タイムスタンプ・2回buildでのbyte-identical・内容/root名変更での差異・naive timestampとempty root名の拒否・ディレクトリ自動作成・一時ファイルの残留なしを確認した。
+- `make check`(format-check/lint/mypy/pytest 1344件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。

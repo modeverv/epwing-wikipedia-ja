@@ -851,7 +851,7 @@
 
 **依存:** H010,M007,O011
 
-### TASK-S003 [ ] Deterministic archive metadata
+### TASK-S003 [x] Deterministic archive metadata
 
 **依存:** H010
 

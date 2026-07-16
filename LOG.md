@@ -5820,3 +5820,32 @@ git diff --check
 **次タスク**
 
 - TASK-S003 Deterministic archive metadata(依存: H010)
+
+## 2026-07-16 TASK-S003 Deterministic archive metadata
+
+**目的**
+
+`ARCHITECTURE.md` 26.2(決定論: 「archive timestamp固定」)・`DATA_CONTRACTS.md` 12(ZIP internal root構造)を実装する。EPWING辞書ディレクトリを固定タイムスタンプ・固定permission・sorted順序でZIP化し、byte-identicalな再現性を持たせる。
+
+**変更**
+
+- `src/wikiepwing/archive.py`(新規): `build_deterministic_archive`
+- `tests/test_archive.py`(新規9件)
+- `TASKS.md`(TASK-S003を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_archive.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 全ファイルのroot prefix付き格納・固定タイムスタンプ・2回buildでのbyte-identical・内容/root名変更での差異・バリデーション・ディレクトリ自動作成・一時ファイルの残留なしを9件のテストで確認した。
+- 標準スイート1344件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**次タスク**
+
+- TASK-S007 Disk usage command(依存: A007) — S004/S005はTASK-R006(未着手、全件buildが前提)に依存するため後回しにし、依存関係が既に揃っているS006-S009を先に進める
