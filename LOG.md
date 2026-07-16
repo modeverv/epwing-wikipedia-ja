@@ -6263,3 +6263,34 @@ uv run python -m wikiepwing.cli verify --entries "$SCRATCH/data/output/entries-f
 
 - EPIC S残タスク: TASK-S004(Same-host rebuild comparison、依存: R006+S001-S003。すべて完了済みのため着手可能)、TASK-S005(Cross-host comparison、依存: S004)
 - EPIC T残タスク: TASK-R006/R009完了により、T001(Build guide、依存R006)・T003(Troubleshooting、依存R009)・T004(Viewer verification guide、依存Q009,R009)・T005(Licensing/attribution guide、依存O010,R009)が着手可能になった
+
+## 2026-07-17 TASK-S004 Same-host rebuild comparison
+
+**目的**
+
+PLAN.md 28(Phase 24 再現性試験)の出口条件「entry logical hash一致」を検証するため、同一ホスト・同一入力(TASK-R003で取得済みのsource.lock.json、全81チャンク)から独立に2回目のingest→normalize→generateを実行し、1回目の成果物と論理ハッシュを比較する。
+
+**変更**
+
+コード変更なし。`TASKS.md`(TASK-S004を`[x]`に)、`CURRENT_TASK.md`。
+
+**実行コマンド**
+
+```bash
+uv run python -m wikiepwing.cli ingest --raw-database raw2.sqlite3 --lock-path <同一source.lock.json> --run-id rebuild2-ingest
+uv run python -m wikiepwing.cli normalize --raw-database raw2.sqlite3 --model-database model2.sqlite3 --run-id rebuild2-normalize
+uv run python -m wikiepwing.cli generate --config config/profiles/mini.toml --model-database model2.sqlite3 --entries-output entries-rebuild2.jsonl --run-id rebuild2-generate
+uv run python3 -c "from wikiepwing.build_logical_hash import compute_logical_build_hash as h; ..."
+```
+
+**結果**
+
+- `raw2.sqlite3`(sha256一致)、`model2.sqlite3`(sha256一致)、`entries-rebuild2.jsonl`(sha256一致)がすべて1回目のビルド成果物とbyte-for-byte完全一致した。
+- `compute_logical_build_hash`による論理ハッシュも両ビルドで一致(`765528ac...`)。
+- PLAN.md 28の出口条件「entry logical hash一致」を実データ全件規模(150万記事超)で確認した。差異なし、binary差異説明は不要。
+- TASK-R003〜R009で発見・修正した実データ限定バグが再現しなかったことも同時に確認でき、修正が正しく機能していることを裏付けた。
+- 2回目のビルド成果物はスクラッチパッドのみに保持し、gitにはコミットしていない。
+
+**次タスク**
+
+- TASK-S005 Cross-host comparison(依存: S004、完了) — 別ホストでの再現性検証。実行環境の制約(単一ホストのみ利用可能)により実施方法を検討する必要がある

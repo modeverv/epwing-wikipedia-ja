@@ -855,7 +855,7 @@
 
 **依存:** H010
 
-### TASK-S004 [ ] Same-host rebuild comparison
+### TASK-S004 [x] Same-host rebuild comparison
 
 **依存:** R006,S001-S003
 
