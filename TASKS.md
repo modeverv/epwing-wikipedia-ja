@@ -811,7 +811,7 @@
 
 **依存:** R001,I007
 
-### TASK-R003 [ ] Full jawiki ingest
+### TASK-R003 [x] Full jawiki ingest
 
 **依存:** R002
 

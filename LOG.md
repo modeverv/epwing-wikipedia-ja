@@ -6003,3 +6003,48 @@ git diff --check
 **次タスク**
 
 - 残るEPIC Tタスク(T001,T003,T004,T005)はいずれもTASK-R006/R009(全件ビルド、未着手)に依存するため着手不可。TASK-R003(Full jawiki ingest)以降、バックグラウンドで進行中の全件snapshot取得(Monitor task b3zh3vb03)が完了次第、EPIC R(R003〜R009)を継続する
+
+## 2026-07-16 TASK-R003 Full jawiki ingest
+
+**目的**
+
+TASK-R002完了後、ユーザーが承認した方針(実Snapshot取得・全81チャンク取得・full ingest実施)に基づき、実データ(jawiki_namespace_0, snapshot version 35061ecbd3bc55c31cffd4b46838673d, 81チャンク約29GB)を`wikiepwing ingest`で`raw.sqlite3`へ取り込む。
+
+**変更**
+
+実行中に実データでのみ再現する2件のバグを発見・修正した:
+
+- `src/wikiepwing/ingest/repository.py`: `_replace_children`が同一正規化キーへ衝突するredirects/categories/templates/licensesを無条件挿入しUNIQUE制約違反になっていたバグを修正(`_dedupe_by_key`ヘルパー追加)。`tests/test_repository.py`に回帰テスト追加。
+- `src/wikiepwing/ingest/orchestrate.py`: `iter_ndjson_lines`が常に`tar_reader.DEFAULT_MAX_LINE_BYTES`(8MiB)を使い、設定可能な`max_html_bytes`/`max_wikitext_bytes`(既定64MiB)以下でもチャンク全体を失敗させていたバグを修正(`_max_ndjson_line_bytes`追加)。`tests/test_ingest_orchestrate.py`に回帰テスト追加。
+- `TASKS.md`(TASK-R003を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+# バグ修正の検証
+uv run pytest tests/test_repository.py tests/test_ingest_orchestrate.py
+make check
+git diff --check
+
+# 実データingest(3回目、両修正適用後)
+uv run python -m wikiepwing.cli ingest \
+  --config "$SCRATCH/full-ingest-override.toml" \
+  --lock-path "$SCRATCH/data/sources/jawiki/35061ecbd3bc55c31cffd4b46838673d/source.lock.json" \
+  --git-commit "$(git rev-parse HEAD)" \
+  --run-id full-r003-retry2
+
+uv run python -m wikiepwing.cli verify-raw \
+  --raw-database "$SCRATCH/data/work/raw.sqlite3" \
+  --sample-size 50
+```
+
+**結果**
+
+- 1回目の実行はchunk 0付近(4000件目)でredirects UNIQUE制約違反により失敗、2回目の実行はchunk 46(約120万件目)でNDJSON行サイズ超過により失敗。両方とも実データでのみ顕在化する既存バグで、修正後にコードレベルのテスト(標準スイート1380件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功することを確認した。
+- 3回目の実行(`run-id=full-r003-retry2`)で全81チャンクが成功し、ingestステージmanifestが`status=complete`(records_read=1,547,381, records_written=1,547,292, records_rejected=0, errors=78)。
+- `verify-raw`で`integrity_check=ok`, `foreign_key_errors=0`, `sample_failures=[]`, `accepted_articles=1,508,200`を確認した。
+- `raw.sqlite3`(約27GB)はスクラッチパッドのみに保持し、gitにはコミットしていない。
+
+**次タスク**
+
+- TASK-R004 Full jawiki normalize(依存: R003、完了)
