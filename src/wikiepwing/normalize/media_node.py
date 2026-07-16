@@ -11,6 +11,11 @@ TASK-O010's attribution model) takes this module's output as its input.
 `normalize/orchestrate.py`'s `_read_media` (which sets
 `media_id=row["content_url"]` for the Wikimedia Enterprise Snapshot's
 main-image metadata) rather than inventing a second identifier scheme.
+
+`<img src>` inline `data:` URIs (real rendered HTML uses these for
+lazy-load SVG placeholders, sometimes tens of kilobytes) are skipped:
+there is nothing to fetch at a later stage, and 15.1's "参照だけを保存"
+contract is about referencing a fetchable resource, not embedding one.
 """
 
 from __future__ import annotations
@@ -31,7 +36,7 @@ def parse_image_node(node: ElementNode, *, caption: str | None = None) -> MediaR
     if node.tag != "img":
         raise ValueError(f"not an img element: <{node.tag}>")
     source_url = _attribute(node, "src")
-    if not source_url:
+    if not source_url or source_url.startswith("data:"):
         return None
     return MediaReference(
         media_id=source_url,

@@ -119,6 +119,14 @@ def test_missing_src_returns_none() -> None:
     assert media is None
 
 
+def test_data_uri_src_returns_none() -> None:
+    node = _parse('<img src="data:image/svg+xml;base64,PHN2Zz4=">', "img")
+
+    media = parse_image_node(node)
+
+    assert media is None
+
+
 def test_parse_image_node_rejects_non_img_element() -> None:
     node = _parse("<span>x</span>", "span")
 
