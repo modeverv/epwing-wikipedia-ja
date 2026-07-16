@@ -835,7 +835,7 @@
 
 **依存:** R007
 
-### TASK-R009 [ ] Full profile generate/verify
+### TASK-R009 [x] Full profile generate/verify
 
 **依存:** R008,Q006
 

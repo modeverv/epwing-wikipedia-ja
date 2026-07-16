@@ -6226,3 +6226,40 @@ uv run python -m wikiepwing.cli verify --entries "$SCRATCH/data/output/entries-l
 **次タスク**
 
 - TASK-R009 Full profile generate/verify(依存: R008、完了) — 同じ理由でentries-full.jsonlもmini/liteと同一内容になる見込み。実行して確認する
+
+## 2026-07-17 TASK-R009 Full profile generate/verify
+
+**目的**
+
+TASK-R004の`model.sqlite3`(全1,508,200記事)からFullプロファイル設定で`wikiepwing generate`を実行し`verify`する。EPIC R(Full-scale builds)最後のタスク。
+
+**変更**
+
+コード変更なし。`TASKS.md`(TASK-R009を`[x]`に)、`CURRENT_TASK.md`。
+
+**実行コマンド**
+
+```bash
+uv run python -m wikiepwing.cli generate \
+  --config "$SCRATCH/full-ingest-override.toml" \
+  --config config/profiles/full.toml \
+  --model-database "$SCRATCH/data/work/model.sqlite3" \
+  --entries-output "$SCRATCH/data/output/entries-full.jsonl" \
+  --git-commit "$(git rev-parse HEAD)" \
+  --run-id full-r009-full
+
+uv run python -m wikiepwing.cli verify --entries "$SCRATCH/data/output/entries-full.jsonl"
+```
+
+**結果**
+
+- generateステージmanifestが`status=complete`(articles_read=1,508,200, entries_written=1,508,200, articles_skipped=0)。
+- TASK-R008の仮説通り、`entries-full.jsonl`のsha256が`entries-mini.jsonl`/`entries-lite.jsonl`と完全一致(byte-for-byte同一)することを確認した。バグではなく現行実装の設計上の期待通りの結果。
+- `verify`結果もTASK-R006/R008と同一の5件の`DUPLICATE_HEADWORD`で、既に正当な実データ特性と判定済み。
+- これでEPIC R(TASK-R001〜R009)がすべて完了した。実データで発見・修正した実データ限定バグは合計7件(R003で2件、R004で1件、R005で1件、R007で3件)。
+- `entries-full.jsonl`はスクラッチパッドのみに保持し、gitにはコミットしていない。
+
+**次タスク**
+
+- EPIC S残タスク: TASK-S004(Same-host rebuild comparison、依存: R006+S001-S003。すべて完了済みのため着手可能)、TASK-S005(Cross-host comparison、依存: S004)
+- EPIC T残タスク: TASK-R006/R009完了により、T001(Build guide、依存R006)・T003(Troubleshooting、依存R009)・T004(Viewer verification guide、依存Q009,R009)・T005(Licensing/attribution guide、依存O010,R009)が着手可能になった
