@@ -803,7 +803,7 @@
 
 ## EPIC R — Full-scale builds
 
-### TASK-R001 [ ] Stratified 10,000 sample report
+### TASK-R001 [x] Stratified 10,000 sample report
 
 **依存:** P007,Q009
 

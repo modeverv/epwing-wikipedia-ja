@@ -5676,3 +5676,43 @@ git diff --check
 **次タスク**
 
 - TASK-R001 Stratified 10,000 sample report(依存: P007,Q009)
+
+## 2026-07-16 TASK-R001 Stratified 10,000 sample report
+
+**目的**
+
+`PLAN.md` Phase 20(10,000記事耐久試験)のstratified sample選定を実装する。AskUserQuestionでの承認に基づき、実際にWikimedia Enterprise APIから実データを取得して検証した。
+
+**変更**
+
+- `src/wikiepwing/sampling/`(新規パッケージ): `stratify.py`(`compute_signals`・`select_stratified_sample`・`iter_raw_articles`・`build_stratified_sample_ndjson`・`write_sample_report`)
+- `tests/test_sampling_stratify.py`(新規20件、合成fixtureのみ)
+- `TASKS.md`(TASK-R001を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_sampling_stratify.py
+make check
+git diff --check
+```
+
+**実データでの検証(git管理外)**
+
+- AskUserQuestionで確認したうえで、`.env`の実認証情報でWikimedia Enterprise APIへ認証(login経由)。jawiki namespace 0の全snapshotは81 chunks・約30.9GBと判明し、再度AskUserQuestionで確認したうえで最初の1 chunk(約381MB圧縮、27,859記事)のみをダウンロードした(`acquire_snapshot`をchunk_identifiersを1件に切り詰めるwrapperで呼び出し)。
+- 取得したchunkに対して`build_stratified_sample_ndjson(target_total=10_000, min_per_stratum=500)`を実行(約2分22秒): `total_scanned=27859`, `total_selected=8055`(1 chunkのみではbaseline記事が4,929件しかなく、10,000件には届かなかった)。
+
+**結果**
+
+- 各層の検出・budget充足順序・target_total遵守・重複除去・NDJSON書き出し・reportフィールドを20件のテストで確認した。
+- 標準スイート1310件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+- 実データ検証により、コードが実際に機能することを確認した。実データ・生成したsample NDJSON・reportはgitへコミットしていない(著作権・サイズの理由)。
+
+**判断・注意点**
+
+- 実データ取得は2段階でAskUserQuestionを行った: (1)実データ取得自体の可否、(2)実際のsnapshot size(30.9GB)判明後のdownload範囲。ユーザーの明示的な承認なしに実際の外部APIへ認証・大容量downloadを行わない、という安全方針を徹底した。
+- 取得した実データ(展開済み2GB NDJSON等)はタスク完了後に削除し、ホスト上に不要な実Wikipediaデータを残さないようにした。
+
+**次タスク**
+
+- TASK-R002 Full-build preflight gate(依存: R001,I007)
