@@ -5716,3 +5716,38 @@ git diff --check
 **次タスク**
 
 - TASK-R002 Full-build preflight gate(依存: R001,I007)
+
+## 2026-07-16 TASK-R002 Full-build preflight gate
+
+**目的**
+
+`PLAN.md` 30(Full build前ゲート一覧)を実装する。既存の`doctor.py`のcheck枠組みを再利用し、full build固有のgate項目を組み合わせる`run_full_build_preflight`を追加する。
+
+**変更**
+
+- `src/wikiepwing/doctor.py`: `CheckCategory`に`"release-gate"`を追加
+- `src/wikiepwing/preflight.py`(新規): `FULL_BUILD_GATE_ITEMS`・`run_full_build_preflight`
+- `tests/test_preflight.py`(新規7件)
+- `TASKS.md`(TASK-R002を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_preflight.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 全passでのok・既存doctor checkの保持・非concreteなsource lockでのfail・test_suite_results欠落時のfail-closed・個別test失敗でのgate fail・全gate itemの反映・profile_fixed checkのpassを7件のテストで確認した。
+- 標準スイート1317件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `source_lock_concrete`チェックは、`build_source_lock`が既に`snapshot_version="latest"`を構築時に拒否するため、実質的には防御的な再確認(常にpassする)である。テストでは`SourceLock`を直接構築してfailパスを検証した。
+- 「Phase 0〜20完了」「toolchain smoke green」等の実際にtest/smokeを実行したかどうかの判定は、このプロセス自身では検証できないため呼び出し側(`test_suite_results`)が注入する設計にした。欠落項目はfail-closed。
+
+**次タスク**
+
+- TASK-R003 Full jawiki ingest(依存: R002) — 実データの全件(約1.4M記事、81 chunks、約30.9GB)取得が必要なため、実行前にユーザーへ確認する

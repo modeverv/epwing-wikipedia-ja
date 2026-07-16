@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-R001
+TASK-R002
 
 ## 目的
 
-`PLAN.md` Phase 20(10,000記事耐久試験)の「page ID rangeだけでなく、次を含むstratified sample」を実装する。AskUserQuestionでの承認に基づき、実際にWikimedia Enterprise APIから実データ(jawiki namespace 0の最初の1 chunk、約2.7万記事)を取得し、それを対象にlong article/table-heavy/image-heavy/math-heavy/history-literature/technical/disambiguation/list article/rare Unicodeの各層を検出して、10,000記事のstratified sampleとそのreportを生成する`sampling`モジュールを実装する。
+`PLAN.md` 30(「Full build前ゲート一覧」)を実装する。既存の`doctor.py`(`CheckResult`/`CheckStatus`/`DoctorReport`)の枠組みを再利用し、環境面の既存doctor check(disk容量・path書き込み可能性等)に加えて、full build固有のgate項目(source lockが具体的なバージョンに解決されていること、profileが固定値であること、および呼び出し側が実行した各種test suite/smoke testの結果)を組み合わせた`run_full_build_preflight`を実装する。
 
 ## 事前条件
 
@@ -14,17 +14,16 @@ TASK-R001
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-R001(依存: P007,Q009)を読んだ
-- [x] `PLAN.md`の「Phase 20 — 10,000記事耐久試験」(stratified sampleの層一覧)を再確認した
-- [x] AskUserQuestionで実データ取得(1 chunk、約381MB)の承認を得て、実際に`.env`の認証情報でWikimedia Enterprise APIを認証し、jawiki namespace 0の最初のchunk(27,859記事、約2GB展開後)をローカルscratchpadへダウンロード・検証済み(git管理外、コミットしない)
-- [x] `wikiepwing.ingest.record_parser.parse_record`(既存のNDJSON→`RawArticle`パーサ)を再利用し、独自のNDJSONパースを再実装しない方針にした
-- [x] 実データ(著作権・ライセンス配慮が必要な実Wikipedia本文)はgitへコミットしない。テストは合成の小さいfixtureのみを使う
+- [x] `TASKS.md`のTASK-R002(依存: R001,I007)を読んだ
+- [x] `PLAN.md` 30(Full build前ゲート一覧の13項目)を再確認した
+- [x] `doctor.py`の`run_doctor`(環境面のCheckResultを既に多く提供している: architecture/python/locale/timezone/container/configuration/path/free_disk/tool)を確認し、これを土台として再利用する方針にした
+- [x] `PLAN.md` 30の項目のうち、「Phase 0〜20完了」「toolchain smoke green」「reference scan complete」「100記事Mini/Lite green」「10,000記事Lite green」「resume test green」「gaiji test green」「image security test green」「no network after acquire verified」は、実際にそれらのtest/smoke scriptを実行した結果を呼び出し側が知っている(このプロセス自身が判定できるものではない)ため、`test_suite_results: Mapping[str, bool]`として呼び出し側から注入する設計にした。オブジェクティブに検証可能な項目(`source lock concrete`・`profile settings fixed`・doctor既存check経由の`Docker disk capacity`/`logs/reports persistent`)はこの関数自身が直接検証する
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/sampling/__init__.py`(新規)
-- `src/wikiepwing/sampling/stratify.py`(新規: `ArticleSignals`, `compute_signals`, `StratifiedSample`, `select_stratified_sample`, `iter_raw_articles`, `build_stratified_sample_ndjson`, `write_sample_report`)
-- `tests/test_sampling_stratify.py`(新規、合成fixtureのみ)
+- `src/wikiepwing/doctor.py`(`CheckCategory`に`"release-gate"`追加)
+- `src/wikiepwing/preflight.py`(新規: `FULL_BUILD_GATE_ITEMS`, `run_full_build_preflight`)
+- `tests/test_preflight.py`(新規)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -32,31 +31,29 @@ TASK-R001
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_sampling_stratify.py
+uv run pytest tests/test_preflight.py
 make check
 git diff --check
-# 実データに対する検証(git管理外のscratchpadで実行)
-uv run python3 -c "..."  # build_stratified_sample_ndjsonを実際のchunkに対して実行
 ```
 
 ## 完了条件
 
-- [x] `compute_signals`が`RawArticle`からlong_article/table_heavy/image_heavy/math_heavy/disambiguation/list_article/history_or_literature/technical/rare_unicodeの各層を検出する(該当なしは`baseline`)
-- [x] `select_stratified_sample`が各非baseline層について`min_per_stratum`件を優先的に選び、残りをbaselineで`target_total`まで埋める、streaming可能な1パスアルゴリズムである
-- [x] `build_stratified_sample_ndjson`が実際のNDJSONファイルから選択された記事の生の行を新しいNDJSONファイルへ書き出す
-- [x] `write_sample_report`が`schema_version`/`total_scanned`/`total_selected`/層ごとの発見数・選択数を含むJSONレポートを書き出す
-- [x] 実際にダウンロード済みの実データ(jawiki namespace 0 chunk 0、27,859記事)に対して実行し、stratified sampleとreportが生成できることを確認した(git管理外)。実際の選択数は8,055件(target_total=10,000に対し、1 chunkのみではbaseline候補が尽きたため未達。詳細は実施結果参照)
+- [x] `run_full_build_preflight`が既存の`DoctorReport`のcheckに加え、`source_lock.snapshot_version`が`"latest"`という文字列そのものでないことを検証するcheckを追加する
+- [x] `config.profile`が`"mini"`/`"lite"`/`"full"`のいずれかであることを検証するcheckを追加する(config読み込み自体が既に強制しているため、ここでは防御的な再確認)
+- [x] 呼び出し側が渡した`test_suite_results`の各項目(`toolchain_smoke`/`reference_scan`/`hundred_article_mini`/`hundred_article_lite`/`ten_thousand_article_lite`/`resume_test`/`gaiji_test`/`image_security_test`/`no_network_after_acquire`)がそれぞれ`CheckResult`として結果に反映される
+- [x] `test_suite_results`に必須項目が欠けている場合は`fail`のCheckResultになる(黙って無視しない)
+- [x] 全てのrequired checkがpassした場合のみ`DoctorReport.ok`が`True`になる
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Full-build preflight gate(TASK-R002)
-- 実データ・生成したsample NDJSON・reportをgitへコミットすること(著作権・サイズの理由で対象外、コードとテストのみコミットする)
+- Full jawiki ingest(TASK-R003)
+- 実際にtoolchain smoke test等を実行してtest_suite_resultsを収集する自動化(呼び出し側の責務)
 
 ## 実施結果
 
-- `src/wikiepwing/sampling/stratify.py`(新規)に`compute_signals`(9つの非baseline層+baseline)・`select_stratified_sample`(1パスstreamingアルゴリズム)・`iter_raw_articles`・`build_stratified_sample_ndjson`・`write_sample_report`を実装した。既存の`ingest.record_parser.parse_record`を再利用し、NDJSONパースを再実装しなかった。
-- `tests/test_sampling_stratify.py`(新規20件、すべて合成fixture)で、各層の検出・複数層への同時該当・budget充足順序・target_total遵守・重複除去・NDJSON書き出し・reportフィールドを確認した。
-- `make check`(format-check/lint/mypy/pytest 1310件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
-- **実データでの検証**: AskUserQuestionでの承認に基づき、`.env`の実認証情報でWikimedia Enterprise APIへ実際に認証し(login経由)、jawiki namespace 0の最初の1 chunk(約381MB圧縮、展開後約2GB、27,859記事の実記事)を取得した(git管理外のscratchpadへ、コミットしていない)。取得したchunkに対して`build_stratified_sample_ndjson(target_total=10_000, min_per_stratum=500)`を実行し、約2分22秒で完走した: `total_scanned=27859`, `total_selected=8055`(target 10,000に対し未達。この1 chunkには「どの層にも該当しないbaseline記事」が4,929件しかなく、それを全て使い切っても8,055件までしか埋まらなかったため。9つの非baseline層それぞれ`min_per_stratum=500`件ずつ、重複除去後の合計選択数は約3,126件)。各層の実際の発見数: table_heavy=14797, image_heavy=7623, disambiguation=3908, long_article=3103, history_or_literature=1613, technical=663, math_heavy=464, rare_unicode=43, list_article=79。
-- 実データ・生成したsample NDJSON(約473MB)・reportはgitへコミットしていない(著作権・サイズの理由)。実行後、抽出した中間ファイル(展開済み2GB NDJSON)は削除し、ダウンロード済みsource.lock.json+chunkはscratchpad上に残した。
+- `doctor.py`の`CheckCategory`に`"release-gate"`を追加した。
+- `src/wikiepwing/preflight.py`(新規)に`FULL_BUILD_GATE_ITEMS`(9項目)・`run_full_build_preflight`を実装した。既存の`DoctorReport`のcheckに、`source_lock_concrete`(`build_source_lock`が既に`snapshot_version="latest"`を拒否するため実質的に防御的な再確認)・`profile_fixed`(config読み込みが既に強制)・9つのtest suite結果checkを追加する。
+- `tests/test_preflight.py`(新規7件)で、全passでのok・既存doctor checkの保持・非concreteなsource lockでのfail・test_suite_results欠落時のfail-closed・個別test失敗でのgate fail・全gate itemの反映・profile_fixed checkのpassを確認した。
+- `make check`(format-check/lint/mypy/pytest 1317件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
+- 「Phase 0〜20完了」「toolchain smoke green」等の実際にtest/smokeを実行したかどうかの判定は、このプロセス自身では検証できないため呼び出し側が注入する設計にした。

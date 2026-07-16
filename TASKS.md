@@ -807,7 +807,7 @@
 
 **依存:** P007,Q009
 
-### TASK-R002 [ ] Full-build preflight gate
+### TASK-R002 [x] Full-build preflight gate
 
 **依存:** R001,I007
 

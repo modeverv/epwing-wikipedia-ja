@@ -16,7 +16,9 @@ from typing import Literal, cast
 from wikiepwing.config import AppConfig, ConfigurationError, load_config
 from wikiepwing.reference.scanner import ReferencePathError, read_only_status
 
-type CheckCategory = Literal["environment", "configuration", "path", "storage", "tool"]
+type CheckCategory = Literal[
+    "environment", "configuration", "path", "storage", "tool", "release-gate"
+]
 type CheckStatus = Literal["pass", "warning", "fail"]
 
 
