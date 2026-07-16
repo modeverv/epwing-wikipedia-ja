@@ -847,7 +847,7 @@
 
 **依存:** I001
 
-### TASK-S002 [ ] Logical content hash
+### TASK-S002 [x] Logical content hash
 
 **依存:** H010,M007,O011
 

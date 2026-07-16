@@ -5785,3 +5785,38 @@ git diff --check
 **次タスク**
 
 - TASK-S002 Logical content hash(依存: H010,M007,O011)
+
+## 2026-07-16 TASK-S002 Logical content hash
+
+**目的**
+
+`ARCHITECTURE.md` 26.1(logical hash: entry/index/graphicのcanonical stream hash)を実装する。物理SHA-256(ZIP timestamp等に左右される)とは別の、順序非依存の安定したhashを計算する。
+
+**変更**
+
+- `src/wikiepwing/build_logical_hash.py`(新規): `compute_stream_set_hash`・`collect_build_streams`・`compute_logical_build_hash`
+- `tests/test_build_logical_hash.py`(新規11件)
+- `TASKS.md`(TASK-S002を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_build_logical_hash.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 順序非依存性・決定性・内容差異・境界曖昧さの排除・空入力・entries.jsonl/gaiji/graphics収集・再帰・欠落ディレクトリの無視を11件のテストで確認した。
+- 標準スイート1335件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `wikiepwing.model.logical_hash`(TASK-F008、Article単位のhash)とは別の関心事であるため、モジュール名・主要関数名を明確に分けた(`compute_stream_set_hash`/`compute_logical_build_hash`)。
+- テスト作成中、`collect_build_streams`のループ変数`(prefix, directory)`の順序を取り違えるバグを実際に検出・修正した(文字列`"gaiji"`を`Path`として扱おうとして`AttributeError`)。
+- EB indexバイナリ自体はDocker内`fpwmake`が生成するため対象外とした。
+
+**次タスク**
+
+- TASK-S003 Deterministic archive metadata(依存: H010)
