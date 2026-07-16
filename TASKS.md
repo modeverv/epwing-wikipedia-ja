@@ -871,7 +871,7 @@
 
 **依存:** A007
 
-### TASK-S008 [ ] Safe clean command
+### TASK-S008 [x] Safe clean command
 
 **依存:** S007
 

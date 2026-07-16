@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-S007
+TASK-S008
 
 ## 目的
 
-`PLAN.md` 29(月次更新ワークフロー、`wikiepwing disk-usage`コマンド)を実装する。`config.paths`配下の各ディレクトリ(sources/reference/work/cache/output/reports/logs)のディスク使用量を集計し、JSON/テキストで報告する`compute_disk_usage`と、それを呼び出す`disk-usage` CLIサブコマンドを実装する。
+`PLAN.md` 29(`wikiepwing clean --keep-runs 2`、出口条件「old outputを自動削除しない」)を実装する。`paths.work/runs/<run-id>/`配下の古い実行ディレクトリのみを対象とし(`paths.output`の最終成果物は対象外)、最新のN件を残して削除する`clean_old_runs`と、実際に削除する前に対象を確認できる`dry_run`オプションを実装する。
 
 ## 事前条件
 
@@ -14,15 +14,15 @@ TASK-S007
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-S007(依存: A007)を読んだ
-- [x] `PLAN.md` 29(`wikiepwing disk-usage`が引数なしで呼ばれる例)を再確認した
-- [x] `doctor.py`の`_free_disk_check`(`shutil.disk_usage`の使用パターン)・`AppConfig.paths`(sources/reference/work/cache/output/reports/logs)を確認した
+- [x] `TASKS.md`のTASK-S008(依存: S007)を読んだ
+- [x] `PLAN.md` 29(`wikiepwing clean --keep-runs 2`、「old outputを自動削除しない」という出口条件)を再確認した
+- [x] 削除は破壊的操作であるため、`dry_run`を実装し、実際の削除はCLIコマンドとしてユーザー自身が明示的に実行する場合のみ行われる設計にした(このタスク自体はテストのみで、実ディレクトリに対して削除を実行しない)
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/disk_usage.py`(新規: `PathUsage`, `DiskUsageReport`, `compute_disk_usage`)
-- `src/wikiepwing/cli.py`(`disk-usage`サブコマンド追加)
-- `tests/test_disk_usage.py`(新規)
+- `src/wikiepwing/clean.py`(新規: `find_removable_runs`, `clean_old_runs`)
+- `src/wikiepwing/cli.py`(`clean`サブコマンド追加、`--keep-runs`・`--dry-run`)
+- `tests/test_clean.py`(新規)
 - `tests/test_cli.py`(追記)
 - `TASKS.md`
 - `LOG.md`
@@ -31,28 +31,26 @@ TASK-S007
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_disk_usage.py tests/test_cli.py
+uv run pytest tests/test_clean.py tests/test_cli.py
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `compute_disk_usage`が`config.paths`の各named directory(sources/reference/work/cache/output/reports/logs)のバイト数を再帰的に集計する
-- [x] 存在しないディレクトリは`exists=False`・`size_bytes=0`になる(クラッシュしない)
-- [x] symlinkは二重計上しない
-- [x] `total_bytes`が各pathの合計と一致する
-- [x] `wikiepwing disk-usage`(引数なし)がJSON形式で結果を出力する
+- [x] `find_removable_runs`が`runs_dir`配下のディレクトリをmtime降順でsortし、最新`keep_runs`件を除いた残りを返す
+- [x] `runs_dir`が存在しない場合は空タプルを返す(クラッシュしない)
+- [x] `keep_runs`が負の場合は`ValueError`を送出する
+- [x] `clean_old_runs`が`dry_run=True`の場合は実際には削除せず、削除対象のリストのみ返す
+- [x] `clean_old_runs`が`dry_run=False`の場合は実際にディレクトリを削除する
+- [x] `wikiepwing clean --keep-runs N [--dry-run]`が`paths.work/runs`のみを対象にする(`paths.output`は触らない)
 - [x] `make check`が成功する
 
 ## 非対象
 
-- Safe clean command(TASK-S008、実際の削除操作)
-- Update command(TASK-S006)
+- Monthly update report(TASK-S009)
+- output保持ポリシー自体(「old outputを自動削除しない」という制約を満たすため、そもそも対象にしない)
 
 ## 実施結果
 
-- `src/wikiepwing/disk_usage.py`(新規)に`PathUsage`・`DiskUsageReport`・`compute_disk_usage`を実装した。`config.paths`の各named directoryを再帰的に集計し(symlinkは除外)、存在しないディレクトリは`exists=False`/`size_bytes=0`にする。
-- `cli.py`に`disk-usage`サブコマンド(引数なし、`--config`のみ)を追加した。
-- `tests/test_disk_usage.py`(新規7件)・`tests/test_cli.py`(新規2件)で、欠落ディレクトリ・存在するディレクトリの集計・再帰・symlink非二重計上・total_bytesの一致・JSON serializable・free_bytesの非負性・CLIのhelp/実行を確認した。
-- `make check`(format-check/lint/mypy/pytest 1353件、ImageMagick依存6件はローカル環境でskip)と`git diff --check`が成功した。
+`src/wikiepwing/clean.py`(新規)に`find_removable_runs`(mtime降順sort、`keep_runs`件を超える古いディレクトリを返す。`runs_dir`不在時は空タプル、`keep_runs<0`は`ValueError`)と`clean_old_runs`(`dry_run`オプション付き、実削除時は対象がシンボリックリンクでないことを確認してから`shutil.rmtree`)を実装した。`cli.py`に`clean`サブコマンド(`--keep-runs`必須, `--dry-run`フラグ)を追加し、`config.paths.work / "runs"`のみを対象にして`paths.output`には一切触れないようにした。`tests/test_clean.py`(8件)と`tests/test_cli.py`への追記(3件)を含め、`uv run ruff format .`/`uv run ruff check .`(2ファイル整形、全チェック成功)、`make check`(1364 passed, 6 skipped)、`git diff --check`が成功した。

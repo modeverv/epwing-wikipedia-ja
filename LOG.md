@@ -5879,3 +5879,33 @@ git diff --check
 **次タスク**
 
 - TASK-S008 Safe clean command(依存: S007)
+
+## 2026-07-16 TASK-S008 Safe clean command
+
+**目的**
+
+`PLAN.md` 29(`wikiepwing clean --keep-runs 2`、出口条件「old outputを自動削除しない」)を実装する。`paths.work/runs/<run-id>/`配下の古い実行ディレクトリのみを対象とし、最新のN件を残して削除する。
+
+**変更**
+
+- `src/wikiepwing/clean.py`(新規): `find_removable_runs`・`clean_old_runs`(`dry_run`オプション付き、シンボリックリンク拒否)
+- `src/wikiepwing/cli.py`: `clean`サブコマンド追加(`--keep-runs`必須, `--dry-run`)
+- `tests/test_clean.py`(新規8件)、`tests/test_cli.py`(新規3件)
+- `TASKS.md`(TASK-S008を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_clean.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- runs_dir不在時の空タプル・keep_runs負値のValueError・mtime降順での保持対象選定・keep_runs=0での全削除・keep_runs過大での削除なし・dry_runでの非削除・実削除・output配下への非干渉を8件のテストで確認した。
+- 標準スイート1364件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**次タスク**
+
+- TASK-S006 Update command(依存: D007,I006、両方完了済みのため着手可能) — S009はS006に依存するため先にS006を進める

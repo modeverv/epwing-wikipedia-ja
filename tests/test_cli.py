@@ -796,6 +796,46 @@ class CliTest(unittest.TestCase):
             self.assertTrue(work_usage["exists"])
             self.assertEqual(work_usage["size_bytes"], 42)
 
+    def test_clean_help(self) -> None:
+        result = self.run_cli("clean", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--keep-runs", result.stdout)
+        self.assertIn("--dry-run", result.stdout)
+
+    def test_clean_dry_run_does_not_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            work = temporary / "work"
+            runs = work / "runs"
+            (runs / "run-a").mkdir(parents=True)
+            (runs / "run-b").mkdir(parents=True)
+            config = temporary / "clean.toml"
+            config.write_text(f'[paths]\nwork = "{work}"\n', encoding="utf-8")
+
+            result = self.run_cli("clean", "--config", str(config), "--keep-runs", "0", "--dry-run")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("would remove", result.stdout)
+            self.assertTrue((runs / "run-a").is_dir())
+            self.assertTrue((runs / "run-b").is_dir())
+
+    def test_clean_removes_old_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            work = temporary / "work"
+            runs = work / "runs"
+            (runs / "run-a").mkdir(parents=True)
+            (runs / "run-b").mkdir(parents=True)
+            config = temporary / "clean.toml"
+            config.write_text(f'[paths]\nwork = "{work}"\n', encoding="utf-8")
+
+            result = self.run_cli("clean", "--config", str(config), "--keep-runs", "0")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((runs / "run-a").exists())
+            self.assertFalse((runs / "run-b").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

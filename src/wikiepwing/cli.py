@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import cast
 
 from wikiepwing import __version__
+from wikiepwing.clean import clean_old_runs
 from wikiepwing.config import load_config
 from wikiepwing.disk_usage import compute_disk_usage
 from wikiepwing.doctor import render_doctor_text, run_doctor
@@ -550,6 +551,27 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="additional TOML configuration applied after defaults",
     )
+    clean = subparsers.add_parser(
+        "clean", help="remove old paths.work/runs directories, keeping the most recent N"
+    )
+    clean.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=Path,
+        help="additional TOML configuration applied after defaults",
+    )
+    clean.add_argument(
+        "--keep-runs",
+        type=int,
+        required=True,
+        help="number of most-recently-modified run directories to keep",
+    )
+    clean.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="list what would be removed without deleting anything",
+    )
     return parser
 
 
@@ -1009,6 +1031,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_config(_default_config_path(), overrides)
         disk_usage_report = compute_disk_usage(config)
         print(json.dumps(disk_usage_report.payload(), ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    if command == "clean":
+        overrides = list(cast(list[Path], arguments.config))
+        environment_config = os.environ.get("WIKIEPWING_CONFIG")
+        if environment_config:
+            overrides.insert(0, Path(environment_config))
+        config = load_config(_default_config_path(), overrides)
+        keep_runs = cast(int, arguments.keep_runs)
+        if keep_runs < 0:
+            parser.error("--keep-runs must not be negative")
+        dry_run = cast(bool, arguments.dry_run)
+        removed = clean_old_runs(config.paths.work / "runs", keep_runs=keep_runs, dry_run=dry_run)
+        action = "would remove" if dry_run else "removed"
+        for run_dir in removed:
+            print(f"{action}: {run_dir}")
+        print(f"{action} {len(removed)} run(s)")
         return 0
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")
