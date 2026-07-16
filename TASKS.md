@@ -843,7 +843,7 @@
 
 ## EPIC S — Reproducibility and operations
 
-### TASK-S001 [ ] BUILD-INFO.json
+### TASK-S001 [x] BUILD-INFO.json
 
 **依存:** I001
 

@@ -5751,3 +5751,37 @@ git diff --check
 **次タスク**
 
 - TASK-R003 Full jawiki ingest(依存: R002) — 実データの全件(約1.4M記事、81 chunks、約30.9GB)取得が必要なため、実行前にユーザーへ確認する
+
+## 2026-07-16 TASK-S001 BUILD-INFO.json
+
+**目的**
+
+`ARCHITECTURE.md` 26.3/28.1・`DATA_CONTRACTS.md` 12を実装する。`SourceLock`の既存project/snapshot情報とstage manifestと同じ形の`software`ブロックを組み合わせたBUILD-INFO.jsonを構築・書き込む。
+
+**変更**
+
+- `src/wikiepwing/build_info.py`(新規): `SoftwareProvenance`・`build_build_info`・`write_build_info`
+- `tests/test_build_info.py`(新規8件)
+- `TASKS.md`(TASK-S001を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_build_info.py
+make check
+git diff --check
+```
+
+**結果**
+
+- SourceLockフィールドの取り込み・software provenance・None digestの許容・naive datetime拒否・JSON serializable・原子的書き込み・ディレクトリ自動作成を8件のテストで確認した。
+- 標準スイート1324件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+
+**判断・注意点**
+
+- `SourceLock`(project/snapshot_identifier/snapshot_version/date_modified)を再利用し、BUILD-INFO固有のfield抽出を重複実装しなかった。
+- `software`ブロックはDATA_CONTRACTS.md 3のStage manifestの`software`フィールドと同じ形(`git_commit`/`app_image_digest`/`toolchain_image_digest`)にし、provenance記録の一貫性を保った。
+
+**次タスク**
+
+- TASK-S002 Logical content hash(依存: H010,M007,O011)
