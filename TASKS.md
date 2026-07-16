@@ -875,7 +875,7 @@
 
 **依存:** S007
 
-### TASK-S009 [ ] Monthly update report
+### TASK-S009 [x] Monthly update report
 
 **依存:** S006
 

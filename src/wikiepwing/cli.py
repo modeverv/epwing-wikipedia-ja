@@ -35,6 +35,7 @@ from wikiepwing.media.orchestrate import (
 from wikiepwing.model.validate import ModelValidationLimits
 from wikiepwing.normalize.orchestrate import DEFAULT_BATCH_SIZE, run_normalize
 from wikiepwing.normalize.pipeline import NormalizeOptions
+from wikiepwing.pipeline.atomic_write import atomic_write_text
 from wikiepwing.pipeline.build import STAGE_ORDER, is_forced_stage, stages_from
 from wikiepwing.reference.entries import EbEntryAdapter, sample_reference_entries
 from wikiepwing.reference.inventory import (
@@ -43,6 +44,7 @@ from wikiepwing.reference.inventory import (
 )
 from wikiepwing.reference.report import write_reference_report
 from wikiepwing.reference.searches import EbSearchAdapter, run_reference_searches
+from wikiepwing.release_notes import render_release_notes
 from wikiepwing.render.generate import run_generate
 from wikiepwing.render.verify import verify_entries_jsonl
 from wikiepwing.secrets import load_enterprise_secrets
@@ -607,6 +609,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="update report output path (default: paths.reports/update-report.json)",
     )
     update.add_argument(
+        "--release-notes-path",
+        type=Path,
+        help="release notes Markdown output path (default: paths.reports/release-notes.md)",
+    )
+    update.add_argument(
         "--git-commit",
         type=str,
         help="git commit recorded in source.lock.json (default: `git rev-parse HEAD`)",
@@ -1145,8 +1152,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             config.paths.reports / "update-report.json"
         )
         write_update_report(update_report, report_path)
+        release_notes_path = cast(Path | None, arguments.release_notes_path) or (
+            config.paths.reports / "release-notes.md"
+        )
+        atomic_write_text(
+            release_notes_path, render_release_notes(update_report, project=config.project)
+        )
         print(result.lock_path)
         print(report_path)
+        print(release_notes_path)
         return 0
     if command is None and argv is not None and len(argv) > 0:
         parser.error(f"unsupported command: {command}")

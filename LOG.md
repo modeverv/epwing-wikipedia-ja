@@ -5940,3 +5940,34 @@ git diff --check
 **次タスク**
 
 - TASK-S009 Monthly update report(依存: S006、完了済みのため着手可能)
+
+## 2026-07-16 TASK-S009 Monthly update report
+
+**目的**
+
+`PLAN.md` 29(月次更新ワークフロー、「release notes」)を実装する。TASK-S006の`update-report.json`から人間が読めるMarkdown形式のrelease notesを生成する。
+
+**変更**
+
+- `src/wikiepwing/release_notes.py`(新規): `render_release_notes`(初回acquire/バージョン変更あり/なしの3パターン、chunk増減、`_human_size`によるB〜TB単位のサイズ表示)
+- `src/wikiepwing/cli.py`: `update`サブコマンドに`--release-notes-path`追加、`update-report.json`と併せて`release-notes.md`を書き出す
+- `tests/test_release_notes.py`(新規4件)、`tests/test_cli.py`(追記)
+- `TASKS.md`(TASK-S009を`[x]`に)、`CURRENT_TASK.md`
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_release_notes.py tests/test_cli.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 初回acquisition・バージョン変更あり(chunk追加/削除/変更数、サイズ差分の符号付き表示)・バージョン変更なし・大きい単位(MB)へのフォーマットを4件のテストで確認した。
+- 標準スイート1378件(ImageMagick依存6件はローカル環境でskip)、format-check、ruff lint、mypy strict、`git diff --check`が成功した。
+- これでEPIC S(Reproducibility and operations)のうちS004/S005(TASK-R006未完了のため保留)を除く全タスクが完了した。
+
+**次タスク**
+
+- EPIC T(Release documentation)のうち依存関係が揃っているタスクへ進む(TASK-T002はP003/Q006に依存、両方完了済みのため着手可能)

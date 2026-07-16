@@ -846,6 +846,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--previous-lock-path", result.stdout)
         self.assertIn("--report-path", result.stdout)
+        self.assertIn("--release-notes-path", result.stdout)
         self.assertIn("--snapshot-version", result.stdout)
 
 
