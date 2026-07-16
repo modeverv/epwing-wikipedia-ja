@@ -410,3 +410,71 @@ def test_manifest_status_is_failed_when_a_chunk_fails_mid_run(tmp_path: Path) ->
         )
 
     assert read_manifest_status(manifest_path) == "failed"
+
+
+def test_ingest_accepts_an_ndjson_line_larger_than_the_tar_readers_own_default(
+    tmp_path: Path,
+) -> None:
+    # A single article whose html field alone is ~9 MiB: larger than
+    # tar_reader.DEFAULT_MAX_LINE_BYTES (8 MiB) but well within the configured
+    # ingest.max_html_bytes (64 MiB), so it must be accepted rather than aborting
+    # the whole chunk (this reproduces a real full-jawiki-Snapshot ingest failure).
+    record = {
+        "identifier": 900101,
+        "name": "Large Article",
+        "url": "https://ja.wikipedia.org/wiki/Large_Article",
+        "namespace": {"identifier": 0},
+        "in_language": {"identifier": "ja"},
+        "is_part_of": {"identifier": "jawiki"},
+        "date_modified": "2026-06-01T00:00:00Z",
+        "version": {"identifier": 2000001},
+        "article_body": {
+            "html": "<p>" + ("a" * (9 * 1024 * 1024)) + "</p>",
+            "wikitext": "large article",
+        },
+        "license": [
+            {
+                "identifier": "CC-BY-SA-4.0",
+                "name": "Creative Commons Attribution-ShareAlike License 4.0",
+                "url": "https://creativecommons.org/licenses/by-sa/4.0/",
+            }
+        ],
+        "redirects": [],
+        "categories": [],
+        "templates": [],
+    }
+    line = (json.dumps(record, ensure_ascii=False) + "\n").encode("utf-8")
+    tar_path = tmp_path / "downloads" / "chunk_0.tar.gz"
+    tar_path.parent.mkdir(parents=True)
+    with tarfile.open(tar_path, mode="w:gz") as archive:
+        info = tarfile.TarInfo(name="chunk_0.ndjson")
+        info.size = len(line)
+        archive.addfile(info, io.BytesIO(line))
+
+    acquired = register_local_source(
+        [LocalSourceFile(source_path=tar_path, chunk_identifier="jawiki_namespace_0_chunk_0")],
+        project="jawiki",
+        namespace=0,
+        snapshot_identifier="jawiki_namespace_0",
+        snapshot_version="test-2026-07-14",
+        date_modified=datetime(2026, 7, 14, tzinfo=UTC),
+        sources_root=tmp_path / "sources",
+        acquirer_name="wikiepwing",
+        acquirer_version="0.1.0",
+        acquirer_git_commit="abc1234",
+    )
+
+    result = run_ingest(
+        acquired.lock,
+        snapshot_directory=acquired.snapshot_directory,
+        raw_database_path=tmp_path / "work" / "raw.sqlite3",
+        migrations_path=MIGRATIONS,
+        manifest_path=tmp_path / "manifests" / "30-ingest.json",
+        run_id="test-run",
+        validation_limits=_limits(),
+    )
+
+    assert result.manifest.status == "complete"
+    assert result.manifest.metrics.records_read == 1
+    assert result.manifest.metrics.records_written == 1
+    assert result.manifest.metrics.records_rejected == 0

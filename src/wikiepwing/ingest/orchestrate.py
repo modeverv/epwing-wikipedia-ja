@@ -315,6 +315,17 @@ def _build_manifest(
     )
 
 
+_NDJSON_OVERHEAD_BYTES = 8 * 1024 * 1024
+
+
+def _max_ndjson_line_bytes(limits: ValidationLimits) -> int:
+    """Bound the raw NDJSON line reader generously enough that oversized html/wikitext
+    fields reach `validate_article`'s configurable reject policy instead of aborting the
+    whole chunk at the tar-streaming layer (real Enterprise Snapshot articles can produce
+    an html field close to `max_html_bytes` on a single line)."""
+    return limits.max_html_bytes + limits.max_wikitext_bytes + _NDJSON_OVERHEAD_BYTES
+
+
 def _ingest_chunk(
     chunk_path: Path,
     *,
@@ -324,7 +335,9 @@ def _ingest_chunk(
     batch_size: int,
     on_progress: Callable[[IngestMetrics], None] | None,
 ) -> None:
-    numbered_lines: Iterator[tuple[int, bytes]] = enumerate(iter_ndjson_lines(chunk_path))
+    numbered_lines: Iterator[tuple[int, bytes]] = enumerate(
+        iter_ndjson_lines(chunk_path, max_line_bytes=_max_ndjson_line_bytes(validation_limits))
+    )
     while True:
         group = list(itertools.islice(numbered_lines, batch_size))
         if not group:
