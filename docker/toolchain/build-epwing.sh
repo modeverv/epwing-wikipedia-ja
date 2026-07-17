@@ -40,6 +40,20 @@ if [ -n "$gaiji_dir" ] && [ ! -d "$gaiji_dir" ]; then
     exit 1
 fi
 
+# `docker run -v` only treats its host side as a bind mount when it looks
+# like a path (leading `/`, `./`, or a drive letter); a bare relative
+# filename like "entries-mini.jsonl" is instead parsed as a *named volume*,
+# silently mounting an empty directory at the container path instead of the
+# real file. Resolve every host path passed to `-v` to an absolute path
+# before it gets there.
+entries=$(CDPATH= cd "$(dirname "$entries")" && pwd)/$(basename "$entries")
+if [ -n "$graphics_dir" ]; then
+    graphics_dir=$(CDPATH= cd "$graphics_dir" && pwd)
+fi
+if [ -n "$gaiji_dir" ]; then
+    gaiji_dir=$(CDPATH= cd "$gaiji_dir" && pwd)
+fi
+
 script_directory=$(CDPATH= cd "$(dirname "$0")" && pwd)
 work_directory=$(mktemp -d)
 trap 'rm -rf "$work_directory"' EXIT HUP INT TERM

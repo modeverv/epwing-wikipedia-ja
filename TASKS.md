@@ -936,3 +936,9 @@
 **依存:** T010
 
 ユーザー依頼により追加。TASK-T010で並列化・limitモードを追加した`image-fetch`が、`acquire`と同様に実行中の進捗を一切出力しないため「動いているのか分からない」状態だった。`fetch_media`にURL1件完了ごとの進捗コールバック(`FetchProgress`: completed/total/succeeded/failed)を追加し、CLIで標準エラー出力に表示するようにする。並列実行時は完了順(plan順ではない)でコールバックが呼ばれるが、返り値の`tuple`は従来通りplan順を維持する。
+
+### TASK-T012 [x] Fix build-epwing.sh relative-path bind mount bug
+
+**依存:** T007
+
+ユーザーが実際に`make build-epwing`を実行した際、`cp: -r not specified; omitting directory '/input/entries.jsonl'`というエラーで失敗した。原因は`docker run -v`の仕様: ホスト側パスが`/`や`./`で始まらない相対パス(例: `entries-mini.jsonl`)の場合、Dockerはこれをbind mountではなく名前付きボリュームとして解釈し、空のディレクトリを作ってマウントしてしまう。`build-epwing.sh`内で`entries`/`graphics_dir`/`gaiji_dir`を`docker run -v`に渡す前に絶対パスへ解決するよう修正した。実際に`hundred_articles.ndjson`フィクスチャから生成した100記事entries.jsonlを相対パスで指定してビルドし、`ebinfo`・`wikiepwing-eb-search`での検索成功まで確認済み。

@@ -6647,3 +6647,36 @@ git diff --check
 - なし(TASKS.mdの全タスクが完了)
 - 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
 - ユーザーが依頼した場合のみ: `generate`ステージの3層メモリ蓄積問題(30-40GB)の改善
+
+## 2026-07-17 TASK-T012 Fix build-epwing.sh relative-path bind mount bug
+
+**目的**
+
+ユーザーが実際に`make build-epwing`(ENTRIES=entries-mini.jsonlのような相対パス)を実行したところ、`cp: -r not specified; omitting directory '/input/entries.jsonl'`で失敗した。原因を特定し修正する。
+
+**変更**
+
+- `docker/toolchain/build-epwing.sh`: `entries`/`graphics_dir`/`gaiji_dir`を、存在チェック直後・`docker run -v`に渡す前に絶対パスへ解決するコードを追加した(`entries=$(CDPATH= cd "$(dirname "$entries")" && pwd)/$(basename "$entries")`、ディレクトリは`$(CDPATH= cd "$dir" && pwd)`)
+- `TASKS.md`(TASK-T012追加)
+
+**実行コマンド**
+
+```bash
+# 実際にバグを再現・修正確認(100記事フィクスチャをPythonパイプラインで生成し、相対パスで指定)
+sh docker/toolchain/build-epwing.sh wikiepwing-toolchain:dev entries-verify-test.jsonl output/verify-test.epwing.zip "" "" "検証用百科事典"
+docker run --rm -v <extracted>:/book:ro --entrypoint /opt/eb/bin/wikiepwing-eb-search wikiepwing-toolchain:dev /book word "Emacs" 5
+git diff --check
+```
+
+**結果**
+
+- 原因: `docker run -v`は、ホスト側パスが`/`・`./`・ドライブレターで始まらない場合(単なる相対ファイル名など)、bind mountではなく名前付きボリュームとして解釈する。存在しない名前のボリュームは自動的に空のディレクトリとして作成されるため、`/input/entries.jsonl`が実際にはファイルではなく空ディレクトリになり、`cp`(非再帰)が失敗していた。
+- 修正後、`tests/fixtures/enterprise/hundred_articles.ndjson`から実際にPythonパイプライン(register-local-source→ingest→normalize→generate)で生成した100記事分のentries.jsonlを相対パスで指定してビルドし、EPWINGパッケージが正しく生成され、`ebinfo`でタイトル表示・`wikiepwing-eb-search`で"Emacs"の検索が実際にヒットすることを確認した(ユーザーが遭遇したのと同じ相対パスの使い方で再現・検証)。
+- シェルスクリプトのみの変更のため`make check`(Pythonテスト)には影響なし。`git diff --check`が成功することを確認した。
+- ユーザーの環境で生成された実際の`entries-mini.jsonl`(約150万記事)の先頭50件で試したところ、このバグとは別に`invalid character: \x8f`という`freepwing_build_entries.pl`のエンコーディングエラーが発生した。これは今回のバグとは無関係で、gaiji(外字)ディレクトリを指定していない状態でJIS X 0208外の文字を含む実データを処理しようとしたため起きたと見られる。全件規模でのビルド(画像・gaiji付き)は別途ユーザー側での検証が必要。
+
+**次タスク**
+
+- なし(TASKS.mdの全タスクが完了)
+- ユーザーへ報告: 全件規模の`entries-mini.jsonl`をgaijiディレクトリなしでビルドすると`invalid character`エラーが出る可能性がある(gaiji生成済みディレクトリを`GAIJI_DIR`に渡す必要がある)
+- 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
