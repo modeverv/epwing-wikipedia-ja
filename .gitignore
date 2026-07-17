@@ -9,3 +9,4 @@ reports/
 data/
 .env
 .DS_Store
+entries-*.jsonl
