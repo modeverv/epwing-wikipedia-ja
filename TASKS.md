@@ -903,6 +903,6 @@
 
 **依存:** O010,R009
 
-### TASK-T006 [ ] v1.0 release checklist
+### TASK-T006 [x] v1.0 release checklist
 
 **依存:** S005,T001-T005

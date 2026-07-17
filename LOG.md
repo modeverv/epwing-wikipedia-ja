@@ -6437,3 +6437,31 @@ git diff --check
 **次タスク**
 
 - TASK-T006 v1.0 release checklist(依存: S005,T001-T005、すべて完了済み)
+
+## 2026-07-17 TASK-T006 v1.0 release checklist
+
+**目的**
+
+PLAN.md 31(v1.0 Definition of Done)の各項目を、実データ検証結果(EPIC R/S)とコード確認に基づいて評価し、`RELEASE_CHECKLIST.md`としてまとめる。
+
+**変更**
+
+- `RELEASE_CHECKLIST.md`(新規): Build/Content/Quality/Reproducibility/Documentationの5カテゴリすべての項目評価
+- `README.md`: 読む順・想定リポジトリ構成に追加
+
+**実行コマンド**
+
+```bash
+make check
+git diff --check
+```
+
+**結果**
+
+- 強く検証済み(source lock、resume、プロファイル生成、logical hashes)、部分的(画像/数式の全件検証、EPWINGバイナリの全件ビルド、reference比較の全件実測)、それぞれの根拠を記載した。
+- コード確認により3件の未実装ギャップを新たに発見・記録した: (1) 検索語budget(`apply_search_budgets`)がパイプラインに未配線、(2) `BUILD-INFO.json`生成がCLIから未呼び出し、(3) Docker image digestの計算・記録が未実装。
+- コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- これでEPIC T(Release documentation、TASK-T001〜T006)がすべて完了した。TASKS.md全体を確認し、残る未完了タスクがあるか棚卸しする

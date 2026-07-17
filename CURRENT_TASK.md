@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-T005
+TASK-T006
 
 ## 目的
 
-`TASKS.md`のTASK-T005(Licensing/attribution guide、依存: O010,R009完了済み)を実施する。プログラム自体のライセンスと、生成辞書に含まれるWikipedia本文・画像のライセンスが別であることを明確にし、実装済みの帰属情報の仕組み(TASK-O010の`MediaAttribution`モデル、`licenses`/`article_licenses`テーブル、TASK-S001の`BUILD-INFO.json`)と、まだ実装されていない部分(`distribution.include_attribution_appendix`は設定検証のみで、実際のappendixファイル生成コードは無い)を正直に区別して`LICENSING.md`にまとめる。
+`TASKS.md`のTASK-T006(v1.0 release checklist、依存: S005,T001-T005すべて完了済み)を実施する。PLAN.md 31(v1.0 Definition of Done)の各項目を、このセッションで実際に検証済みの内容(EPIC R/S、TASK-T001〜T005)とコードの実際の状態(grepで確認)に照らして正直に評価し、`RELEASE_CHECKLIST.md`としてまとめる。
 
 ## 事前条件
 
@@ -14,40 +14,43 @@ TASK-T005
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-T005(依存: O010,R009、両方完了済み)を読んだ
-- [x] `src/wikiepwing/media/attribution.py`(TASK-O010)の`MediaAttribution`/`is_licensed`を確認した
-- [x] `migrations/raw/001_initial.sql`の`licenses`/`article_licenses`テーブル(記事本文のライセンス情報)を確認した
-- [x] `src/wikiepwing/config.py`で`distribution.include_attribution_appendix`が`mode=public`時の設定検証としてのみ存在し(`334行目`)、実際にappendixファイルを生成するコードがリポジトリ全体を検索しても存在しないことを確認した(grepで新規実装が無いことを確認)
-- [x] README.mdの既存「ライセンス」セクション(プログラムライセンスと生成辞書のライセンスは別、という方針)と重複せず、その詳細版として位置づける
+- [x] `TASKS.md`のTASK-T006(依存: S005,T001-T005、すべて完了済み)を読んだ
+- [x] `PLAN.md` 31(Build/Content/Quality/Reproducibility/Documentationの5カテゴリ)を項目ごとに評価する方針にした
+- [x] `BUILD-INFO.json`生成関数(`build_build_info`/`write_build_info`)がCLIのどこからも呼ばれていないこと、`app_image_digest`/`toolchain_image_digest`が常に`None`であることをgrepで確認した(Reproducibilityカテゴリの評価に反映)
+- [x] `distribution.include_attribution_appendix`が設定検証のみで実装が無いこと(TASK-T005で確認済み)をDocumentation/Reproducibilityカテゴリの評価に反映する
 
 ## 変更予定ファイル
 
-- `LICENSING.md`(新規)
-- `README.md`(読む順に追加、既存の「ライセンス」セクションから`LICENSING.md`への参照を追加)
+- `RELEASE_CHECKLIST.md`(新規)
+- `README.md`(読む順に追加)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
 
 ## 実行予定コマンド
 
-なし(ドキュメントのみ)
+なし(ドキュメントのみ。必要に応じて既存実装の有無をgrepで確認する)
 
 ## 完了条件
 
-- [x] `LICENSING.md`にプログラム自体のライセンス(MIT)と生成辞書のコンテンツライセンス(Wikipedia本文・画像)が別であることを明記した
-- [x] `LICENSING.md`に実装済みの帰属情報の仕組み(`MediaAttribution`、`licenses`/`article_licenses`テーブル、`BUILD-INFO.json`)を記載した
-- [x] `LICENSING.md`に未実装の部分(attribution appendixの自動生成)を正直に明記した
-- [x] `README.md`の「ライセンス」セクションから`LICENSING.md`への導線を追加した
+- [x] `RELEASE_CHECKLIST.md`にPLAN.md 31の5カテゴリすべての項目を記載した
+- [x] 各項目について「done」「partial」「not done」を実データ検証結果・コード確認に基づいて判定した
+- [x] 未実装・未検証の項目(BUILD-INFO.jsonの生成未配線、Docker digestの未計算、attribution appendixの未実装、全件規模でのEPWINGバイナリビルド未実施等)を隠さず明記した
+- [x] `README.md`から`RELEASE_CHECKLIST.md`への導線を追加した
 
 ## 非対象
 
-- `distribution.include_attribution_appendix`の実装自体(本タスクはドキュメントのみ)
-- v1.0 release checklist(TASK-T006)
+- 未実装項目の実装自体(本タスクは評価・記録のみ)
 
 ## 実施結果
 
-`LICENSING.md`(新規)を作成した。プログラムのライセンス(MIT)、コンテンツライセンス(本文: Wikimedia Enterprise Snapshotの`license`フィールド→`licenses`/`article_licenses`テーブル→`model.sqlite3`の`source_license_ids`という実装済みの流れ、画像: TASK-O010の`MediaAttribution`モデルと`images.missing_license_action`設定)、`BUILD-INFO.json`(TASK-S001)の6セクションで構成した。
+`RELEASE_CHECKLIST.md`(新規)を作成し、PLAN.md 31の5カテゴリ(Build/Content/Quality/Reproducibility/Documentation)すべての項目を✅done/🟡partial/❌not doneで評価した。
 
-DATA_CONTRACTS.md 11のパッケージ内部構成(`LICENSES.txt`/`ATTRIBUTION.txt`/`attribution.jsonl`)と`config.py`のコードを突き合わせ、`distribution.include_attribution_appendix`が現状「`mode=public`時に`true`必須」という設定検証としてのみ存在し、実際にappendixファイルを生成するコードはリポジトリ全体に存在しないことを確認し、正直に明記した(推測ではなくgrepでの確認に基づく)。公開配布前にはこの未実装部分を先に実装するか手動でライセンス表示を作成する必要があることを明記した。
+強く検証済みの項目(source lock、resume、Mini/Lite/Full生成、logical hashesなど)はEPIC R/Sでの実データ全件規模・複数環境での検証結果を根拠とした。部分的な項目(画像/数式の全件検証、EPWINGバイナリの全件ビルド、reference/compatibility比較の全件実測)はスコープが縮小されている理由(rate limit、実行時間等)を明記した。
 
-`README.md`の既存「ライセンス」セクションから`LICENSING.md`への導線を追加し、読む順・想定リポジトリ構成にも追加した。コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。
+コード確認により新たに発見した3件の未実装ギャップを明記した:
+1. 検索語budget(TASK-Q005の`apply_search_budgets`)が`normalize`/`generate`のどこからも呼ばれていない(grepで確認) — Mini/Lite/Fullの`search`設定が実質的にentries.jsonlへ反映されない
+2. `BUILD-INFO.json`生成関数(TASK-S001)がCLIのどこからも呼ばれていない
+3. Docker image digest(`app_image_digest`/`toolchain_image_digest`)を計算・記録するコードが存在しない(常に`None`)
+
+これらはTASK-T005で発見したattribution appendix未実装と合わせて、v1.0リリース前に対応が必要なギャップとして「まとめ」セクションに整理した。`README.md`の読む順と想定リポジトリ構成に追加した。コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。
