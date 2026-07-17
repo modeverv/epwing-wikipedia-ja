@@ -12,6 +12,7 @@ from wikiepwing.media.cache import MediaCache
 from wikiepwing.media.downloader import MediaDownloadError, MediaDownloadResult
 from wikiepwing.media.orchestrate import (
     FetchOutcome,
+    FetchProgress,
     MediaPlanEntry,
     convert_media,
     fetch_media,
@@ -280,6 +281,73 @@ def test_fetch_media_rejects_negative_limit() -> None:
 
     with pytest.raises(ValueError, match="limit"):
         fetch_media(plan, downloader=downloader, max_pixels=10_000, allow_svg=True, limit=-1)  # type: ignore[arg-type]
+
+
+def test_fetch_media_reports_progress_sequentially() -> None:
+    urls = [f"https://example.org/{index}.png" for index in range(3)]
+    downloader = _FakeDownloader(
+        results_by_url={
+            url: MediaDownloadResult(content=_png_bytes(), content_type="image/png") for url in urls
+        }
+    )
+    plan = tuple(MediaPlanEntry(page_id=index, media=_media(url)) for index, url in enumerate(urls))
+    events: list[FetchProgress] = []
+
+    fetch_media(
+        plan,
+        downloader=downloader,  # type: ignore[arg-type]
+        max_pixels=10_000,
+        allow_svg=True,
+        on_progress=events.append,
+    )
+
+    assert [event.completed for event in events] == [1, 2, 3]
+    assert [event.total for event in events] == [3, 3, 3]
+    assert events[-1].succeeded == 3
+    assert events[-1].failed == 0
+
+
+def test_fetch_media_reports_progress_with_multiple_workers() -> None:
+    urls = [f"https://example.org/{index}.png" for index in range(6)]
+    downloader = _FakeDownloader(
+        results_by_url={
+            url: MediaDownloadResult(content=_png_bytes(), content_type="image/png") for url in urls
+        }
+    )
+    plan = tuple(MediaPlanEntry(page_id=index, media=_media(url)) for index, url in enumerate(urls))
+    events: list[FetchProgress] = []
+
+    fetch_media(
+        plan,
+        downloader=downloader,  # type: ignore[arg-type]
+        max_pixels=10_000,
+        allow_svg=True,
+        max_workers=3,
+        on_progress=events.append,
+    )
+
+    assert [event.completed for event in events] == list(range(1, 7))
+    assert events[-1].succeeded == 6
+    assert events[-1].failed == 0
+
+
+def test_fetch_media_progress_counts_failures() -> None:
+    downloader = _FakeDownloader(
+        results_by_url={"https://example.org/a.png": MediaDownloadError("boom")}
+    )
+    plan = (MediaPlanEntry(page_id=1, media=_media("https://example.org/a.png")),)
+    events: list[FetchProgress] = []
+
+    fetch_media(
+        plan,
+        downloader=downloader,  # type: ignore[arg-type]
+        max_pixels=10_000,
+        allow_svg=True,
+        on_progress=events.append,
+    )
+
+    assert events[-1].succeeded == 0
+    assert events[-1].failed == 1
 
 
 @_requires_imagemagick

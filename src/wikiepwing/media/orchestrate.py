@@ -29,9 +29,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -104,6 +103,16 @@ class FetchOutcome:
         return self.content is not None
 
 
+@dataclass(frozen=True, slots=True)
+class FetchProgress:
+    """Reported once per completed URL, in completion order (not `plan` order)."""
+
+    completed: int
+    total: int
+    succeeded: int
+    failed: int
+
+
 def fetch_media(
     plan: Sequence[MediaPlanEntry],
     *,
@@ -112,6 +121,7 @@ def fetch_media(
     allow_svg: bool,
     max_workers: int = 1,
     limit: int | None = None,
+    on_progress: Callable[[FetchProgress], None] | None = None,
 ) -> tuple[FetchOutcome, ...]:
     """Download and validate each unique `source_url` in `plan`, once each.
 
@@ -127,6 +137,12 @@ def fetch_media(
     (in `plan` order) rather than every one -- useful for exercising the rest
     of the pipeline (convert, generate, EPWING build) end-to-end without
     waiting for a full-scale fetch to finish first.
+
+    `on_progress`, if set, is called once per URL as it finishes -- in
+    completion order, which with `max_workers > 1` is not `plan` order --
+    so a long fetch run has visible progress instead of going silent for
+    however long the whole run takes. The returned tuple is still in `plan`
+    order regardless of how URLs completed.
     """
     if max_workers < 1:
         raise ValueError("max_workers must be positive")
@@ -147,12 +163,46 @@ def fetch_media(
     fetch_one = partial(
         _fetch_one, downloader=downloader, max_pixels=max_pixels, allow_svg=allow_svg
     )
-    executor_context = (
-        ThreadPoolExecutor(max_workers=max_workers) if max_workers > 1 else nullcontext()
-    )
-    with executor_context as executor:
-        mapper = executor.map if executor is not None else map
-        return tuple(mapper(fetch_one, unique_urls))
+    total = len(unique_urls)
+
+    if max_workers == 1:
+        outcomes: list[FetchOutcome] = []
+        succeeded = 0
+        for url in unique_urls:
+            outcome = fetch_one(url)
+            outcomes.append(outcome)
+            succeeded += 1 if outcome.ok else 0
+            if on_progress is not None:
+                on_progress(
+                    FetchProgress(
+                        completed=len(outcomes),
+                        total=total,
+                        succeeded=succeeded,
+                        failed=len(outcomes) - succeeded,
+                    )
+                )
+        return tuple(outcomes)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_by_url = {executor.submit(fetch_one, url): url for url in unique_urls}
+        outcome_by_url: dict[str, FetchOutcome] = {}
+        completed = 0
+        succeeded = 0
+        for future in as_completed(future_by_url):
+            outcome = future.result()
+            outcome_by_url[future_by_url[future]] = outcome
+            completed += 1
+            succeeded += 1 if outcome.ok else 0
+            if on_progress is not None:
+                on_progress(
+                    FetchProgress(
+                        completed=completed,
+                        total=total,
+                        succeeded=succeeded,
+                        failed=completed - succeeded,
+                    )
+                )
+        return tuple(outcome_by_url[url] for url in unique_urls)
 
 
 def _fetch_one(

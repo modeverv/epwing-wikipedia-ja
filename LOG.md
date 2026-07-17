@@ -6611,3 +6611,39 @@ git diff --check
 - なし(TASKS.mdの全タスクが完了)
 - 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
 - ユーザーが依頼した場合のみ: `generate`ステージの3層メモリ蓄積問題(30-40GB)の改善
+
+## 2026-07-17 TASK-T011 Image fetch progress reporting
+
+**目的**
+
+ユーザー依頼。TASK-T010で並列化・limitモードを追加した`image-fetch`が、実行中の進捗を一切出力せず「動いているのか分からない」という状態だった(acquireで過去に遭遇したのと同じ問題)。`fetch_media`にURL1件完了ごとの進捗コールバックを追加し、CLIで標準エラー出力に表示するようにする。
+
+**変更**
+
+- `src/wikiepwing/media/orchestrate.py`: `FetchProgress`(completed/total/succeeded/failed)を追加。`fetch_media`に`on_progress`引数を追加。逐次実行時はURL完了ごとに、並列実行時は`concurrent.futures.as_completed`でURLが実際に完了した順(plan順ではない)にコールバックを呼ぶ。返り値の`tuple`は従来通りplan順(ユニークURL抽出順)を維持する
+- `src/wikiepwing/cli.py`: `image-fetch`コマンドで`on_progress`をstderrへの`print`に接続(`fetch N/M succeeded=X failed=Y`形式)
+- `tests/test_media_orchestrate.py`: 逐次実行時の進捗順序・並列実行時の進捗イベント数・失敗のカウントを検証するテスト3件追加
+- `TASKS.md`(TASK-T011追加)
+
+**実行コマンド**
+
+```bash
+uv run mypy src
+uv run ruff format .
+uv run ruff check .
+uv run pytest tests/test_media_orchestrate.py -q
+make check
+git diff --check
+```
+
+**結果**
+
+- `make check`(1410 passed、+3件)、`uv run mypy src`(138ファイル、エラーなし)、`git diff --check`が成功することを確認した。
+- 並列実行時は`ThreadPoolExecutor`のfutureを`as_completed`で拾うことで、実際にダウンロードが終わった順にリアルタイムで進捗を報告できるようにした(`executor.map`のままだと先頭のURLが遅いと後続の速い完了が報告されずに進捗が止まって見える問題を避けた)。最終的な返り値の順序はplan順のまま変えていない。
+- 既存のacquire/normalize/generateと同じ「stderrへの進捗print」パターンに合わせた。
+
+**次タスク**
+
+- なし(TASKS.mdの全タスクが完了)
+- 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
+- ユーザーが依頼した場合のみ: `generate`ステージの3層メモリ蓄積問題(30-40GB)の改善

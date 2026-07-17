@@ -930,3 +930,9 @@
 **依存:** T009
 
 ユーザー依頼により追加。`image-fetch`が`upload.wikimedia.org`への完全逐次ダウンロードで、全件(約250万ユニークURL)実行すると4〜12日かかる見積もり([RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md))だった。相手サーバーに迷惑をかけない範囲(既定4並列)で`ThreadPoolExecutor`による並列ダウンロードに対応し(ネットワークI/Oのため、normalizeのプロセスプールと違いスレッドプールを使用)、加えて「画像が不足した状態で一旦EPWINGビルドを最後まで通して動かしてみたい」という要望に応えるため、先頭N件のユニークURLを取得した時点で打ち切る`--limit`オプションを追加した。`config`の`[images]`に`fetch_concurrency`(既定4)を新設。並列時も出力順序(plan順)が逐次実行時と一致することをテストで検証済み。
+
+### TASK-T011 [x] Image fetch progress reporting
+
+**依存:** T010
+
+ユーザー依頼により追加。TASK-T010で並列化・limitモードを追加した`image-fetch`が、`acquire`と同様に実行中の進捗を一切出力しないため「動いているのか分からない」状態だった。`fetch_media`にURL1件完了ごとの進捗コールバック(`FetchProgress`: completed/total/succeeded/failed)を追加し、CLIで標準エラー出力に表示するようにする。並列実行時は完了順(plan順ではない)でコールバックが呼ばれるが、返り値の`tuple`は従来通りplan順を維持する。

@@ -1081,6 +1081,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             allow_svg=cast(bool, images_section["allow_svg"]),
             max_workers=concurrency,
             limit=cast(int | None, arguments.limit),
+            on_progress=lambda progress: print(
+                f"fetch {progress.completed}/{progress.total} "
+                f"succeeded={progress.succeeded} failed={progress.failed}",
+                file=sys.stderr,
+            ),
         )
         write_fetch_report(
             outcomes,
