@@ -1,0 +1,12 @@
+schema_version = 1
+project = "jawiki"
+profile = "lite"
+
+[paths]
+sources = "../data/sources"
+reference = "../data/reference"
+work = "../data/work"
+cache = "../data/cache"
+output = "../data/output"
+reports = "../data/reports"
+logs = "../data/logs"
