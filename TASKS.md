@@ -984,3 +984,9 @@
 **依存:** T018
 
 ユーザーが`generate`実行後に大量の生成物がGit管理候補へ現れたことを報告した。`.gitignore`の履歴を確認し、リポジトリ直下へ既定出力される`gaiji/`、`gaiji.sqlite3`、`unicode-report.json`を、ソースの`src/wikiepwing/gaiji/`へ影響しないroot限定パターンで除外する。
+
+### TASK-T020 [x] Enforce FreePWING gaiji capacity and complete the full build
+
+**依存:** T019
+
+全件`generate`が半角26,837・全角113,761の外字を生成した一方、FreePWINGは各幅8,192文字までしか定義できず、`fpwhalfchar`が`define too many characters`で停止した。各幅で使用頻度上位8,192文字だけを決定的に外字化し、残りを明示的なUnicodeコードポイント表記へフォールバックして、実EPWING ZIPの生成・検証まで行う。

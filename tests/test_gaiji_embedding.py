@@ -13,6 +13,8 @@ from wikiepwing.gaiji.unrepresentable import UnrepresentableTracker
 _SS3_KANJI = "丂"
 # East Asian Wide by Unicode's east_asian_width property.
 _WIDE_KANJI = "蔦"
+# Common compatibility ideograph that is not representable in JIS X 0208.
+_WIDE_GAIJI = "髙"
 
 
 def test_gaiji_width_class_classifies_wide_kanji_as_wide() -> None:
@@ -44,11 +46,45 @@ def test_plan_gaiji_codes_counts_every_occurrence() -> None:
     assert plan.usage_counts[_SS3_KANJI] == 3
 
 
+def test_fast_substitution_path_matches_planning_semantics() -> None:
+    plan = plan_gaiji_codes([f" {_SS3_KANJI}\ufe0f"])
+
+    assert plan.usage_counts == {_SS3_KANJI: 1}
+
+
 def test_plan_gaiji_codes_is_processing_order_independent() -> None:
-    first = plan_gaiji_codes(["b" + _SS3_KANJI, "a" + _WIDE_KANJI])
-    second = plan_gaiji_codes(["a" + _WIDE_KANJI, "b" + _SS3_KANJI])
+    first = plan_gaiji_codes(["b" + _SS3_KANJI, "a" + _WIDE_GAIJI])
+    second = plan_gaiji_codes(["a" + _WIDE_GAIJI, "b" + _SS3_KANJI])
 
     assert first.assigned_codes == second.assigned_codes
+
+
+def test_plan_gaiji_codes_keeps_most_frequent_character_within_capacity() -> None:
+    plan = plan_gaiji_codes(
+        [_SS3_KANJI, _WIDE_GAIJI * 2],
+        max_per_width=1,
+    )
+
+    assert plan.assigned_codes == {_WIDE_GAIJI: "wide-0001"}
+    assert plan.usage_counts == {_SS3_KANJI: 1, _WIDE_GAIJI: 2}
+    assert embed_gaiji_tokens(_SS3_KANJI, plan=plan) == "[U+4E02]"
+
+
+def test_capacity_selection_is_deterministic_for_equal_usage() -> None:
+    first = plan_gaiji_codes([_WIDE_GAIJI, _SS3_KANJI], max_per_width=1)
+    second = plan_gaiji_codes([_SS3_KANJI, _WIDE_GAIJI], max_per_width=1)
+
+    assert first.assigned_codes == second.assigned_codes == {_SS3_KANJI: "wide-0001"}
+
+
+def test_capacity_overflow_is_recorded_by_unrepresentable_tracker() -> None:
+    plan = plan_gaiji_codes([_SS3_KANJI, _WIDE_GAIJI * 2], max_per_width=1)
+    tracker = UnrepresentableTracker()
+
+    embed_gaiji_tokens(_SS3_KANJI, plan=plan, tracker=tracker, page_id=9, title="Overflow")
+
+    assert tracker.total_occurrences() == 1
+    assert tracker.most_frequent()[0].character == _SS3_KANJI
 
 
 def test_embed_gaiji_tokens_keeps_representable_text_unchanged() -> None:

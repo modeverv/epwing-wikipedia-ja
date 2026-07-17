@@ -4,6 +4,7 @@ from wikiepwing.gaiji.substitutions import (
     DEFAULT_SUBSTITUTIONS,
     apply_safe_substitutions,
     is_variation_selector,
+    normalize_with_safe_substitutions,
 )
 
 
@@ -72,3 +73,11 @@ def test_default_substitutions_covers_nbsp_and_quotes() -> None:
     assert DEFAULT_SUBSTITUTIONS["’"] == "'"
     assert DEFAULT_SUBSTITUTIONS["“"] == '"'
     assert DEFAULT_SUBSTITUTIONS["”"] == '"'
+
+
+def test_fast_normalization_matches_diagnostic_path_output() -> None:
+    text = " ‘葛︀’\U000e0100 ゔ"
+
+    expected, _diagnostics = apply_safe_substitutions(text)
+
+    assert normalize_with_safe_substitutions(text) == expected

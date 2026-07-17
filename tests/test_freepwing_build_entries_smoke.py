@@ -17,6 +17,7 @@ def test_smoke_script_uses_the_python_writer_and_generic_driver() -> None:
     assert "write_entries_jsonl" in content
     assert "freepwing_build_entries.pl" in content
     assert "wikiepwing-eb-search" in content
+    assert "headwords skipped reason=word-is-empty count=1" in content
 
 
 def test_driver_script_reads_json_lines_and_encodes_euc_jp() -> None:
@@ -35,10 +36,22 @@ def test_driver_script_rejects_unknown_link_targets() -> None:
     assert "unknown link target" in content
 
 
-def test_driver_script_rejects_duplicate_headwords_across_entries() -> None:
+def test_driver_script_counts_duplicate_headwords_across_entries() -> None:
     content = DRIVER_SCRIPT.read_text(encoding="utf-8")
 
-    assert "duplicate headword" in content
+    assert "headwords duplicated count=" in content
+
+
+def test_driver_script_reports_backend_empty_headwords_and_continues() -> None:
+    content = DRIVER_SCRIPT.read_text(encoding="utf-8")
+
+    assert "sub is_empty_search_word" in content
+    assert "if (is_empty_search_word($headword))" in content
+    assert content.index("if (is_empty_search_word($headword))") < content.index(
+        "$duplicate_headwords++"
+    )
+    assert "headword skipped tag=" in content
+    assert "headwords skipped reason=word-is-empty count=" in content
 
 
 def test_driver_script_parallelizes_parsing_and_prefers_json_xs() -> None:

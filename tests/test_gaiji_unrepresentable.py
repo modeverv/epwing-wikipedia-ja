@@ -32,6 +32,24 @@ def test_tracker_counts_occurrences_of_one_character() -> None:
     assert stats[0].count == 2
 
 
+def test_tracker_records_repeated_occurrences_in_one_call() -> None:
+    tracker = UnrepresentableTracker(max_examples_per_character=2)
+
+    tracker.record_many("😀", 5, page_id=7, title="Repeated")
+
+    stat = tracker.most_frequent()[0]
+    assert stat.count == 5
+    assert len(stat.examples) == 2
+    assert all(example.page_id == 7 for example in stat.examples)
+
+
+def test_tracker_rejects_negative_repeated_count() -> None:
+    tracker = UnrepresentableTracker()
+
+    with pytest.raises(ValueError, match="count must not be negative"):
+        tracker.record_many("😀", -1)
+
+
 def test_tracker_orders_by_count_descending() -> None:
     tracker = UnrepresentableTracker()
     tracker.record("A")

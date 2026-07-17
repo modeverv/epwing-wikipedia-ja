@@ -39,7 +39,7 @@ entries = (
         entry_id="ptwo",
         page_id=2,
         title="Entry Two",
-        headwords=("Entry Two", "Alias A", "Alias B", "Alias C"),
+        headwords=("Entry Two", "Alias A", "Alias B", "Alias C", "‐"),
         body=(TextRenderNode(text="Body of entry two.\nSecond line."),),
         internal_targets=("pone",),
         graphics=(),
@@ -50,7 +50,7 @@ entries = (
         entry_id="pthree",
         page_id=3,
         title="Entry Three",
-        headwords=("Entry Three",),
+        headwords=("Entry Three", "Alias A"),
         body=(),
         internal_targets=(),
         graphics=(),
@@ -84,7 +84,9 @@ docker run --rm \
         cd "$work/source"
         perl ./generate_bitmap.pl bitmap.bmp
         perl ./generate_gaiji.pl half16.xbm full16.xbm
-        fpwmake
+        fpwmake 2> "$work/build.stderr"
+        grep -q "headwords duplicated count=1" "$work/build.stderr"
+        grep -q "headwords skipped reason=word-is-empty count=1" "$work/build.stderr"
         fpwmake catalogs
         test -s work/cgr
         test -s honmon
@@ -108,6 +110,8 @@ docker run --rm \
         alias_hit=$(/opt/eb/bin/wikiepwing-eb-search "$stage" word "Alias A" 5)
         printf "%s\n" "$alias_hit" | grep -q "^R" \
             || { echo "FAIL: no hit for alias Alias A" >&2; exit 1; }
+        [ "$(printf "%s\n" "$alias_hit" | grep -c "^R")" -eq 2 ] \
+            || { echo "FAIL: shared alias did not resolve to both entries" >&2; exit 1; }
         title_heading=$(printf "%s\n" "$title_hit" | awk -F"\t" "/^R/{print \$4; exit}")
         alias_heading=$(printf "%s\n" "$alias_hit" | awk -F"\t" "/^R/{print \$4; exit}")
         [ "$title_heading" != "$alias_heading" ] \

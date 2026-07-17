@@ -39,6 +39,20 @@
   titleは常に`[U+XXXX]`表記に倒しており、その前例に倣った(§4の
   「本文埋め込み構文」調査結果と合わせ、本文と検索キーで扱いを分けるのが
   正しいと判断)。
+- **FreePWING外字容量**: narrow/half-widthとwide/full-widthはそれぞれ
+  8,192文字がbackend hard limitである。全コーパスの候補が上限を超える場合、
+  各width class内で出現回数の多い順、同数ならUnicode順で8,192文字を選ぶ。
+  選外文字は黙って削除せず、本文中で`[U+XXXX]`へフォールバックし、
+  `unicode-report.json`にも出現回数と記事例を記録する。選択後のassigned codeは
+  従来通りUnicode順で決定し、入力処理順に依存させない。
+  上限制御導入前に生成済みの成果物は、再度全記事をrenderせず次で変換できる。
+  ```bash
+  uv run python -m wikiepwing.gaiji.capacity \
+    --entries-source entries-mini.jsonl --database gaiji.sqlite3 \
+    --gaiji-source gaiji --entries-output data/work/entries-mini.jsonl \
+    --gaiji-output data/work/gaiji \
+    --report data/reports/gaiji-capacity-report.json
+  ```
 - §5の実機調査は完了: `tests/fixtures/handcrafted/build_fixture.pl`に
   実際のFreePWING API呼び出し例(`add_half_user_character`/
   `add_full_user_character`/`add_color_graphic_start`/

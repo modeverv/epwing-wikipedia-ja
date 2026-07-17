@@ -62,6 +62,16 @@ sub to_euc_jp {
     return $bytes;
 }
 
+# FreePWING::BaseWord removes these ASCII/JIS X 0208 punctuation bytes while
+# normalizing search words. Calling add_entry with a word made only of these
+# bytes closes one of Word2's output handles, so detect that documented edge
+# case before handing the value to the destructive API.
+sub is_empty_search_word {
+    my ($value) = @_;
+    $value =~ s/(?:[ '\-]|\xa1(?:\xa1|\xa6|\xbe|\xc7|\xdd))//g;
+    return $value eq '';
+}
+
 # GAIJI_TOKEN matches wikiepwing.gaiji.embedding.GAIJI_TOKEN_FORMAT
 # ("@@GAIJI:<code>@@") and wikiepwing.gaiji.code_assignment's
 # "<narrow|wide>-NNNN" assigned_code format, so the width class needed to
@@ -276,6 +286,8 @@ initialize_fpwparser(
 
 my %global_headwords;
 my $indexed = 0;
+my $duplicate_headwords = 0;
+my $skipped_empty_headwords = 0;
 my $last_report = time();
 for my $spool_path (@spools) {
     open my $spool, '<:raw', $spool_path or die "cannot open $spool_path: $!\n";
@@ -309,9 +321,16 @@ for my $spool_path (@spools) {
         my %seen_in_entry;
         for my $headword ($entry->{title}, @{$entry->{aliases}}) {
             next if $seen_in_entry{$headword}++;
-            die "duplicate headword: $headword\n" if $global_headwords{$headword}++;
+            if (is_empty_search_word($headword)) {
+                $skipped_empty_headwords++;
+                print STDERR "headword skipped tag=$entry->{tag} "
+                    . "reason=word-is-empty value=$headword\n";
+                next;
+            }
+            $duplicate_headwords++ if $global_headwords{$headword}++;
             $word2->add_entry($headword, $heading->entry_position(), $text->entry_position())
-                or die $word2->error_message(), "\n";
+                or die "headword rejected for tag $entry->{tag}: "
+                    . $word2->error_message() . "\n";
         }
         $indexed++;
         if ($indexed % $PROGRESS_CHECK_EVERY == 0
@@ -323,6 +342,8 @@ for my $spool_path (@spools) {
     close $spool or die "cannot close $spool_path: $!\n";
 }
 print STDERR "index $indexed/$total_entries\n";
+print STDERR "headwords duplicated count=$duplicate_headwords\n";
+print STDERR "headwords skipped reason=word-is-empty count=$skipped_empty_headwords\n";
 
 die "spool entry count mismatch: indexed $indexed, expected $total_entries\n"
     if $indexed != $total_entries;

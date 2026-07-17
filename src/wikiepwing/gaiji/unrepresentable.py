@@ -59,10 +59,27 @@ class UnrepresentableTracker:
         self, character: str, *, page_id: int | None = None, title: str | None = None
     ) -> None:
         """Record one occurrence of `character`, keeping only the first N examples."""
+        self.record_many(character, 1, page_id=page_id, title=title)
+
+    def record_many(
+        self,
+        character: str,
+        count: int,
+        *,
+        page_id: int | None = None,
+        title: str | None = None,
+    ) -> None:
+        """Record repeated occurrences without a Python call per occurrence."""
+        if count < 0:
+            raise ValueError("count must not be negative")
+        if count == 0:
+            return
         record = self._records.setdefault(character, _CharacterRecord())
-        record.count += 1
-        if len(record.examples) < self._max_examples:
-            record.examples.append(UnrepresentableExample(page_id=page_id, title=title))
+        record.count += count
+        examples_to_add = min(count, self._max_examples - len(record.examples))
+        record.examples.extend(
+            UnrepresentableExample(page_id=page_id, title=title) for _ in range(examples_to_add)
+        )
 
     def most_frequent(self, limit: int | None = None) -> tuple[UnrepresentableStat, ...]:
         """Return stats ordered by count descending, ties broken by codepoint ascending."""

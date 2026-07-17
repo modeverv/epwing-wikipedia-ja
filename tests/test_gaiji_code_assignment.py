@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from wikiepwing.gaiji.code_assignment import (
+    MAX_GAIJI_PER_WIDTH,
     GaijiCodeAssignmentError,
     assign_gaiji_codes,
 )
@@ -54,3 +55,15 @@ def test_codes_are_zero_padded_to_four_digits() -> None:
 
     assert result["a"] == "narrow-0001"
     assert result["l"] == "narrow-0012"
+
+
+def test_backend_capacity_is_enforced_per_width() -> None:
+    entries = [(f"character-{index}", "wide") for index in range(MAX_GAIJI_PER_WIDTH + 1)]
+
+    with pytest.raises(GaijiCodeAssignmentError, match="exceeds backend limit 8192"):
+        assign_gaiji_codes(entries)
+
+
+def test_custom_capacity_must_be_non_negative() -> None:
+    with pytest.raises(GaijiCodeAssignmentError, match="non-negative"):
+        assign_gaiji_codes([], max_per_width=-1)

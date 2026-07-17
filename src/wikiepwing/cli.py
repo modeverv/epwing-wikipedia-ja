@@ -46,7 +46,7 @@ from wikiepwing.reference.inventory import (
 from wikiepwing.reference.report import write_reference_report
 from wikiepwing.reference.searches import EbSearchAdapter, run_reference_searches
 from wikiepwing.release_notes import render_release_notes
-from wikiepwing.render.generate import run_generate
+from wikiepwing.render.generate import GenerateMetrics, run_generate
 from wikiepwing.render.verify import verify_entries_jsonl
 from wikiepwing.secrets import load_enterprise_secrets
 from wikiepwing.source.acquire import acquire_snapshot
@@ -96,6 +96,24 @@ class _PhaseProgressReporter:
             detail = f"{progress.unit}={progress.completed}/{progress.total} ({percentage:.1f}%)"
         state = "complete" if progress.complete or reached_end else "running"
         print(f"phase={progress.phase} state={state} {detail}", file=sys.stderr)
+
+
+class _GenerateProgressReporter:
+    """Bound legacy generate metrics that otherwise print once per entry."""
+
+    def __init__(self) -> None:
+        self._last_entries_written = -_ITEM_PROGRESS_INTERVAL
+
+    def __call__(self, metrics: GenerateMetrics) -> None:
+        if metrics.entries_written - self._last_entries_written < _ITEM_PROGRESS_INTERVAL:
+            return
+        self._last_entries_written = metrics.entries_written
+        print(
+            f"articles_read={metrics.articles_read} "
+            f"entries_written={metrics.entries_written} "
+            f"articles_skipped={metrics.articles_skipped}",
+            file=sys.stderr,
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1019,6 +1037,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         gaiji_section = config.section("gaiji")
 
         phase_progress_reporter = _PhaseProgressReporter()
+        generate_progress_reporter = _GenerateProgressReporter()
         generate_result = run_generate(
             model_database_path=model_database_path,
             entries_path=entries_path,
@@ -1026,12 +1045,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_id=run_id,
             git_commit=git_commit,
             force=cast(bool, arguments.force),
-            on_progress=lambda metrics: print(
-                f"articles_read={metrics.articles_read} "
-                f"entries_written={metrics.entries_written} "
-                f"articles_skipped={metrics.articles_skipped}",
-                file=sys.stderr,
-            ),
+            on_progress=generate_progress_reporter,
             on_phase_progress=phase_progress_reporter,
             gaiji_dir=cast(Path | None, arguments.gaiji_dir) or (entries_path.parent / "gaiji"),
             gaiji_database_path=cast(Path | None, arguments.gaiji_database)

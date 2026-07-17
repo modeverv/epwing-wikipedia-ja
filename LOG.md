@@ -6923,3 +6923,65 @@ git diff --check
 
 - `.gitignore`は削除されておらず、履歴上の最新版を保持していた。
 - 漏れていた生成物は未追跡のままだったため、ファイル削除や`git rm --cached`は不要だった。
+
+## 2026-07-18 TASK-T020 FreePWING gaiji capacity and full EPWING build
+
+**目的**
+
+全件生成物がFreePWINGの外字上限を超えて停止する問題を修正し、実データからEPWING辞書ZIPを最後まで生成する。
+
+**原因と変更**
+
+- FreePWINGは半角・全角外字を各8,192文字までしか定義できないが、生成済み成果物は半角26,837・全角113,761文字を含んでいた。
+- 各幅で使用回数の多い順、同数ならUnicode順に8,192文字を選び、選外文字を`[U+XXXX]`へ明示的にフォールバックする決定的な容量制御を追加した。
+- 生成済みの12GB JSONL・gaiji registryをストリーム変換する`wikiepwing.gaiji.capacity`を追加し、再renderせず容量安全なbuild入力を作成した。
+- generateのgaiji計数をwhole-corpusの`Counter`と一括置換へ変更し、進捗表示を10,000件間隔に制限した。
+- FreePWINGが正規化後に空語とする記号だけの別名は呼出し前に判定・集計して除外する。記事間で共有される検索語は拒否せず、複数検索結果として保持・集計する。
+- 実FreePWING統合テストで、空語別名を含む入力の継続と共有別名が2記事へ解決することを確認した。
+
+**実生成結果**
+
+```text
+entries: 1,508,200
+gaiji selected: narrow=8,192, wide=8,192
+overflow unique: narrow=18,645, wide=105,569
+overflow occurrences: narrow=65,547, wide=240,053
+FreePWING empty headwords skipped: 12
+shared headwords: 8
+EPWING ZIP: data/output/jawiki.epwing.zip (5.7 GiB)
+SHA-256: d3ec046a0c710e1d6fae61a2f5ec476a555cbda32df0f1f484da1bdf2b4b8b3a
+```
+
+`ebinfo`は生成前stageとEBZIP圧縮後packageの双方で成功し、EPWING/JIS X 0208、1 subbook、word/endword検索、16-dot narrow/wide外字を確認した。`unzip -t`も全7項目で成功した。
+
+**実行コマンドと結果**
+
+```bash
+uv run python -m wikiepwing.gaiji.capacity \
+  --entries-source entries-mini.jsonl --database gaiji.sqlite3 \
+  --gaiji-source gaiji --entries-output data/work/entries-mini.jsonl \
+  --gaiji-output data/work/gaiji \
+  --report data/reports/gaiji-capacity-report.json
+# success: 12GBをストリーム変換、各幅8,192外字
+make build-epwing ENTRIES=data/work/entries-mini.jsonl \
+  GRAPHICS_DIR=data/work/graphics GAIJI_DIR=data/work/gaiji \
+  TITLE="日本語ウィキペディア二〇二六年六月" \
+  EPWING_OUTPUT=data/output/jawiki.epwing.zip
+# success: data/output/jawiki.epwing.zip
+unzip -t data/output/jawiki.epwing.zip
+# No errors detected in compressed data
+make format-check
+# 295 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 141 source files
+make test
+# 1453 passed, 1 warning
+git diff --check
+# success
+```
+
+**次タスク**
+
+- 自動実装タスクはなし。生成済みEPWINGを実ビューアで開く手動確認へ進む。

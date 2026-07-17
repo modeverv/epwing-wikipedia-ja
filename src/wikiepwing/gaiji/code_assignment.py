@@ -22,19 +22,25 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 _WIDTH_CLASSES = ("narrow", "wide")
+MAX_GAIJI_PER_WIDTH = 8192
 
 
 class GaijiCodeAssignmentError(ValueError):
     """Raised when gaiji codes cannot be assigned deterministically."""
 
 
-def assign_gaiji_codes(entries: Iterable[tuple[str, str]]) -> dict[str, str]:
+def assign_gaiji_codes(
+    entries: Iterable[tuple[str, str]], *, max_per_width: int = MAX_GAIJI_PER_WIDTH
+) -> dict[str, str]:
     """Assign each `(sequence, width_class)` entry a deterministic `assigned_code`.
 
     Returns a mapping from `sequence` to its assigned code
     (`f"{width_class}-{index:04d}"`, 1-based per width class, ordered by
     the sequence's Unicode sort order).
     """
+    if max_per_width < 0:
+        raise GaijiCodeAssignmentError("max_per_width must be non-negative")
+
     by_width_class: dict[str, list[str]] = {width_class: [] for width_class in _WIDTH_CLASSES}
     seen_sequences: set[str] = set()
     for sequence, width_class in entries:
@@ -49,6 +55,10 @@ def assign_gaiji_codes(entries: Iterable[tuple[str, str]]) -> dict[str, str]:
 
     assigned: dict[str, str] = {}
     for width_class, sequences in by_width_class.items():
+        if len(sequences) > max_per_width:
+            raise GaijiCodeAssignmentError(
+                f"{width_class} gaiji count {len(sequences)} exceeds backend limit {max_per_width}"
+            )
         for index, sequence in enumerate(sorted(sequences), start=1):
             assigned[sequence] = f"{width_class}-{index:04d}"
     return assigned

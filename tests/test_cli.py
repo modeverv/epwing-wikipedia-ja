@@ -9,9 +9,11 @@ import tarfile
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 
-from wikiepwing.cli import _latest_source_lock_path
+from wikiepwing.cli import _GenerateProgressReporter, _latest_source_lock_path
+from wikiepwing.render.generate import GenerateMetrics
 
 
 class CliTest(unittest.TestCase):
@@ -34,6 +36,16 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertRegex(result.stdout, r"^wikiepwing \d+\.\d+\.\d+\n$")
+
+    def test_generate_metrics_progress_is_bounded(self) -> None:
+        reporter = _GenerateProgressReporter()
+        output = io.StringIO()
+
+        with redirect_stderr(output):
+            for entries_written in range(20_001):
+                reporter(GenerateMetrics(entries_written=entries_written))
+
+        self.assertEqual(len(output.getvalue().splitlines()), 3)
 
     def test_reference_inventory_writes_json_report(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

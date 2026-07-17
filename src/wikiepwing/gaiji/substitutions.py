@@ -34,12 +34,28 @@ DEFAULT_SUBSTITUTIONS: dict[str, str] = {
 }
 
 _VARIATION_SELECTOR_RANGES = ((0xFE00, 0xFE0F), (0xE0100, 0xE01EF))
+_FAST_TRANSLATION_TABLE: dict[int, str | None] = {
+    ord(source): destination for source, destination in DEFAULT_SUBSTITUTIONS.items()
+}
+for _start, _end in _VARIATION_SELECTOR_RANGES:
+    _FAST_TRANSLATION_TABLE.update(dict.fromkeys(range(_start, _end + 1)))
 
 
 def is_variation_selector(character: str) -> bool:
     """Return whether `character` is a Unicode variation selector."""
     code_point = ord(character)
     return any(start <= code_point <= end for start, end in _VARIATION_SELECTOR_RANGES)
+
+
+def normalize_with_safe_substitutions(text: str) -> str:
+    """Apply the same substitutions without allocating per-occurrence diagnostics.
+
+    Corpus-wide gaiji planning and embedding intentionally do not consume the
+    substitution diagnostics returned by `apply_safe_substitutions`. Keeping a
+    translation table lets those hot paths run in the C implementation of
+    `str.translate` while preserving identical normalized text.
+    """
+    return unicodedata.normalize("NFC", text).translate(_FAST_TRANSLATION_TABLE)
 
 
 def apply_safe_substitutions(
