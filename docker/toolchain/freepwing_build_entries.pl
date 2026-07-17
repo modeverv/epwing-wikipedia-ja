@@ -57,7 +57,7 @@ sub to_euc_jp {
 # hang?". `$PROGRESS_EVERY` entries, report a line count to stderr -- $| = 1
 # so it's never buffered and delayed behind the loop's own work.
 $| = 1;
-my $PROGRESS_EVERY = 20_000;
+my $PROGRESS_EVERY = 10;
 
 my $input_path = $ARGV[0] // 'entries.jsonl';
 

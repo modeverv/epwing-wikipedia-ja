@@ -6782,3 +6782,33 @@ git diff --check
 - ユーザーが依頼した場合のみ: パースループ(entries.jsonl読み込み+`to_euc_jp`)自体を複数プロセスへ分割する並列化(FPWParser登録ループとは独立に検討可能だが、Perlでの実装・出力順序の保証にそれなりのリスクが伴うため、今回は着手していない)
 - ユーザーが依頼した場合のみ: normalize/generateへの本格的な外字(gaiji)パイプライン統合(GAIJI.md参照)
 - 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
+
+## 2026-07-17 TASK-T016 More frequent freepwing_build_entries.pl progress interval
+
+**目的**
+
+ユーザー依頼。TASK-T014で追加した進捗出力(2万件ごと)を10件ごとに変更してほしい、また`make`を実行するたびに最新のプログラムが反映されているか確認したい、という依頼。
+
+**変更**
+
+- `docker/toolchain/freepwing_build_entries.pl`: `$PROGRESS_EVERY`を`20_000`から`10`に変更
+- `TASKS.md`(TASK-T016追加)
+
+**実行コマンド**
+
+```bash
+sh docker/toolchain/freepwing-build-entries-smoke.sh wikiepwing-toolchain:dev
+git diff --check
+```
+
+**結果**
+
+- 既存の`freepwing-build-entries-smoke.sh`が引き続き成功することを確認した。
+- 「`make`のたびに最新版が反映されるか」の質問について: `docker/toolchain.Dockerfile`を`grep`し、`freepwing_build_entries.pl`を一切`COPY`していないことを確認した。`docker/toolchain/build-epwing.sh`は`make build-epwing`実行のたびに、ホスト上の(その時点で編集済みの)`freepwing_build_entries.pl`を一時ディレクトリへコピーし、読み取り専用でbind mountしてコンテナに渡す実装になっているため、Dockerイメージの再ビルド有無に関わらず常にホスト上の最新ファイルが使われることを確認し、ユーザーへ回答した。
+- シェルスクリプトのみの変更のため`make check`(Pythonテスト)には影響なし。`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- なし(TASKS.mdの全タスクが完了)
+- ユーザーが依頼した場合のみ: パースループの並列化、normalize/generateへの本格的な外字(gaiji)パイプライン統合(GAIJI.md参照)
+- 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
