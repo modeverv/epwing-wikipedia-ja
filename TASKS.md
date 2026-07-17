@@ -948,3 +948,9 @@
 **依存:** T012
 
 ユーザーが全件規模の`entries-mini.jsonl`でビルドを試したところ、`invalid character: \x8f`で`fpwmake`が失敗した。原因調査の結果、gaiji(外字)のクエリに対しユーザーへ「本格対応にはnormalize/generateへの外字置換パイプライン統合が必要で相応の規模の作業になる」と説明したところ、「簡易的な回避策を先に試したい」との回答を得た。原因は`docker/toolchain/freepwing_build_entries.pl`の`to_euc_jp`: PerlのEncodeモジュールは`euc-jp`エンコード時にJIS X 0212(SS3、`\x8f`プレフィックス)の文字も変換してしまうが、FreePWINGのFPWParserはJIS X 0208の2バイトコードしか理解せず`\x8f`を見ると死ぬ。実データの本文には(表現できないほど珍しい漢字ではなく)JIS X 0212にしか無い通常の漢字が普通に含まれるため、フィクスチャでは再現しなかった。`to_euc_jp`を文字単位のループに変更し、EUC-JPエンコード結果の先頭バイトが`0x8f`になる文字だけを全角下駄記号(〓、U+3013、JIS X 0208内)に置換するようにした(本格的なgaiji置換の代替であり、該当文字の情報は失われる簡易回避策であることを明記)。既存の`freepwing-build-entries-smoke.sh`回帰確認、およびJIS X 0212専用文字(凜)を含む新規フィクスチャでビルドが成功することを確認済み。
+
+### TASK-T014 [x] freepwing_build_entries.pl progress reporting
+
+**依存:** T013
+
+ユーザーが`make build-epwing`実行中に「進捗も何も出ない、遅すぎる」と報告。`docker/toolchain/build-epwing.sh`が呼ぶ`freepwing_build_entries.pl`は、entries.jsonl全件をパースする段階(TASK-T013の1文字ずつのEUC-JP変換込み)とFPWParserへ登録する段階の2ループがあり、どちらも進捗出力が一切無かった。1.5万件ずつ(`$PROGRESS_EVERY = 20_000`)標準エラー出力に`parse N/total`・`index N/total`を出力するようにした。45,000件の合成フィクスチャで実際に途中経過が出力されることを確認済み。`fpwsort`/`fpwindex`等それ以降のFreePWING/EB付属バイナリ側は今回対象外(ソースを持たないコンパイル済みツールのため)。

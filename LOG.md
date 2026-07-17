@@ -6713,3 +6713,38 @@ git diff --check
 - ユーザーが依頼した場合のみ: normalize/generateへの本格的な外字(gaiji)パイプライン統合(検出→コード割り当て→グリフ描画→ビルドファイル書き出しのCLIコマンド新設)
 - 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
 - RELEASE_CHECKLIST.mdの「gaiji fallback ✅ 完了」の記載は、ライブラリ関数レベルの完了であってパイプライン統合はされていない実態を反映するよう修正が必要(今回未実施)
+
+## 2026-07-17 TASK-T014 freepwing_build_entries.pl progress reporting
+
+**目的**
+
+ユーザーが`make build-epwing`実行中に「進捗も何も出ない、遅すぎる」と報告(質問で対象を確認したところ`make build-epwing`と回答)。`freepwing_build_entries.pl`のentries.jsonlパース・FPWParser登録の2ループに進捗出力を追加する。
+
+**変更**
+
+- `docker/toolchain/freepwing_build_entries.pl`:
+  - `$| = 1`(autoflush)・`$PROGRESS_EVERY = 20_000`を追加
+  - パースループ開始前に総行数を数える軽量な事前パス(`wc -l`相当)を追加し、`parse N/total`をN件ごと+ループ終了後に必ず1回、標準エラー出力する
+  - FPWParser登録ループにも同様に`index N/total`を追加
+- `TASKS.md`(TASK-T014追加)
+
+**実行コマンド**
+
+```bash
+sh docker/toolchain/freepwing-build-entries-smoke.sh wikiepwing-toolchain:dev
+# 45,000件の合成entries.jsonlで進捗出力を確認
+git diff --check
+```
+
+**結果**
+
+- 既存の`freepwing-build-entries-smoke.sh`(3エントリ)が引き続き成功し、`parse 3/3`・`index 3/3`が出力されることを確認した。
+- 45,000件の合成フィクスチャを実際に`build-epwing.sh`経由でビルドし、`parse 20000/45000`→`parse 40000/45000`→`parse 45000/45000`→`index 20000/45000`→...という進捗が実際に出力され、ビルドも最後まで成功することを確認した。
+- `fpwsort`/`fpwindex`/`fpwcontrol`/`fpwlink`/`ebzip`等、その後の工程はFreePWING/EB付属のコンパイル済みバイナリであり、ソースを持たず進捗出力を追加できないため今回は対象外。ユーザーへその旨を伝える。
+- シェルスクリプトのみの変更のため`make check`(Pythonテスト)には影響なし。`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- なし(TASKS.mdの全タスクが完了)
+- ユーザーが依頼した場合のみ: normalize/generateへの本格的な外字(gaiji)パイプライン統合
+- 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち

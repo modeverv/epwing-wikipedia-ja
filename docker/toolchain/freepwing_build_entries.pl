@@ -47,12 +47,28 @@ sub to_euc_jp {
     return $result;
 }
 
+# This script has no incremental output of its own (unlike wikiepwing's
+# Python CLI stages, which all report progress); at full-scale (~1.5M
+# entries) both loops below take long enough that silence reads as "did it
+# hang?". `$PROGRESS_EVERY` entries, report a line count to stderr -- $| = 1
+# so it's never buffered and delayed behind the loop's own work.
+$| = 1;
+my $PROGRESS_EVERY = 20_000;
+
 my $input_path = $ARGV[0] // 'entries.jsonl';
+
+my $total_lines = 0;
+{
+    open my $count_input, '<:raw', $input_path or die "cannot open $input_path: $!\n";
+    $total_lines++ while <$count_input>;
+    close $count_input or die "cannot close $input_path: $!\n";
+}
 
 open my $input, '<:raw', $input_path or die "cannot open $input_path: $!\n";
 my $json = JSON::PP->new->utf8;
 my @entries;
 my %tags;
+my $parsed = 0;
 while (my $line = <$input>) {
     $line =~ s/\r?\n\z//;
     next if $line eq '';
@@ -68,8 +84,11 @@ while (my $line = <$input>) {
         body => to_euc_jp($record->{body}),
         targets => [map { to_euc_jp($_) } @{$record->{targets} // []}],
     };
+    $parsed++;
+    print STDERR "parse $parsed/$total_lines\n" if $parsed % $PROGRESS_EVERY == 0;
 }
 close $input or die "cannot close $input_path: $!\n";
+print STDERR "parse $parsed/$total_lines\n";
 
 die "no entries to build\n" if !@entries;
 
@@ -86,6 +105,8 @@ initialize_fpwparser(
 );
 
 my %global_headwords;
+my $indexed = 0;
+my $total_entries = scalar @entries;
 for my $entry (@entries) {
     $text->new_entry() or die $text->error_message(), "\n";
     $heading->new_entry() or die $heading->error_message(), "\n";
@@ -114,6 +135,9 @@ for my $entry (@entries) {
         $word2->add_entry($headword, $heading->entry_position(), $text->entry_position())
             or die $word2->error_message(), "\n";
     }
+    $indexed++;
+    print STDERR "index $indexed/$total_entries\n" if $indexed % $PROGRESS_EVERY == 0;
 }
+print STDERR "index $indexed/$total_entries\n";
 
 finalize_fpwparser('text' => \$text, 'heading' => \$heading, 'word2' => \$word2);
