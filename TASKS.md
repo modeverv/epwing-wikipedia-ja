@@ -954,3 +954,9 @@
 **依存:** T013
 
 ユーザーが`make build-epwing`実行中に「進捗も何も出ない、遅すぎる」と報告。`docker/toolchain/build-epwing.sh`が呼ぶ`freepwing_build_entries.pl`は、entries.jsonl全件をパースする段階(TASK-T013の1文字ずつのEUC-JP変換込み)とFPWParserへ登録する段階の2ループがあり、どちらも進捗出力が一切無かった。1.5万件ずつ(`$PROGRESS_EVERY = 20_000`)標準エラー出力に`parse N/total`・`index N/total`を出力するようにした。45,000件の合成フィクスチャで実際に途中経過が出力されることを確認済み。`fpwsort`/`fpwindex`等それ以降のFreePWING/EB付属バイナリ側は今回対象外(ソースを持たないコンパイル済みツールのため)。
+
+### TASK-T015 [x] Speed up freepwing_build_entries.pl's to_euc_jp
+
+**依存:** T014
+
+ユーザーから`freepwing_build_entries.pl`が「めちゃくちゃ遅い」、進捗表示や並列化で何とかならないか問い合わせがあった。調査の結果、TASK-T013で入れた`to_euc_jp`の1文字ずつの`encode()`呼び出しループが、全件規模(約150万記事)で数億〜十億回規模のPerl関数呼び出しになっており、これが主要なボトルネックと判明した。JIS X 0212のSS3シーケンス(`\x8f`+2バイト)は他の正当なEUC-JPシーケンスの末尾バイトとして出現し得ない(JIS X0208・SS2かなの2バイト目はいずれも`0xA1`以上)ため、文字列全体を1回で`encode()`し、結果のバイト列に対して正規表現で`\x8f..`を下駄記号に一括置換する実装に変更した(全エッジケースでバイト単位の完全一致を確認済み)。10万件の合成ベンチマークで134秒→68秒(約2倍)の高速化を確認。FPWParserへの登録ループ(`text`/`heading`/`word2`)は`entry_position()`が処理順に依存する内部状態を持つため並列化はリスクが高く、今回は対象外とした。

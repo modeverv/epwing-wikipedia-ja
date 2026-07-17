@@ -6748,3 +6748,37 @@ git diff --check
 - なし(TASKS.mdの全タスクが完了)
 - ユーザーが依頼した場合のみ: normalize/generateへの本格的な外字(gaiji)パイプライン統合
 - 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
+
+## 2026-07-17 TASK-T015 Speed up freepwing_build_entries.pl's to_euc_jp
+
+**目的**
+
+ユーザーから`freepwing_build_entries.pl`が「めちゃくちゃ遅い」、進捗表示や並列化で何とかならないか問い合わせがあった。原因を調査し、リスクの低い範囲で高速化する。
+
+**変更**
+
+- `docker/toolchain/freepwing_build_entries.pl`: `to_euc_jp`を、文字列全体を1回`encode('euc-jp', $value)`した後、結果のバイト列に対して`s/\x8f../$GETA_MARK_EUC_JP/gs`で正規表現一括置換する実装に変更(従来は1文字ずつ`split //`してencode()を呼んでいた)
+- `TASKS.md`(TASK-T015追加)
+
+**実行コマンド**
+
+```bash
+sh docker/toolchain/freepwing-build-entries-smoke.sh wikiepwing-toolchain:dev
+# 新旧実装のバイト単位一致確認(エッジケース含む、手動のPerlスクリプトで検証)
+# 10万件の合成entries.jsonlでの実行時間比較(手動)
+git diff --check
+```
+
+**結果**
+
+- 原因: TASK-T013で追加した`to_euc_jp`が`split //`で1文字ずつループし`encode()`を呼んでいたため、全件規模(約150万記事、タイトル+本文+エイリアス)では数億〜十億回規模のPerl関数呼び出しが発生し、これが支配的なコストになっていた。
+- JIS X 0212のSS3シーケンス(`\x8f` + 2バイト、両方とも`0xA1`-`0xFE`)は、他の正当なEUC-JPシーケンス(JIS X0208の2バイト目・SS2かなの2バイト目、いずれも`0xA1`以上)の末尾バイトとして`\x8f`(0x8Fは0xA1未満)が出現することがないため、「文字列全体を1回encode→結果バイト列に正規表現で`\x8f..`を一括置換」という実装に変えても、1文字ずつ判定していた旧実装とバイト単位で完全に等価であることを、様々なエッジケース(JIS X0212専用文字の連続、通常文字との混在、下駄記号が入力に既に含まれる場合等)を通したPerlスクリプトで確認した。
+- 10万件・本文400〜800文字程度の合成entries.jsonl(約131MB)で実際にDocker内で計測: 旧実装134.08秒→新実装68.16秒(約2倍の高速化)。全件規模(約150万記事)では単純計算で約34分→約17分程度の短縮が見込まれる。
+- FPWParserへの登録ループ(`text->add_text`等、`word2->add_entry`が`entry_position()`という処理順依存の内部カウンタを使う)は状態を持つため安全に並列化できないと判断し、今回は対象外とした。`fpwsort`/`fpwindex`等それ以降のコンパイル済みバイナリも同様に対象外。
+- 既存の`freepwing-build-entries-smoke.sh`が引き続き成功することを確認した。シェルスクリプトのみの変更のため`make check`(Pythonテスト)には影響なし。`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- ユーザーが依頼した場合のみ: パースループ(entries.jsonl読み込み+`to_euc_jp`)自体を複数プロセスへ分割する並列化(FPWParser登録ループとは独立に検討可能だが、Perlでの実装・出力順序の保証にそれなりのリスクが伴うため、今回は着手していない)
+- ユーザーが依頼した場合のみ: normalize/generateへの本格的な外字(gaiji)パイプライン統合(GAIJI.md参照)
+- 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち

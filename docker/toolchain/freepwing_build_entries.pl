@@ -30,21 +30,25 @@ use JSON::PP;
 # "character cannot be displayed" placeholder, itself plain JIS X 0208) for
 # anything that would otherwise need the SS3 prefix. This is a stopgap that
 # loses those specific characters, not a real fix.
+#
+# This used to loop over the string one Perl-level character at a time,
+# calling encode() per character -- at full scale (~1.5M entries, each with
+# a title/body/aliases) that's on the order of a billion individual encode()
+# calls, and Perl function-call overhead dominates. A JIS X 0212 sequence is
+# always exactly SS3 (\x8f) + 2 bytes in 0xA1-0xFE, and \x8f cannot appear as
+# a trailing byte of any other valid EUC-JP sequence (plain JIS X 0208's
+# second byte and SS2 kana's second byte are both >= 0xA1, all above \x8f),
+# so encoding the whole string in one call and then regex-substituting any
+# \x8f + 2 bytes run is byte-for-byte equivalent to the old per-character
+# loop, just without the per-character Perl call overhead.
 my $GETA_MARK_EUC_JP = encode('euc-jp', "\x{3013}");
 
 sub to_euc_jp {
     my ($value) = @_;
     return $value unless defined $value;
-    my $result = '';
-    for my $char (split //, $value) {
-        my $bytes = encode('euc-jp', $char);
-        if (length($bytes) > 0 && ord(substr($bytes, 0, 1)) == 0x8f) {
-            $result .= $GETA_MARK_EUC_JP;
-        } else {
-            $result .= $bytes;
-        }
-    }
-    return $result;
+    my $bytes = encode('euc-jp', $value);
+    $bytes =~ s/\x8f../$GETA_MARK_EUC_JP/gs;
+    return $bytes;
 }
 
 # This script has no incremental output of its own (unlike wikiepwing's
