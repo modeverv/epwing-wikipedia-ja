@@ -437,3 +437,38 @@ def test_images_enabled_false_produces_no_media(tmp_path: Path) -> None:
         ).fetchone()
         article = decode_article(decompress(row["article_json_zstd"]))
         assert article.media == ()
+
+
+def test_normalize_parallel_matches_sequential_output(tmp_path: Path) -> None:
+    """TASK-T009: parallelizing the CPU-bound normalize step across a process
+    pool must not change output ordering, bytes, or metrics versus workers=1."""
+    raw_database_path = _build_raw_database(tmp_path)
+
+    sequential_result = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=tmp_path / "sequential" / "model.sqlite3",
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=tmp_path / "sequential" / "manifests" / "40-normalize.json",
+        run_id="test-normalize-sequential",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+        batch_size=3,
+        workers=1,
+    )
+    parallel_result = run_normalize(
+        raw_database_path=raw_database_path,
+        model_database_path=tmp_path / "parallel" / "model.sqlite3",
+        model_migrations_path=MODEL_MIGRATIONS,
+        manifest_path=tmp_path / "parallel" / "manifests" / "40-normalize.json",
+        run_id="test-normalize-parallel",
+        model_validation_limits=_model_validation_limits(),
+        normalize_options=_normalize_options(),
+        batch_size=3,
+        workers=4,
+    )
+
+    assert sequential_result.manifest.metrics == parallel_result.manifest.metrics
+    assert (
+        sequential_result.model_database_path.read_bytes()
+        == parallel_result.model_database_path.read_bytes()
+    )

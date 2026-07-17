@@ -378,6 +378,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="articles per write transaction (default: 500)",
     )
     normalize.add_argument(
+        "--workers",
+        type=int,
+        help="parallel worker processes for normalization (default: config normalize.workers)",
+    )
+    normalize.add_argument(
         "--git-commit",
         type=str,
         help="git commit recorded in the manifest (default: `git rev-parse HEAD`)",
@@ -883,6 +888,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             config.paths.work / "runs" / run_id / "manifests" / "40-normalize.json"
         )
         git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+        workers = cast(int | None, arguments.workers) or cast(int, normalize_section["workers"])
 
         normalize_result = run_normalize(
             raw_database_path=raw_database_path,
@@ -893,6 +899,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             model_validation_limits=model_validation_limits,
             normalize_options=normalize_options,
             batch_size=cast(int, arguments.batch_size),
+            workers=workers,
             git_commit=git_commit,
             force=cast(bool, arguments.force),
             on_progress=lambda metrics: print(
@@ -1008,6 +1015,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 model_validation_limits=ModelValidationLimits.from_config(config),
                 normalize_options=normalize_options,
                 batch_size=DEFAULT_BATCH_SIZE,
+                workers=cast(int, normalize_section["workers"]),
                 git_commit=git_commit,
                 force=is_forced_stage("normalize", force_stage),
             )

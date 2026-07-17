@@ -2,12 +2,27 @@
 
 Mirrors `wikiepwing.ingest.orchestrate`'s manifest lifecycle (running/complete/
 failed, `--force`) for the normalize stage (TASK-G012).
+
+`workers > 1` parallelizes the one genuinely CPU-bound, per-article, side-
+effect-free step (`normalize_html` through hashing) across a process pool
+(TASK-T009; `[normalize].workers`/`queue_depth` were declared in config
+since early in the project but never wired to anything -- this is the
+first code that reads `workers`). Every other per-article step --
+`raw.sqlite3` reads (redirects/categories/media/licenses) and the
+`model.sqlite3` write -- stays on the main process, sequential, in
+`page_id` order, exactly as before: batches are still read via
+`fetchmany`/written via one `repository.batch()` each, so this does not
+change memory use, output ordering, or (per
+`test_normalize_parallel_matches_sequential_output`) the resulting
+`model.sqlite3` bytes -- only how the CPU-heavy part is scheduled.
 """
 
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,7 +31,7 @@ from typing import cast
 from wikiepwing.ingest.database import connect_raw_database
 from wikiepwing.ingest.zstd_codec import decompress
 from wikiepwing.links.redirect_aliases import extract_redirect_aliases
-from wikiepwing.model.article import Article, MediaReference
+from wikiepwing.model.article import Alias, Article, MediaReference
 from wikiepwing.model.blocks import (
     Block,
     InfoboxBlock,
@@ -145,6 +160,7 @@ def run_normalize(
     normalize_options: NormalizeOptions,
     zstd_level: int = 6,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    workers: int = 1,
     git_commit: str | None = None,
     force: bool = False,
     on_progress: Callable[[NormalizeMetrics], None] | None = None,
@@ -155,9 +171,16 @@ def run_normalize(
     a matching `stage_version` and matching input fingerprints, this stage is
     skipped entirely and the previous manifest is returned as-is (TASK-I005's
     `decide_resume`). Pass `force=True` to always rerun.
+
+    `workers` (default 1, sequential -- no process pool spawned) parallelizes
+    each batch's CPU-bound normalize/validate/hash step across a process
+    pool without changing per-article logic, batch size, write ordering, or
+    output bytes; see the module docstring.
     """
     if batch_size < 1:
         raise NormalizeError("batch_size must be positive")
+    if workers < 1:
+        raise NormalizeError("workers must be positive")
     previous_status = read_manifest_status(manifest_path)
     if previous_status == "running" and not force:
         raise NormalizeError(
@@ -214,6 +237,7 @@ def run_normalize(
                     model_validation_limits=model_validation_limits,
                     normalize_options=normalize_options,
                     batch_size=batch_size,
+                    workers=workers,
                     on_progress=on_progress,
                 )
                 status = "complete"
@@ -316,6 +340,35 @@ def _build_manifest(
     )
 
 
+@dataclass(frozen=True)
+class _WorkItem:
+    """Everything `_compute_normalized` needs, pre-read from raw.sqlite3 so the
+    function itself has no database handle and is safe to pickle/run in a
+    worker process."""
+
+    page_id: int
+    revision_id: int
+    title: str
+    normalized_title: str
+    url: str
+    date_modified: str
+    html_zstd: bytes | None
+    aliases: tuple[Alias, ...]
+    categories: tuple[str, ...]
+    media: tuple[MediaReference, ...]
+    license_ids: tuple[str, ...]
+    model_validation_limits: ModelValidationLimits
+    normalize_options: NormalizeOptions
+
+
+@dataclass(frozen=True)
+class _ComputedResult:
+    article: Article
+    canonical_json: bytes
+    logical_hash: str
+    normalize_status: str
+
+
 def _normalize_all(
     raw_connection: sqlite3.Connection,
     *,
@@ -324,46 +377,87 @@ def _normalize_all(
     model_validation_limits: ModelValidationLimits,
     normalize_options: NormalizeOptions,
     batch_size: int,
+    workers: int,
     on_progress: Callable[[NormalizeMetrics], None] | None,
 ) -> None:
     cursor = raw_connection.execute(
         "SELECT page_id, revision_id, title, normalized_title, url, date_modified, html_zstd "
         "FROM articles WHERE ingest_status = 'accepted' AND is_deleted = 0 ORDER BY page_id"
     )
-    while True:
-        rows = cursor.fetchmany(batch_size)
-        if not rows:
-            return
-        with repository.batch():
-            for row in rows:
-                _normalize_one(
+    executor_context = ProcessPoolExecutor(max_workers=workers) if workers > 1 else nullcontext()
+    with executor_context as executor:
+        mapper: Callable[..., Iterator[_ComputedResult]] = executor.map if executor else map
+        while True:
+            rows = cursor.fetchmany(batch_size)
+            if not rows:
+                return
+            work_items = [
+                _build_work_item(
                     row,
                     raw_connection=raw_connection,
-                    repository=repository,
-                    metrics=metrics,
                     model_validation_limits=model_validation_limits,
                     normalize_options=normalize_options,
                 )
-        if on_progress is not None:
-            on_progress(metrics)
+                for row in rows
+            ]
+            with repository.batch():
+                for result in mapper(_compute_normalized, work_items):
+                    metrics.articles_read += 1
+                    for diagnostic in result.article.diagnostics:
+                        if diagnostic.severity == "warning":
+                            metrics.warnings += 1
+                        elif diagnostic.severity == "error":
+                            metrics.errors += 1
+                        elif diagnostic.severity == "fatal":
+                            metrics.fatals += 1
+                    if result.normalize_status == "rejected":
+                        metrics.articles_rejected += 1
+                    else:
+                        metrics.articles_written += 1
+                    repository.write_article(
+                        result.article,
+                        canonical_json=result.canonical_json,
+                        logical_hash=result.logical_hash,
+                        normalize_status=result.normalize_status,
+                    )
+            if on_progress is not None:
+                on_progress(metrics)
 
 
-def _normalize_one(
+def _build_work_item(
     row: sqlite3.Row,
     *,
     raw_connection: sqlite3.Connection,
-    repository: ModelRepository,
-    metrics: NormalizeMetrics,
     model_validation_limits: ModelValidationLimits,
     normalize_options: NormalizeOptions,
-) -> None:
-    metrics.articles_read += 1
+) -> _WorkItem:
     page_id = row["page_id"]
-    title = row["title"]
+    return _WorkItem(
+        page_id=page_id,
+        revision_id=row["revision_id"],
+        title=row["title"],
+        normalized_title=row["normalized_title"],
+        url=row["url"],
+        date_modified=row["date_modified"],
+        html_zstd=row["html_zstd"],
+        aliases=extract_redirect_aliases(raw_connection, page_id),
+        categories=_read_categories(raw_connection, page_id),
+        media=_read_media(raw_connection, page_id),
+        license_ids=_read_license_ids(raw_connection, page_id),
+        model_validation_limits=model_validation_limits,
+        normalize_options=normalize_options,
+    )
 
-    if row["html_zstd"] is not None:
-        html = decompress(row["html_zstd"]).decode("utf-8")
-        blocks, body_media, pipeline_diagnostics = normalize_html(html, normalize_options)
+
+def _compute_normalized(item: _WorkItem) -> _ComputedResult:
+    """Pure, picklable CPU-bound step: HTML normalization through validation and
+    hashing. No database access -- safe to run in a worker process."""
+    page_id = item.page_id
+    title = item.title
+
+    if item.html_zstd is not None:
+        html = decompress(item.html_zstd).decode("utf-8")
+        blocks, body_media, pipeline_diagnostics = normalize_html(html, item.normalize_options)
     else:
         blocks, body_media, pipeline_diagnostics = (), (), ()
 
@@ -374,45 +468,33 @@ def _normalize_one(
 
     article = Article(
         page_id=page_id,
-        revision_id=row["revision_id"],
+        revision_id=item.revision_id,
         title=title,
-        normalized_title=row["normalized_title"],
-        source_url=row["url"],
-        source_date_modified=datetime.fromisoformat(row["date_modified"]),
+        normalized_title=item.normalized_title,
+        source_url=item.url,
+        source_date_modified=datetime.fromisoformat(item.date_modified),
         abstract=_extract_abstract(blocks),
         blocks=blocks,
-        aliases=extract_redirect_aliases(raw_connection, page_id),
-        categories=_read_categories(raw_connection, page_id),
+        aliases=item.aliases,
+        categories=item.categories,
         media=(
-            select_media(_read_media(raw_connection, page_id) + body_media)
-            if normalize_options.images_enabled
-            else ()
+            select_media(item.media + body_media) if item.normalize_options.images_enabled else ()
         ),
         diagnostics=stamped_pipeline_diagnostics,
-        source_license_ids=_read_license_ids(raw_connection, page_id),
+        source_license_ids=item.license_ids,
     )
 
-    validation_diagnostics = validate_article(article, model_validation_limits)
+    validation_diagnostics = validate_article(article, item.model_validation_limits)
     article = replace(article, diagnostics=article.diagnostics + validation_diagnostics)
-
-    for diagnostic in article.diagnostics:
-        if diagnostic.severity == "warning":
-            metrics.warnings += 1
-        elif diagnostic.severity == "error":
-            metrics.errors += 1
-        elif diagnostic.severity == "fatal":
-            metrics.fatals += 1
 
     has_error = any(d.severity in ("error", "fatal") for d in validation_diagnostics)
     if has_error:
         normalize_status = "rejected"
-        metrics.articles_rejected += 1
     else:
         normalize_status = "fallback" if _contains_unsupported(article.blocks) else "complete"
-        metrics.articles_written += 1
 
-    repository.write_article(
-        article,
+    return _ComputedResult(
+        article=article,
         canonical_json=encode_article(article),
         logical_hash=compute_logical_hash(article),
         normalize_status=normalize_status,

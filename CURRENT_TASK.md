@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-T008
+TASK-T009
 
 ## 目的
 
-ユーザー依頼により追加。ユーザーが実際に`acquire`をネイティブホストで実行した際、コマンドが進捗を一切出力しないため「動いているのか固まっているのか分からない」という問題に遭遇した。`acquire_snapshot`/`ResumableChunkDownloader.download`に進捗コールバックを追加し、`wikiepwing acquire`実行中にチャンク単位(何番目のチャンクが完了したか)・チャンク内バイト単位(現在のチャンクを何MB/何MBダウンロード済みか)の進捗を標準エラー出力に表示するようにする。
+ユーザー依頼により追加。normalizeの処理時間についてユーザーから懸念があり、「処理時間が短縮できる変更ならば実装してほしいが、速度低下やバグ増加のリスクがあるならこのままにしたい」という条件付きで、16コア機での並列化による高速化を検討した。`normalize_html`によるDOM正規化からバリデーション・ハッシュ計算までの、記事1件ごとに副作用のないCPU律速な計算部分のみを`ProcessPoolExecutor`でプロセスプールに分散し、`raw.sqlite3`の読み込みと`model.sqlite3`への書き込みはこれまで通りメインプロセスで`page_id`順に逐次実行する。
 
 ## 事前条件
 
@@ -14,16 +14,15 @@ TASK-T008
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `src/wikiepwing/ingest/orchestrate.py`等、既存の`on_progress`コールバックパターン(cli.pyがstderrにprintする)を確認し、同じ設計を踏襲する方針にした
-- [x] `src/wikiepwing/source/acquire.py`の`acquire_snapshot`(チャンクのループ)と`src/wikiepwing/source/downloader.py`の`ResumableChunkDownloader.download`(1チャンクのストリーミング読み込みループ)の両方に進捗フックが必要であることを確認した(全81チャンク×チャンクあたり数百MBのため、チャンク単位だけでは数分間隔の無出力が残る)
+- [x] `_normalize_one`の中でCPU律速(副作用なし)な部分(`normalize_html`〜バリデーション〜ハッシュ計算)と、DBアクセスを伴う部分(raw読み込み・model書き込み)を分離できることを確認した
+- [x] ユーザーの「150万レコードを箱に貯めて一気にDB出し入れ」提案について、それでは既存の`batch_size`によるメモリ上限の仕組みを壊す(generateステージの30-40GBメモリ問題と同じ構造になる)ことを説明し、既存のbatch_size/fetchmanyの単位を維持したままバッチ内で並列化する方針で合意した
+- [x] `config`の`[normalize].workers`(デフォルト8)が以前から宣言されていたが未使用だったことを確認した
 
 ## 変更予定ファイル
 
-- `src/wikiepwing/source/downloader.py`(`ChunkDownloadProgress`、`ResumableChunkDownloader`に`progress_interval_bytes`・`on_progress`追加)
-- `src/wikiepwing/source/acquire.py`(`AcquireProgress`、`AcquireChunkProgress`、`acquire_snapshot`に`on_progress`・`on_chunk_progress`追加)
-- `src/wikiepwing/cli.py`(`acquire`コマンドで進捗をstderrに出力、`_format_mib`ヘルパー追加)
-- `tests/test_acquire.py`(回帰テスト追加)
-- `tests/test_chunk_downloader.py`(回帰テスト追加)
+- `src/wikiepwing/normalize/orchestrate.py`(`_WorkItem`・`_ComputedResult`・`_build_work_item`・`_compute_normalized`追加、`_normalize_all`/`run_normalize`に`workers`引数追加)
+- `src/wikiepwing/cli.py`(`normalize`コマンドに`--workers`追加、`build`コマンドのnormalizeステージに`workers`配線)
+- `tests/test_normalize_orchestrate.py`(並列/逐次のバイト一致検証テスト追加)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -31,32 +30,33 @@ TASK-T008
 ## 実行予定コマンド
 
 ```bash
-uv run pytest tests/test_acquire.py tests/test_chunk_downloader.py
+uv run mypy src
+uv run ruff format --check .
+uv run ruff check .
+uv run pytest tests/test_normalize_orchestrate.py -q
 make check
 git diff --check
 ```
 
 ## 完了条件
 
-- [x] `ResumableChunkDownloader.download`が`on_progress`(バイト単位、`progress_interval_bytes`ごとに間引き、最後に必ず1回)を受け付ける
-- [x] `acquire_snapshot`が`on_progress`(チャンク完了ごと)・`on_chunk_progress`(チャンク内バイト単位、ダウンロード中のみ)を受け付ける
-- [x] `wikiepwing acquire`実行時にstderrへ進捗が出力される
-- [x] 既存の`_FakeDownloader`(test_acquire.py)が新しい`on_progress`引数を受け付けるよう更新した
-- [x] 回帰テストを追加し、`make check`が成功する
+- [x] `_normalize_one`のCPU律速部分が`_compute_normalized`という純粋・pickle可能な関数として分離されている
+- [x] `_normalize_all`が`workers > 1`の場合のみ`ProcessPoolExecutor`を使い、`workers=1`(既定)では従来通り逐次実行される
+- [x] `config`の`[normalize].workers`が実際に`run_normalize`へ配線されている(CLIの`normalize`コマンド・`build`コマンド両方)
+- [x] 小規模フィクスチャで`workers=1`と`workers=4`が完全にバイト単位で同一の`model.sqlite3`を生成することをテストで検証した
+- [x] `make check`・`mypy`・`ruff`・`git diff --check`が成功する
 
 ## 非対象
 
-- `ingest`/`normalize`/`generate`など他コマンドの進捗表示の変更(既に実装済み)
-- ダウンロード速度(bytes/sec)や残り時間の推定表示(今回はバイト数のみ)
+- `generate`ステージの3層メモリ蓄積問題(30-40GB)の改善(ユーザーが今回は依頼していない、別途診断済みで説明した)
+- フルスケール(150万記事)での実測・実行(ユーザー側で実施予定)
 
 ## 実施結果
 
-`src/wikiepwing/source/downloader.py`に`ChunkDownloadProgress`(bytes_downloaded, total_bytes)を追加し、`ResumableChunkDownloader.__init__`に`progress_interval_bytes`(既定8MiB)、`download`に`on_progress`引数を追加した。ストリーミング読み込みループ内で`progress_interval_bytes`ごとに間引いて呼び出し、ループ終了後に端数が残っていれば最後に必ず1回呼ぶ(小さいチャンクでも必ず最低1回は報告される)。
+`src/wikiepwing/normalize/orchestrate.py`に`_WorkItem`(rawからの読み込み結果一式、DBハンドルを含まずpickle可能)と`_ComputedResult`(計算結果)のfrozen dataclassを追加し、`_normalize_one`を`_build_work_item`(raw.sqlite3読み込み、メインプロセス)と`_compute_normalized`(`normalize_html`からバリデーション・ハッシュ計算までの純粋関数)に分割した。`_normalize_all`に`workers`引数を追加し、`workers > 1`の場合のみ`ProcessPoolExecutor`を生成、バッチ単位で`executor.map(_compute_normalized, work_items)`に分散し、結果を`page_id`順で`repository.batch()`内に書き込む。`raw.sqlite3`の読み込みと`model.sqlite3`への書き込みはメインプロセスのまま変更していない。
 
-`src/wikiepwing/source/acquire.py`に`AcquireProgress`(チャンク完了ごと: chunks_completed/chunks_total/chunk_identifier/size_bytes/already_present)と`AcquireChunkProgress`(ダウンロード中のチャンクのバイト単位進捗)を追加し、`acquire_snapshot`に`on_progress`/`on_chunk_progress`引数を追加した。`ChunkDownloader` Protocolも`on_progress`引数を受け付けるよう更新した。
+`run_normalize`に`workers: int = 1`引数を追加(既定は逐次のまま)。`src/wikiepwing/cli.py`の`normalize`コマンドに`--workers`オプションを追加し(未指定時は`config`の`[normalize].workers`)、`build`コマンドのnormalizeステージにも同様に配線した。
 
-`src/wikiepwing/cli.py`の`acquire`コマンドで両コールバックをstderrへの`print`に接続した(`chunk N/M <identifier>: downloaded (330.5 MB)`、`chunk N/M <identifier>: 120.0 MB / 330.5 MB`という形式)。`_format_mib`ヘルパーを追加した。
+`tests/test_normalize_orchestrate.py`に`test_normalize_parallel_matches_sequential_output`を追加し、同一入力に対し`workers=1`と`workers=4`で`run_normalize`をそれぞれ実行、`metrics`の完全一致と`model.sqlite3`のファイルバイトの完全一致を検証した。
 
-`tests/test_acquire.py`の既存`_FakeDownloader.download`が新しい`on_progress`引数(型付き)を受け付けるよう更新し(呼び出されたら1件のprogress eventを発行するようにした)、新規に3件のテスト(チャンクごとに1イベント・順序通り、already_presentのマーキング、チャンク内バイト進捗)を追加した。`tests/test_chunk_downloader.py`に3件のテスト(間引かれた複数イベント、間隔未満でも最後に必ず1件、`progress_interval_bytes`の非正数値の拒否)を追加した。
-
-`make check`(1401 passed, +6件)、`uv run mypy src`(138ファイル、エラーなし)、`git diff --check`が成功することを確認した。既存のingest/normalize/generateと同じ「stderrへの進捗print」パターンに合わせたため、他コマンドとの一貫性を保っている。
+`make check`(1402 passed、+1件)、`uv run mypy src`(138ファイル、エラーなし)、`uv run ruff format --check .`・`uv run ruff check .`、`git diff --check`が成功することを確認した。

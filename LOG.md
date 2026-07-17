@@ -6531,3 +6531,44 @@ git diff --check
 **次タスク**
 
 - なし(TASKS.mdの全タスクが完了)
+
+## 2026-07-17 TASK-T009 Normalize CPU-bound step parallelization
+
+**目的**
+
+ユーザー依頼。normalizeの処理時間についてユーザーから懸念があり、「処理時間が短縮できる変更ならば実装してほしいが、速度低下やバグ増加のリスクがあるならこのままにしたい」という条件付きで、16コア機での全コア並列化による高速化(最大10倍程度)を検討した。ユーザーから「150万レコードを一括で箱に貯めて一気にDB出し入れすればいいのでは」という提案があったが、それでは既存のbatch_sizeによるメモリ上限の仕組みを壊してしまう(generateステージで実際に発生している30-40GBメモリ問題と同じ構造になる)ため、既存のbatch_size/fetchmanyの単位を維持したまま、バッチ内でCPU律速な計算のみをプロセスプールに分散する設計とした。
+
+**変更**
+
+- `src/wikiepwing/normalize/orchestrate.py`:
+  - モジュールdocstringに並列化の設計意図(`workers`は以前から`config`に宣言されていたが未使用だった)を追記
+  - `_WorkItem`(rawからの読み込み結果一式、DBハンドルを含まずpickle可能)・`_ComputedResult`(計算結果)のfrozen dataclassを追加
+  - `_normalize_one`を`_build_work_item`(raw.sqlite3読み込み、メインプロセス)と`_compute_normalized`(`normalize_html`からバリデーション・ハッシュ計算までの純粋関数、ワーカープロセスで実行可能)に分割
+  - `_normalize_all`に`workers`引数を追加。`workers > 1`の場合のみ`ProcessPoolExecutor`を生成し、バッチ単位で`executor.map(_compute_normalized, work_items)`に分散、結果を`page_id`順(元のクエリの`ORDER BY page_id`のまま)で`repository.batch()`内で書き込む。`raw.sqlite3`の読み込みと`model.sqlite3`への書き込みはメインプロセスに残したまま変更なし
+  - `run_normalize`に`workers: int = 1`引数を追加(デフォルトは逐次のまま、既存動作を変えない)
+- `src/wikiepwing/cli.py`: `normalize`コマンドに`--workers`オプション追加(未指定時は`config`の`[normalize].workers`、デフォルト8)。`build`コマンドのnormalizeステージにも同様に`workers=normalize_section["workers"]`を配線
+- `tests/test_normalize_orchestrate.py`: `test_normalize_parallel_matches_sequential_output`を追加。同じ入力に対し`workers=1`(逐次)と`workers=4`(並列)で`run_normalize`をそれぞれ実行し、`metrics`が完全一致すること・`model.sqlite3`のファイルバイトが完全一致することを検証
+- `TASKS.md`(TASK-T009追加)
+
+**実行コマンド**
+
+```bash
+uv run mypy src
+uv run ruff format --check .
+uv run ruff check .
+uv run pytest tests/test_normalize_orchestrate.py -q
+make check
+git diff --check
+```
+
+**結果**
+
+- 小規模フィクスチャ(10記事)で`workers=1`と`workers=4`が完全にバイト単位で同一の`model.sqlite3`を生成することをテストで確認した。
+- `make check`(1402 passed、+1件)、`uv run mypy src`(138ファイル、エラーなし)、`git diff --check`が成功することを確認した。
+- `config`の`[normalize].workers`(デフォルト8)は以前から宣言されていたが読まれていなかった値で、今回初めて実際にワーカー数として使用されるようになった。フルスケール実行時の実測(1.5万記事程度でどの程度速くなるか)はユーザー側で確認予定。
+
+**次タスク**
+
+- なし(TASKS.mdの全タスクが完了)
+- 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
+- ユーザーが依頼した場合のみ: `generate`ステージの3層メモリ蓄積問題(30-40GB)の改善
