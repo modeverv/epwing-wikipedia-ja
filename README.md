@@ -85,37 +85,82 @@ wikipedia-epwing-v2/
 
 以下は実際に動作するコマンドです(詳細は[BUILD.md](BUILD.md)を参照)。「想定」ではなく、実データ全件規模(EPIC R/S)で検証済みです。
 
+### 0. 事前準備(初回のみ)
+
 ```bash
-make doctor
+# 認証情報の読み込み(.envは自動読み込みされないため毎回明示的に行う)
+set -a
+source .env
+set +a
+```
+
+`config/default.toml`の`[paths]`は`/data/...`をデフォルトにしており、これはDockerコンテナ内を前提としたパスです。**macOSホストでネイティブ実行する場合は、実在するディレクトリを指す`--config`上書きファイルが必須です。** 例えばリポジトリ直下の`data/`(`.gitignore`済み)を使う場合:
+
+```toml
+# config/local-paths.toml (例、各自のパスに合わせて用意する)
+schema_version = 1
+project = "jawiki"
+profile = "lite"
+
+[paths]
+sources = "../data/sources"
+reference = "../data/reference"
+work = "../data/work"
+cache = "../data/cache"
+output = "../data/output"
+reports = "../data/reports"
+logs = "../data/logs"
+```
+
+（`[paths]`の相対パスは、このTOMLファイル自身のディレクトリ`config/`からの相対で解決されるため、リポジトリ直下の`data/`を指すには`../data/...`と書きます。）
+
+以降のコマンドはすべて`--config config/local-paths.toml`(または自分で用意した上書きファイル)を付けて実行してください。
+
+```bash
+mkdir -p data/{sources,reference,work,cache,output,reports,logs}
+uv run python -m wikiepwing.cli doctor --config config/local-paths.toml
+```
+
+### 1. パイプライン本体
+
+```bash
 make test
 make check          # format-check + lint + typecheck + test
 
 # Snapshotの取得
-uv run python -m wikiepwing.cli acquire --namespace 0 --snapshot-version latest --git-commit "$(git rev-parse HEAD)"
+uv run python -m wikiepwing.cli acquire --config config/local-paths.toml \
+  --namespace 0 --snapshot-version latest --git-commit "$(git rev-parse HEAD)"
 
 # 取り込み→正規化→生成(3ステージ個別、または build でまとめて)
-uv run python -m wikiepwing.cli ingest --lock-path <source.lock.json> --git-commit "$(git rev-parse HEAD)"
-uv run python -m wikiepwing.cli normalize --git-commit "$(git rev-parse HEAD)"
-uv run python -m wikiepwing.cli generate --config config/profiles/mini.toml --entries-output entries-mini.jsonl --git-commit "$(git rev-parse HEAD)"
+uv run python -m wikiepwing.cli ingest --config config/local-paths.toml \
+  --lock-path <source.lock.json> --git-commit "$(git rev-parse HEAD)"
+uv run python -m wikiepwing.cli normalize --config config/local-paths.toml \
+  --git-commit "$(git rev-parse HEAD)"
+uv run python -m wikiepwing.cli generate --config config/local-paths.toml --config config/profiles/mini.toml \
+  --entries-output entries-mini.jsonl --git-commit "$(git rev-parse HEAD)"
 
 # 検証
-uv run python -m wikiepwing.cli verify-raw --raw-database paths.work/raw.sqlite3
+uv run python -m wikiepwing.cli verify-raw --raw-database data/work/raw.sqlite3
 uv run python -m wikiepwing.cli verify --entries entries-mini.jsonl
 
 # Lite/Full向け画像パイプライン
-uv run python -m wikiepwing.cli image-plan --model-database paths.work/model.sqlite3
-uv run python -m wikiepwing.cli image-fetch --config config/profiles/lite.toml --model-database paths.work/model.sqlite3 --originals-dir <dir> --report <report.json>
-uv run python -m wikiepwing.cli image-convert --originals-dir <dir> --report <report.json> --cache-dir <cache> --graphics-dir <graphics>
+uv run python -m wikiepwing.cli image-plan --model-database data/work/model.sqlite3
+uv run python -m wikiepwing.cli image-fetch --config config/local-paths.toml --config config/profiles/lite.toml \
+  --model-database data/work/model.sqlite3 --originals-dir <dir> --report <report.json>
+uv run python -m wikiepwing.cli image-convert --originals-dir <dir> --report <report.json> \
+  --cache-dir <cache> --graphics-dir <graphics>
 
 # 実際にEPWINGバイナリ(.epwing.zip)をビルドする
 make build-epwing ENTRIES=entries-mini.jsonl TITLE="日本語Wikipedia" EPWING_OUTPUT=output/jawiki.epwing.zip
 # 画像/gaijiがある場合: GRAPHICS_DIR=<graphics> GAIJI_DIR=<gaiji> も指定する
 
 # 運用コマンド
-uv run python -m wikiepwing.cli disk-usage
-uv run python -m wikiepwing.cli clean --keep-runs 2
-uv run python -m wikiepwing.cli update
+uv run python -m wikiepwing.cli disk-usage --config config/local-paths.toml
+uv run python -m wikiepwing.cli clean --config config/local-paths.toml --keep-runs 2
+uv run python -m wikiepwing.cli update --config config/local-paths.toml
 ```
+
+`--config`は複数回指定でき、後勝ちで合成されます。パス上書き(`config/local-paths.toml`)とプロファイル(`config/profiles/*.toml`)は別ファイルなので、両方必要なコマンドには両方渡してください。詳細は[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) section 20を参照してください。
 
 CLIサブコマンド一覧は`uv run python -m wikiepwing.cli --help`で確認できます。`wikiepwing`は現時点でPythonパッケージのエントリポイント(`uv run python -m wikiepwing.cli` または`pip install`後は`wikiepwing`コマンド)として提供され、`make`のサブコマンド化(`make acquire`等)はまだ行っていません。
 
