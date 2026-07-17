@@ -26,9 +26,31 @@ from PIL import Image, ImageDraw, ImageFont
 
 DEFAULT_FONT_PATH = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
 
+# Local development machines (this project's Docker toolchain image is the
+# only place `DEFAULT_FONT_PATH` is guaranteed to exist) don't have Debian's
+# `fonts-noto-cjk` package; these macOS-bundled CJK fonts let gaiji glyph
+# rendering run outside the container too.
+_FALLBACK_FONT_PATHS = (
+    Path("/System/Library/Fonts/Hiragino Sans GB.ttc"),
+    Path("/System/Library/Fonts/PingFang.ttc"),
+)
+
 
 class GlyphRenderError(ValueError):
     """Raised when a glyph cannot be rendered into a bitmap."""
+
+
+def resolve_font_path(*, font_path: Path | None = None) -> Path | None:
+    """Return the first available gaiji-rendering font, or None if none is installed.
+
+    An explicit `font_path` is returned as-is only if it exists; otherwise
+    `DEFAULT_FONT_PATH` and this module's local-development fallbacks are
+    tried in order.
+    """
+    for candidate in (font_path, DEFAULT_FONT_PATH, *_FALLBACK_FONT_PATHS):
+        if candidate is not None and candidate.is_file():
+            return candidate
+    return None
 
 
 def render_glyph_bitmap(sequence: str, *, font_path: Path, font_size: int = 16) -> bytes:

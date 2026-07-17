@@ -102,3 +102,46 @@ def test_write_entries_jsonl_does_not_touch_destination_on_failure(
         write_entries_jsonl((_make_entry(),), destination)
 
     assert destination.read_text(encoding="utf-8") == "original\n"
+
+
+def test_write_entries_jsonl_replaces_gaiji_candidate_body_characters_with_tokens(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "entries.jsonl"
+    # U+4E02 ("丂") is JIS X 0212-only (SS3): not backend-representable.
+    entry = _make_entry(body=(TextRenderNode(text="before 丂 after"),))
+
+    plan = write_entries_jsonl((entry,), destination)
+
+    assert not plan.is_empty()
+    code = plan.assigned_codes["丂"]
+    record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
+    assert record["body"] == f"before @@GAIJI:{code}@@ after"
+
+
+def test_write_entries_jsonl_never_embeds_gaiji_tokens_in_title_or_aliases(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "entries.jsonl"
+    entry = _make_entry(title="丂 Title", headwords=("丂 Title", "丂 Alias"))
+
+    write_entries_jsonl((entry,), destination)
+
+    record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
+    assert record["title"] == "[U+4E02] Title"
+    assert record["aliases"] == ["[U+4E02] Alias"]
+    assert "@@GAIJI:" not in record["title"]
+    assert "@@GAIJI:" not in record["aliases"][0]
+
+
+def test_write_entries_jsonl_leaves_fully_representable_text_unchanged(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "entries.jsonl"
+
+    plan = write_entries_jsonl((_make_entry(),), destination)
+
+    assert plan.is_empty()
+    record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
+    assert record["title"] == "Emacs"
+    assert record["body"] == "line one\nline two"

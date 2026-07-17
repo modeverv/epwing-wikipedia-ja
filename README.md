@@ -138,6 +138,10 @@ uv run python -m wikiepwing.cli normalize --config config/local-paths.toml \
   --git-commit "$(git rev-parse HEAD)"
 uv run python -m wikiepwing.cli generate --config config/local-paths.toml --config config/profiles/mini.toml \
   --entries-output entries-mini.jsonl --git-commit "$(git rev-parse HEAD)"
+# generateは外字(gaiji)検出→コード割り当て→本文への埋め込みも行い、既定では
+# entries-mini.jsonlの隣にgaiji/(XBM+halfchars.txt/fullchars.txt)・
+# gaiji.sqlite3(レジストリ)・unicode-report.json(非対応文字レポート)を書き出す
+# (`--gaiji-dir`/`--gaiji-database`/`--unicode-report`/`--gaiji-font-path`で上書き可、詳細はGAIJI.md参照)
 
 # 検証
 uv run python -m wikiepwing.cli verify-raw --raw-database data/work/raw.sqlite3
@@ -155,8 +159,9 @@ uv run python -m wikiepwing.cli image-convert --originals-dir <dir> --report <re
   --cache-dir <cache> --graphics-dir <graphics>
 
 # 実際にEPWINGバイナリ(.epwing.zip)をビルドする
-make build-epwing ENTRIES=entries-mini.jsonl TITLE="日本語Wikipedia" EPWING_OUTPUT=output/jawiki.epwing.zip
-# 画像/gaijiがある場合: GRAPHICS_DIR=<graphics> GAIJI_DIR=<gaiji> も指定する
+make build-epwing ENTRIES=entries-mini.jsonl TITLE="日本語Wikipedia" EPWING_OUTPUT=output/jawiki.epwing.zip \
+  GAIJI_DIR=data/work/gaiji
+# 画像がある場合はGRAPHICS_DIR=<graphics>も追加する
 
 # 運用コマンド
 uv run python -m wikiepwing.cli disk-usage --config config/local-paths.toml

@@ -16,39 +16,66 @@ use JSON::PP;
 # FPWParser expects EUC-JP byte strings (matching the encoding
 # tests/fixtures/handcrafted's smoke test applies via `iconv` before Perl
 # ever sees the data); entries.jsonl is UTF-8 (JSON's own encoding), so every
-# string field is re-encoded to EUC-JP right after JSON decode.
+# string field is re-encoded to EUC-JP right after JSON decode (except body
+# text -- see add_text_with_gaiji below).
 #
 # Perl's Encode module's "euc-jp" happily encodes JIS X 0212 supplementary
 # characters too, using the SS3 (\x8f) prefix -- but FPWParser only
 # understands plain two-byte JIS X 0208 and rejects any \x8f it sees with
-# "invalid character". Real Wikipedia body text contains X 0212-only kanji,
-# so encode() alone crashes the build on real (not fixture) data. Until
-# proper gaiji (external character) substitution exists end-to-end
-# (ARCHITECTURE.md 17.2/18.3/18.4's gaiji pipeline is implemented as library
-# code but not yet wired into normalize/generate), fall back per-character:
-# substitute a geta mark (GETA MARK, U+3013 -- the conventional Japanese
-# "character cannot be displayed" placeholder, itself plain JIS X 0208) for
-# anything that would otherwise need the SS3 prefix. This is a stopgap that
-# loses those specific characters, not a real fix.
-#
-# This used to loop over the string one Perl-level character at a time,
-# calling encode() per character -- at full scale (~1.5M entries, each with
-# a title/body/aliases) that's on the order of a billion individual encode()
-# calls, and Perl function-call overhead dominates. A JIS X 0212 sequence is
-# always exactly SS3 (\x8f) + 2 bytes in 0xA1-0xFE, and \x8f cannot appear as
-# a trailing byte of any other valid EUC-JP sequence (plain JIS X 0208's
-# second byte and SS2 kana's second byte are both >= 0xA1, all above \x8f),
-# so encoding the whole string in one call and then regex-substituting any
-# \x8f + 2 bytes run is byte-for-byte equivalent to the old per-character
-# loop, just without the per-character Perl call overhead.
-my $GETA_MARK_EUC_JP = encode('euc-jp', "\x{3013}");
-
+# "invalid character" (TASK-T013). wikiepwing's gaiji pipeline
+# (wikiepwing.gaiji.embedding, wired into wikiepwing.render.freepwing_source
+# and wikiepwing.render.generate, GAIJI.md) resolves every such character
+# before entries.jsonl is even written: title/alias text gets the plain
+# `[U+XXXX]` fallback (itself plain ASCII, safe for to_euc_jp as-is), and
+# body text gets an `@@GAIJI:<code>@@` placeholder token that
+# add_text_with_gaiji below turns into a real gaiji reference. So by the
+# time any string reaches to_euc_jp, it must not contain a JIS X
+# 0212-only character any more -- encode() is left to raise on \x8f as a
+# defensive check (rather than silently substituting a geta mark, this
+# script's previous stopgap) in case that invariant is ever violated
+# upstream.
 sub to_euc_jp {
     my ($value) = @_;
     return $value unless defined $value;
     my $bytes = encode('euc-jp', $value);
-    $bytes =~ s/\x8f../$GETA_MARK_EUC_JP/gs;
+    die "invalid character: unresolved JIS X 0212 (SS3) byte in: $value\n"
+        if $bytes =~ /\x8f/;
     return $bytes;
+}
+
+# GAIJI_TOKEN matches wikiepwing.gaiji.embedding.GAIJI_TOKEN_FORMAT
+# ("@@GAIJI:<code>@@") and wikiepwing.gaiji.code_assignment's
+# "<narrow|wide>-NNNN" assigned_code format, so the width class needed to
+# choose add_half_user_character vs add_full_user_character is read directly
+# off the token's own prefix -- no separate lookup table is needed here.
+my $GAIJI_TOKEN = qr/\@\@GAIJI:([a-z0-9-]+)\@\@/;
+
+# Splits $value on GAIJI_TOKEN (v1/toolchain/records/build_records.pl's
+# proven placeholder-token design) and feeds each piece to $writer: plain
+# text through to_euc_jp/add_text, gaiji codes through
+# add_half_user_character/add_full_user_character
+# (tests/fixtures/handcrafted/build_fixture.pl demonstrates both real API
+# calls). A capturing split alternates [text, code, text, code, ..., text],
+# so odd indices are always the captured gaiji code.
+sub add_text_with_gaiji {
+    my ($writer, $value) = @_;
+    return unless defined $value && $value ne '';
+    my @pieces = split(/$GAIJI_TOKEN/, $value, -1);
+    for my $index (0 .. $#pieces) {
+        my $piece = $pieces[$index];
+        next unless defined $piece && length($piece);
+        if ($index % 2 == 1) {
+            if ($piece =~ /^narrow-/) {
+                $writer->add_half_user_character($piece) or die $writer->error_message(), "\n";
+            } elsif ($piece =~ /^wide-/) {
+                $writer->add_full_user_character($piece) or die $writer->error_message(), "\n";
+            } else {
+                die "invalid gaiji code: $piece\n";
+            }
+        } else {
+            $writer->add_text(to_euc_jp($piece)) or die $writer->error_message(), "\n";
+        }
+    }
 }
 
 # This script has no incremental output of its own (unlike wikiepwing's
@@ -85,7 +112,11 @@ while (my $line = <$input>) {
         tag => $tag,
         title => to_euc_jp($record->{title}),
         aliases => [map { to_euc_jp($_) } @{$record->{aliases} // []}],
-        body => to_euc_jp($record->{body}),
+        # Not pre-encoded here: body may contain @@GAIJI:...@@ placeholder
+        # tokens interleaved with plain text, and only add_text_with_gaiji
+        # (called per-entry below) knows how to split those apart before
+        # encoding the plain-text pieces.
+        body => $record->{body},
         targets => [map { to_euc_jp($_) } @{$record->{targets} // []}],
     };
     $parsed++;
@@ -121,7 +152,7 @@ for my $entry (@entries) {
     $text->add_newline() or die $text->error_message(), "\n";
 
     if (defined $entry->{body} && $entry->{body} ne '') {
-        $text->add_text($entry->{body}) or die $text->error_message(), "\n";
+        add_text_with_gaiji($text, $entry->{body});
         $text->add_newline() or die $text->error_message(), "\n";
     }
 

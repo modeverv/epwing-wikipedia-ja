@@ -25,7 +25,7 @@ PLAN.md 31(v1.0 Definition of Done)の各項目を、このプロジェクトの
 | tables | ✅ | EPIC K実装済み |
 | infoboxes | ✅ | EPIC K実装済み。実データのinfobox画像抽出が`generate`の本文プレースホルダーに反映されることを確認(TASK-R008) |
 | references | ✅ | EPIC L実装済み |
-| gaiji fallback | ✅ | EPIC M実装済み(M001〜M009すべて完了) |
+| gaiji fallback | 🟡 | EPIC M(M001〜M009)のライブラリ実装に加え、`normalize`/`generate`への実配線が完了(`wikiepwing.gaiji.embedding`、`wikiepwing.render.freepwing_source.write_entries_jsonl`、`wikiepwing.render.generate.run_generate`)。`representability.py`がJIS X 0212(SS3)を誤って「表現可能」と判定していたバグ(GAIJI.md)も修正済み。実toolchainイメージでJIS X 0212かな漢字(wide)+非JIS文字(narrow)を含む本文を実際にビルド・検索できることを確認済み(`docker/toolchain/freepwing_build_entries.pl`が`@@GAIJI:...@@`トークンを`add_half_user_character`/`add_full_user_character`へ変換)。ただし実データ全件(約150万記事)規模での実行・実ビューアでのgaiji表示確認はまだ行っていない。画像(色グラフィック)の同種の本文埋め込み配線は今回のスコープ外(GAIJI.md参照) |
 | images Lite/Full | 🟡 | パイプライン自体は実データで検証済み(TASK-R007、約2万件のサンプル取得・変換に成功)。ただし全件(約250万ユニークURL)での実行は逐次ダウンロードの所要時間(4〜12日)のためまだ行っていない |
 | math Lite/Full | 🟡 | EPIC N実装済みで小規模フィクスチャでは検証済みだが、EPIC Rの実データ全件実行で数式コンテンツの有無・レンダリング結果を個別にスポットチェックしてはいない |
 

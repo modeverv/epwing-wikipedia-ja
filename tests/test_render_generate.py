@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from wikiepwing.gaiji.database import connect_gaiji_database
+from wikiepwing.gaiji.glyph_renderer import resolve_font_path
 from wikiepwing.model.article import Article
 from wikiepwing.model.blocks import ParagraphBlock
 from wikiepwing.model.canonical import encode_article
@@ -173,3 +175,128 @@ def test_run_generate_force_reruns_despite_complete_manifest(tmp_path: Path) -> 
 
 def test_read_manifest_status_returns_none_when_missing(tmp_path: Path) -> None:
     assert read_manifest_status(tmp_path / "missing.json") is None
+
+
+def test_run_generate_with_no_gaiji_candidates_leaves_optional_outputs_untouched(
+    tmp_path: Path,
+) -> None:
+    database_path = _seed_model_database(
+        tmp_path / "model.sqlite3", [(_make_article(), "complete")]
+    )
+
+    run_generate(
+        model_database_path=database_path,
+        entries_path=tmp_path / "entries.jsonl",
+        manifest_path=tmp_path / "manifests" / "50-generate.json",
+        run_id="test-run",
+        gaiji_dir=tmp_path / "gaiji",
+        gaiji_database_path=tmp_path / "gaiji.sqlite3",
+        unicode_report_path=tmp_path / "unicode-report.json",
+    )
+
+    assert (tmp_path / "gaiji" / "halfchars.txt").read_text(encoding="utf-8") == ""
+    assert (tmp_path / "gaiji" / "fullchars.txt").read_text(encoding="utf-8") == ""
+    with connect_gaiji_database(tmp_path / "gaiji.sqlite3") as connection:
+        rows = connection.execute("SELECT COUNT(*) AS count FROM gaiji").fetchone()
+        assert rows["count"] == 0
+    report = json.loads((tmp_path / "unicode-report.json").read_text(encoding="utf-8"))
+    assert report["total_occurrences"] == 0
+
+
+def test_run_generate_renders_gaiji_bitmap_and_registers_it(tmp_path: Path) -> None:
+    font_path = resolve_font_path()
+    if font_path is None:
+        pytest.skip("no CJK font available in this environment")
+    # U+4E02 ("丂"): JIS X 0212-only, a real gaiji candidate.
+    database_path = _seed_model_database(
+        tmp_path / "model.sqlite3",
+        [
+            (
+                _make_article(
+                    blocks=(ParagraphBlock(inlines=(TextInline(value="body 丂 text"),)),)
+                ),
+                "complete",
+            )
+        ],
+    )
+    gaiji_dir = tmp_path / "gaiji"
+    gaiji_database_path = tmp_path / "gaiji.sqlite3"
+
+    result = run_generate(
+        model_database_path=database_path,
+        entries_path=tmp_path / "entries.jsonl",
+        manifest_path=tmp_path / "manifests" / "50-generate.json",
+        run_id="test-run",
+        gaiji_dir=gaiji_dir,
+        gaiji_database_path=gaiji_database_path,
+        font_path=font_path,
+        font_identifier="test-font",
+    )
+
+    assert result.manifest.status == "complete"
+    record = json.loads(result.entries_path.read_text(encoding="utf-8").splitlines()[0])
+    assert "@@GAIJI:" in record["body"]
+
+    halfchars = (gaiji_dir / "halfchars.txt").read_text(encoding="utf-8")
+    fullchars = (gaiji_dir / "fullchars.txt").read_text(encoding="utf-8")
+    assert halfchars or fullchars
+
+    with connect_gaiji_database(gaiji_database_path) as connection:
+        row = connection.execute("SELECT * FROM gaiji WHERE sequence = ?", ("丂",)).fetchone()
+        assert row is not None
+        assert row["font_identifier"] == "test-font"
+        assert row["usage_count"] == 1
+        assert Path(row["bitmap_path"]).is_file()
+
+
+def test_run_generate_raises_when_gaiji_needed_but_no_font_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wikiepwing.render.generate.resolve_font_path", lambda **_kwargs: None)
+    database_path = _seed_model_database(
+        tmp_path / "model.sqlite3",
+        [
+            (
+                _make_article(
+                    blocks=(ParagraphBlock(inlines=(TextInline(value="body 丂 text"),)),)
+                ),
+                "complete",
+            )
+        ],
+    )
+
+    with pytest.raises(GenerateError, match="no CJK font"):
+        run_generate(
+            model_database_path=database_path,
+            entries_path=tmp_path / "entries.jsonl",
+            manifest_path=tmp_path / "manifests" / "50-generate.json",
+            run_id="test-run",
+            gaiji_dir=tmp_path / "gaiji",
+        )
+
+
+def test_run_generate_gaiji_database_requires_gaiji_dir(tmp_path: Path) -> None:
+    database_path = _seed_model_database(
+        tmp_path / "model.sqlite3",
+        [
+            (
+                _make_article(
+                    blocks=(ParagraphBlock(inlines=(TextInline(value="body 丂 text"),)),)
+                ),
+                "complete",
+            )
+        ],
+    )
+    font_path = resolve_font_path()
+    if font_path is None:
+        pytest.skip("no CJK font available in this environment")
+
+    with pytest.raises(GenerateError, match="requires gaiji_dir"):
+        run_generate(
+            model_database_path=database_path,
+            entries_path=tmp_path / "entries.jsonl",
+            manifest_path=tmp_path / "manifests" / "50-generate.json",
+            run_id="test-run",
+            gaiji_database_path=tmp_path / "gaiji.sqlite3",
+            font_path=font_path,
+        )

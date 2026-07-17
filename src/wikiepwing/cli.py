@@ -435,6 +435,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="proceed even if the manifest shows a previous run still 'running'",
     )
+    generate.add_argument(
+        "--gaiji-dir",
+        type=Path,
+        help=(
+            "gaiji build output directory: XBM bitmaps + halfchars.txt/fullchars.txt for "
+            "docker/toolchain/build-epwing.sh's GAIJI_DIR argument "
+            "(default: next to --entries-output, <dir>/gaiji)"
+        ),
+    )
+    generate.add_argument(
+        "--gaiji-database",
+        type=Path,
+        help=(
+            "gaiji registry sqlite3 output path "
+            "(default: next to --entries-output, <dir>/gaiji.sqlite3)"
+        ),
+    )
+    generate.add_argument(
+        "--unicode-report",
+        type=Path,
+        help=(
+            "unrepresentable/fallback character report output path "
+            "(default: next to --entries-output, <dir>/unicode-report.json)"
+        ),
+    )
+    generate.add_argument(
+        "--gaiji-font-path",
+        type=Path,
+        help="font file used to render gaiji bitmaps (default: auto-detected CJK font)",
+    )
     build = subparsers.add_parser(
         "build", help="chain ingest -> normalize -> generate, reusing completed stages"
     )
@@ -941,6 +971,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             config.paths.work / "runs" / run_id / "manifests" / "50-generate.json"
         )
         git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
+        gaiji_section = config.section("gaiji")
 
         generate_result = run_generate(
             model_database_path=model_database_path,
@@ -955,6 +986,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"articles_skipped={metrics.articles_skipped}",
                 file=sys.stderr,
             ),
+            gaiji_dir=cast(Path | None, arguments.gaiji_dir) or (entries_path.parent / "gaiji"),
+            gaiji_database_path=cast(Path | None, arguments.gaiji_database)
+            or (entries_path.parent / "gaiji.sqlite3"),
+            unicode_report_path=cast(Path | None, arguments.unicode_report)
+            or (entries_path.parent / "unicode-report.json"),
+            font_path=cast(Path | None, arguments.gaiji_font_path),
+            font_identifier=f"{gaiji_section['font_family']} ({gaiji_section['font_package_id']})",
         )
         print(generate_result.manifest_path)
         return 0 if generate_result.manifest.status == "complete" else 1
@@ -1034,6 +1072,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 1
 
         if "generate" in stages:
+            gaiji_section = config.section("gaiji")
             generate_result = run_generate(
                 model_database_path=model_database_path,
                 entries_path=entries_path,
@@ -1041,6 +1080,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 run_id=run_id,
                 git_commit=git_commit,
                 force=is_forced_stage("generate", force_stage),
+                gaiji_dir=entries_path.parent / "gaiji",
+                gaiji_database_path=entries_path.parent / "gaiji.sqlite3",
+                unicode_report_path=entries_path.parent / "unicode-report.json",
+                font_identifier=(
+                    f"{gaiji_section['font_family']} ({gaiji_section['font_package_id']})"
+                ),
             )
             print(generate_result.manifest_path)
             if generate_result.manifest.status != "complete":

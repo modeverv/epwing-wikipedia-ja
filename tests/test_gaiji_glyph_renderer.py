@@ -8,6 +8,7 @@ from wikiepwing.gaiji.glyph_renderer import (
     GlyphRenderError,
     bitmap_hash,
     render_glyph_bitmap,
+    resolve_font_path,
 )
 
 # This dev environment has no Debian fonts-noto-cjk package installed (that
@@ -87,3 +88,24 @@ def test_bitmap_hash_is_deterministic() -> None:
 
 def test_bitmap_hash_differs_for_different_content() -> None:
     assert bitmap_hash(b"a") != bitmap_hash(b"b")
+
+
+def test_resolve_font_path_prefers_an_explicit_existing_path(tmp_path: Path) -> None:
+    font_file = tmp_path / "custom.ttc"
+    font_file.write_bytes(b"not a real font, existence is all that matters here")
+
+    assert resolve_font_path(font_path=font_file) == font_file
+
+
+def test_resolve_font_path_falls_back_when_explicit_path_is_missing(tmp_path: Path) -> None:
+    result = resolve_font_path(font_path=tmp_path / "no-such-font.ttc")
+
+    assert result is None or result.is_file()
+
+
+def test_resolve_font_path_finds_some_font_in_this_dev_environment() -> None:
+    result = resolve_font_path()
+
+    if result is None:
+        pytest.skip("no CJK font available in this environment")
+    assert result.is_file()

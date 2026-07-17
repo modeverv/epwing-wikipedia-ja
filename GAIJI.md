@@ -5,6 +5,70 @@
 実装することを前提に、現状分かっていること・見つかった問題・未決定事項をまとめて
 います。
 
+## 実装結果(2026-07-17、本メモに基づき本格対応を実施)
+
+以下、本メモが要求していた本格対応(検出→分類→コード割り当て→グリフ描画→
+ビルドファイル書き出し→本文への埋め込み)を実装した。§1〜§7は実装前の調査メモ
+として残すが、いくつかの記載は実装によって古くなっている(該当箇所に注記した)。
+
+- §3のバグを修正: `representability.py`の`is_backend_representable`が
+  EUC-JPエンコード結果の先頭バイトが`0x8f`(JIS X 0212 SS3)になる文字も
+  「表現可能」と誤判定していた。実際のPerl `Encode`/`FPWParser`の挙動
+  (`v1/toolchain/records/build_records.pl`の`needs_gaiji`が既に正しく実装
+  していた判定と同じ)に合わせ、SS3プレフィックスは「表現不可(C/D分類へ)」
+  として扱うよう修正した。ベンダー拡張領域(0xF0〜0xFEの私用領域行)は
+  未検証のまま「表現可能」扱いを維持している(§7参照、変更していない)。
+- §2の統合ギャップを解消: 新規`src/wikiepwing/gaiji/embedding.py`が
+  `plan_gaiji_codes`(全記事のtitle/alias/body文字列を1回スキャンし、
+  `assign_gaiji_codes`で決定論的にコード割り当て)と`embed_gaiji_tokens`
+  (本文: A分類はそのまま、C分類は`@@GAIJI:<code>@@`トークン、D分類は
+  `[U+XXXX]`)、`embed_title_fallback`(title/alias: A分類以外は全て
+  `[U+XXXX]`、gaijiトークンは絶対に生成しない)を提供する。
+  `wikiepwing.render.freepwing_source.write_entries_jsonl`がこれを呼び出し、
+  `wikiepwing.render.generate.run_generate`が`gaiji_dir`/
+  `gaiji_database_path`/`unicode_report_path`が指定されればそれぞれ
+  ビルドファイル(XBM+halfchars.txt/fullchars.txt)・レジストリ
+  (`gaiji.sqlite3`、実行毎に作り直し)・レポートを書き出す。CLIの
+  `generate`/`build`サブコマンドは`--entries-output`の隣に
+  `gaiji/`・`gaiji.sqlite3`・`unicode-report.json`をデフォルトで出力する
+  (`--gaiji-dir`等で上書き可)。
+- **title/aliasにgaijiトークンを埋め込まない設計判断**: title/aliasは
+  `word2->add_entry`の検索キーとしてそのまま使われるため、`@@GAIJI:...@@`
+  という生トークン文字列が検索キーに混入すると絶対に検索できないentryが
+  生まれてしまう。v1(`v1/src/wikiepwing/epwing/gaiji.py`)も同じ理由で
+  titleは常に`[U+XXXX]`表記に倒しており、その前例に倣った(§4の
+  「本文埋め込み構文」調査結果と合わせ、本文と検索キーで扱いを分けるのが
+  正しいと判断)。
+- §5の実機調査は完了: `tests/fixtures/handcrafted/build_fixture.pl`に
+  実際のFreePWING API呼び出し例(`add_half_user_character`/
+  `add_full_user_character`/`add_color_graphic_start`/
+  `add_color_graphic_end`)がそのまま存在した。さらに`v1/toolchain/records/build_records.pl`
+  に、本文中へのプレースホルダートークン埋め込み+Perl側での分割という、
+  今回採用したのと同じ設計の実例(`@@GAIJI:...@@`/`@@CGRAPH:...@@`)が
+  既にあった。`docker/toolchain/freepwing_build_entries.pl`に
+  `add_text_with_gaiji`を追加し、`@@GAIJI:(narrow|wide)-NNNN@@`を
+  `add_half_user_character`/`add_full_user_character`へ変換するようにした
+  (コードの`narrow-`/`wide-`プレフィックスからwidth classをそのまま読める
+  ため、Perl側に別途ルックアップテーブルは不要)。
+- TASK-T013の暫定回避策(`to_euc_jp`の geta マーク置換)を撤去(§0/§6の
+  想定通り)。修正後のパイプラインではtitle/alias/bodyのどの経路でも
+  `\x8f`バイトが`to_euc_jp`に到達しない設計になっているため、万一到達したら
+  黙って置換せず`die`する防御的チェックに変更した。
+- 実toolchainイメージ(`wikiepwing-toolchain:dev`)で実際に
+  `fpwmake`を実行し、JIS X 0212のみの漢字(wide gaiji、例: 丂)と
+  JIS X 0208に存在しない非日本語文字(narrow gaiji、例: タイ文字)を含む
+  本文が、クラッシュせずビルド・検索(`wikiepwing-eb-search`)できることを
+  確認した(`ebinfo`が`narrow font characters`/`wide font characters`を
+  実際に報告)。
+- 画像(色グラフィック、§4の類似問題)の本文埋め込み配線は今回のスコープ外
+  とした(gaijiのみ先行、§7の選択肢のうち「gaijiだけ先に進める」を採用)。
+  `freepwing_graphics.py`/`RenderedEntry.graphics`は引き続き未配線のまま。
+- 未解決のまま残した項目(§7参照): ベンダー拡張領域(0xF0〜0xFEの私用領域行)
+  の実ビューアでの表示確認、実データ全件(約150万記事)規模でのgaiji配線の
+  実行・検証、`config.section("gaiji")`の`enabled`/`fallback_format`
+  キーは宣言に沿って読み込む配線をしていない(`font_family`/
+  `font_package_id`はレジストリの`font_identifier`列に反映済み)。
+
 ## 0. 背景(なぜこのメモがあるか)
 
 2026-07-17、実データ全件(約150万記事)で`make build-epwing`を実行したところ
