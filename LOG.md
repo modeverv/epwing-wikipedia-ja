@@ -6680,3 +6680,36 @@ git diff --check
 - なし(TASKS.mdの全タスクが完了)
 - ユーザーへ報告: 全件規模の`entries-mini.jsonl`をgaijiディレクトリなしでビルドすると`invalid character`エラーが出る可能性がある(gaiji生成済みディレクトリを`GAIJI_DIR`に渡す必要がある)
 - 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
+
+## 2026-07-17 TASK-T013 Simple workaround for JIS X 0212 characters crashing the build
+
+**目的**
+
+ユーザーが全件規模の`entries-mini.jsonl`(約150万記事)でビルドを試したところ`invalid character: \x8f`で失敗した。外字(gaiji)パイプラインの現状を調査した結果、本格対応(normalize/generateへの外字置換統合、CLIコマンド新設)は相応の規模の作業になることを説明し、ユーザーから「簡易的な回避策を先に試したい」との依頼を受けた。
+
+**変更**
+
+- `docker/toolchain/freepwing_build_entries.pl`: `to_euc_jp`を文字単位のループに変更。各文字をEUC-JPエンコードし、先頭バイトが`0x8f`(JIS X 0212のSS3プレフィックス、FPWParserが理解できない)になるものだけを全角下駄記号(〓、U+3013、素のJIS X 0208で表現可能)に置換するようにした
+- `TASKS.md`(TASK-T013追加)
+
+**実行コマンド**
+
+```bash
+sh docker/toolchain/freepwing-build-entries-smoke.sh wikiepwing-toolchain:dev
+# JIS X 0212専用文字(凜)を含む新規フィクスチャでの再現確認
+sh docker/toolchain/build-epwing.sh wikiepwing-toolchain:dev <凜を含むentries.jsonl> /tmp/gaiji-test.epwing.zip "" "" "外字テスト"
+git diff --check
+```
+
+**結果**
+
+- 原因: PerlのEncodeモジュールの`euc-jp`は、JIS X 0212(補助漢字面)の文字もSS3(`\x8f`)プレフィックス付きでエンコードしてしまうが、FreePWINGのFPWParserはJIS X 0208の2バイトコードしか理解せず`\x8f`を見ると即エラーになる。実データの本文には、珍しくはない通常の漢字でJIS X 0212にしか収録されていないものが含まれるため(既存のフィクスチャは意図的にJIS X 0208内の文字だけを使っていたため再現しなかった)、全件規模で初めて顕在化した。
+- 修正後、既存の`freepwing-build-entries-smoke.sh`(通常のASCII/JIS X0208日本語コンテンツ)が引き続き成功することを確認した。加えて、JIS X 0212専用の実在漢字「凜」を含む新規フィクスチャを作成してビルドし、`invalid character`エラーが再発せず最後まで`.epwing.zip`が生成されることを確認した。
+- これはあくまで簡易回避策であり、該当文字の情報は失われる(下駄記号に置き換わる)。本格的な対応(normalize/generateでの外字コード割り当て・専用グリフ描画・EPWING外字フォントとしての登録)は別途実施が必要であることをユーザーに明示した。
+- シェルスクリプトのみの変更のため`make check`(Pythonテスト)には影響なし。`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- ユーザーが依頼した場合のみ: normalize/generateへの本格的な外字(gaiji)パイプライン統合(検出→コード割り当て→グリフ描画→ビルドファイル書き出しのCLIコマンド新設)
+- 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
+- RELEASE_CHECKLIST.mdの「gaiji fallback ✅ 完了」の記載は、ライブラリ関数レベルの完了であってパイプライン統合はされていない実態を反映するよう修正が必要(今回未実施)

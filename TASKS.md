@@ -942,3 +942,9 @@
 **依存:** T007
 
 ユーザーが実際に`make build-epwing`を実行した際、`cp: -r not specified; omitting directory '/input/entries.jsonl'`というエラーで失敗した。原因は`docker run -v`の仕様: ホスト側パスが`/`や`./`で始まらない相対パス(例: `entries-mini.jsonl`)の場合、Dockerはこれをbind mountではなく名前付きボリュームとして解釈し、空のディレクトリを作ってマウントしてしまう。`build-epwing.sh`内で`entries`/`graphics_dir`/`gaiji_dir`を`docker run -v`に渡す前に絶対パスへ解決するよう修正した。実際に`hundred_articles.ndjson`フィクスチャから生成した100記事entries.jsonlを相対パスで指定してビルドし、`ebinfo`・`wikiepwing-eb-search`での検索成功まで確認済み。
+
+### TASK-T013 [x] Simple workaround for JIS X 0212 characters crashing the build
+
+**依存:** T012
+
+ユーザーが全件規模の`entries-mini.jsonl`でビルドを試したところ、`invalid character: \x8f`で`fpwmake`が失敗した。原因調査の結果、gaiji(外字)のクエリに対しユーザーへ「本格対応にはnormalize/generateへの外字置換パイプライン統合が必要で相応の規模の作業になる」と説明したところ、「簡易的な回避策を先に試したい」との回答を得た。原因は`docker/toolchain/freepwing_build_entries.pl`の`to_euc_jp`: PerlのEncodeモジュールは`euc-jp`エンコード時にJIS X 0212(SS3、`\x8f`プレフィックス)の文字も変換してしまうが、FreePWINGのFPWParserはJIS X 0208の2バイトコードしか理解せず`\x8f`を見ると死ぬ。実データの本文には(表現できないほど珍しい漢字ではなく)JIS X 0212にしか無い通常の漢字が普通に含まれるため、フィクスチャでは再現しなかった。`to_euc_jp`を文字単位のループに変更し、EUC-JPエンコード結果の先頭バイトが`0x8f`になる文字だけを全角下駄記号(〓、U+3013、JIS X 0208内)に置換するようにした(本格的なgaiji置換の代替であり、該当文字の情報は失われる簡易回避策であることを明記)。既存の`freepwing-build-entries-smoke.sh`回帰確認、およびJIS X 0212専用文字(凜)を含む新規フィクスチャでビルドが成功することを確認済み。

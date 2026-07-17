@@ -17,9 +17,34 @@ use JSON::PP;
 # tests/fixtures/handcrafted's smoke test applies via `iconv` before Perl
 # ever sees the data); entries.jsonl is UTF-8 (JSON's own encoding), so every
 # string field is re-encoded to EUC-JP right after JSON decode.
+#
+# Perl's Encode module's "euc-jp" happily encodes JIS X 0212 supplementary
+# characters too, using the SS3 (\x8f) prefix -- but FPWParser only
+# understands plain two-byte JIS X 0208 and rejects any \x8f it sees with
+# "invalid character". Real Wikipedia body text contains X 0212-only kanji,
+# so encode() alone crashes the build on real (not fixture) data. Until
+# proper gaiji (external character) substitution exists end-to-end
+# (ARCHITECTURE.md 17.2/18.3/18.4's gaiji pipeline is implemented as library
+# code but not yet wired into normalize/generate), fall back per-character:
+# substitute a geta mark (GETA MARK, U+3013 -- the conventional Japanese
+# "character cannot be displayed" placeholder, itself plain JIS X 0208) for
+# anything that would otherwise need the SS3 prefix. This is a stopgap that
+# loses those specific characters, not a real fix.
+my $GETA_MARK_EUC_JP = encode('euc-jp', "\x{3013}");
+
 sub to_euc_jp {
     my ($value) = @_;
-    return defined($value) ? encode('euc-jp', $value) : $value;
+    return $value unless defined $value;
+    my $result = '';
+    for my $char (split //, $value) {
+        my $bytes = encode('euc-jp', $char);
+        if (length($bytes) > 0 && ord(substr($bytes, 0, 1)) == 0x8f) {
+            $result .= $GETA_MARK_EUC_JP;
+        } else {
+            $result .= $bytes;
+        }
+    }
+    return $result;
 }
 
 my $input_path = $ARGV[0] // 'entries.jsonl';
