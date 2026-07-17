@@ -6381,3 +6381,31 @@ git diff --check
 **次タスク**
 
 - TASK-T004 Viewer verification guide(依存: Q009,R009、両方完了済み)
+
+## 2026-07-17 TASK-T004 Viewer verification guide
+
+**目的**
+
+COMPATIBILITY.md 7(Viewer compatibility)の記録項目・Pass ruleに基づき、EPWINGビューア(EBWin系、EBPocket系、Emacs Lookup/lookup.el系)での確認手順を`VIEWER_VERIFICATION.md`としてまとめる。
+
+**変更**
+
+- `VIEWER_VERIFICATION.md`(新規): EPWINGバイナリのビルド手順、対象ビューア、記録項目/Pass rule、記録テンプレート
+- `README.md`: 読む順と想定リポジトリ構成に追加
+
+**実行コマンド**
+
+```bash
+make check
+git diff --check
+```
+
+**結果**
+
+- `docker/toolchain/mini-end-to-end-smoke.sh`等の既存スモークテストの実装を確認し、記述内容が実際のツールチェーン(`freepwing_build_entries.pl`, `eb-search.c`, `eb-entry.c`)と整合することを確認した。
+- 全件規模のEPWINGバイナリビルド・実ビューアでの確認はまだ実施していないことを明記した(この環境にはビューアが無く、全件honmonも未ビルドのため、本タスクは手順書作成に限定)。
+- コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- TASK-T005 Licensing/attribution guide(依存: O010,R009、両方完了済み)

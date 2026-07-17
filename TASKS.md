@@ -895,7 +895,7 @@
 
 **依存:** R009
 
-### TASK-T004 [ ] Viewer verification guide
+### TASK-T004 [x] Viewer verification guide
 
 **依存:** Q009,R009
 
