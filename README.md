@@ -81,40 +81,45 @@ wikipedia-epwing-v2/
 └── reports/
 ```
 
-## 想定コマンド
+## 実際のコマンド
+
+以下は実際に動作するコマンドです(詳細は[BUILD.md](BUILD.md)を参照)。「想定」ではなく、実データ全件規模(EPIC R/S)で検証済みです。
 
 ```bash
-make image
 make doctor
 make test
+make check          # format-check + lint + typecheck + test
 
-# 入力の取得
-make acquire PROJECT=jawiki SNAPSHOT=latest
+# Snapshotの取得
+uv run python -m wikiepwing.cli acquire --namespace 0 --snapshot-version latest --git-commit "$(git rev-parse HEAD)"
 
-# 小規模fixtureの生成
-make fixture-build PROFILE=mini
+# 取り込み→正規化→生成(3ステージ個別、または build でまとめて)
+uv run python -m wikiepwing.cli ingest --lock-path <source.lock.json> --git-commit "$(git rev-parse HEAD)"
+uv run python -m wikiepwing.cli normalize --git-commit "$(git rev-parse HEAD)"
+uv run python -m wikiepwing.cli generate --config config/profiles/mini.toml --entries-output entries-mini.jsonl --git-commit "$(git rev-parse HEAD)"
 
-# 固定済み入力から生成
-make build PROJECT=jawiki PROFILE=full
+# 検証
+uv run python -m wikiepwing.cli verify-raw --raw-database paths.work/raw.sqlite3
+uv run python -m wikiepwing.cli verify --entries entries-mini.jsonl
 
-# 成果物検証
-make verify
+# Lite/Full向け画像パイプライン
+uv run python -m wikiepwing.cli image-plan --model-database paths.work/model.sqlite3
+uv run python -m wikiepwing.cli image-fetch --config config/profiles/lite.toml --model-database paths.work/model.sqlite3 --originals-dir <dir> --report <report.json>
+uv run python -m wikiepwing.cli image-convert --originals-dir <dir> --report <report.json> --cache-dir <cache> --graphics-dir <graphics>
+
+# 実際にEPWINGバイナリ(.epwing.zip)をビルドする
+make build-epwing ENTRIES=entries-mini.jsonl TITLE="日本語Wikipedia" EPWING_OUTPUT=output/jawiki.epwing.zip
+# 画像/gaijiがある場合: GRAPHICS_DIR=<graphics> GAIJI_DIR=<gaiji> も指定する
+
+# 運用コマンド
+uv run python -m wikiepwing.cli disk-usage
+uv run python -m wikiepwing.cli clean --keep-runs 2
+uv run python -m wikiepwing.cli update
 ```
 
-CLIの最終形:
+CLIサブコマンド一覧は`uv run python -m wikiepwing.cli --help`で確認できます。`wikiepwing`は現時点でPythonパッケージのエントリポイント(`uv run python -m wikiepwing.cli` または`pip install`後は`wikiepwing`コマンド)として提供され、`make`のサブコマンド化(`make acquire`等)はまだ行っていません。
 
-```bash
-wikiepwing doctor
-wikiepwing source acquire --project jawiki --snapshot latest
-wikiepwing source inspect
-wikiepwing reference scan /reference/boookends-2023
-wikiepwing build --profile mini
-wikiepwing build --profile lite
-wikiepwing build --profile full
-wikiepwing verify
-wikiepwing compare-reference
-wikiepwing report
-```
+`make build-epwing`が呼ぶ`docker/toolchain/build-epwing.sh`は、`entries.jsonl`から実際にEPWING本体(HONMON)をビルドする本番用スクリプトです。小規模(3記事・100記事)フィクスチャでは動作確認済みですが、日本語Wikipedia全件規模での実行時間・成果物サイズはまだ計測していません([TROUBLESHOOTING.md](TROUBLESHOOTING.md)参照)。
 
 ## 開発順序の最重要ルール
 

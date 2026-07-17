@@ -906,3 +906,9 @@
 ### TASK-T006 [x] v1.0 release checklist
 
 **依存:** S005,T001-T005
+
+### TASK-T007 [x] Production EPWING build script
+
+**依存:** T006
+
+ユーザー依頼により追加(RELEASE_CHECKLIST.mdで発見した「entries.jsonlから全件規模でHONMONをビルドする本番スクリプトが無い」ギャップへの対応)。`docker/toolchain/build-epwing.sh`と`make build-epwing`を追加し、README.mdを実態に合わせて更新する。

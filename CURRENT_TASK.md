@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-T006
+TASK-T007
 
 ## 目的
 
-`TASKS.md`のTASK-T006(v1.0 release checklist、依存: S005,T001-T005すべて完了済み)を実施する。PLAN.md 31(v1.0 Definition of Done)の各項目を、このセッションで実際に検証済みの内容(EPIC R/S、TASK-T001〜T005)とコードの実際の状態(grepで確認)に照らして正直に評価し、`RELEASE_CHECKLIST.md`としてまとめる。
+ユーザー依頼により追加。`RELEASE_CHECKLIST.md`(TASK-T006)で発見した「`entries.jsonl`から日本語Wikipedia全件規模でEPWING本体(HONMON)をビルドする本番用スクリプトが存在しない」というギャップに対応する。既存の`freepwing_build_entries.pl`(TASK-H009、汎用実装済み)・`write_graphics_build_files`(TASK-O011)・`write_gaiji_build_files`(EPIC M)を組み合わせ、任意件数の`entries.jsonl`・任意個数の画像/gaijiからEPWINGパッケージ(`.epwing.zip`)を組み立てる`docker/toolchain/build-epwing.sh`と、それを呼ぶ`make build-epwing`ターゲットを追加する。README.mdの「想定コマンド」を実態に合わせて更新する。実際のビルド実行(全件規模)はユーザー側が行うため、本タスクでは小規模な動作確認のみ行う。
 
 ## 事前条件
 
@@ -14,43 +14,50 @@ TASK-T006
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-T006(依存: S005,T001-T005、すべて完了済み)を読んだ
-- [x] `PLAN.md` 31(Build/Content/Quality/Reproducibility/Documentationの5カテゴリ)を項目ごとに評価する方針にした
-- [x] `BUILD-INFO.json`生成関数(`build_build_info`/`write_build_info`)がCLIのどこからも呼ばれていないこと、`app_image_digest`/`toolchain_image_digest`が常に`None`であることをgrepで確認した(Reproducibilityカテゴリの評価に反映)
-- [x] `distribution.include_attribution_appendix`が設定検証のみで実装が無いこと(TASK-T005で確認済み)をDocumentation/Reproducibilityカテゴリの評価に反映する
+- [x] `docker/toolchain/mini-end-to-end-smoke.sh`/`handcrafted-three-entry-smoke.sh`/`package-smoke.sh`の実装を読み、fpwmakeの呼び出しパターン(Makefile変数、`fpwmake`→`fpwmake catalogs`、ebzip、zip)を理解した
+- [x] `docker/toolchain/freepwing_build_entries.pl`が既に汎用実装(任意件数のentries、任意個数のaliases/targets)であることを確認した
+- [x] `src/wikiepwing/media/freepwing_graphics.py`の`write_graphics_build_files`、`src/wikiepwing/gaiji/freepwing_gaiji.py`の`write_gaiji_build_files`が既に`cgraphs.txt`/`halfchars.txt`/`fullchars.txt`形式で出力することを確認した(新規実装不要、既存出力をそのまま使う)
+- [x] `catalogs.txt`(EPWINGカタログメタデータ)を生成するPythonコードが存在しないことを確認し、シェルスクリプト内でタイトル/サブブック名をパラメータ化して生成する設計にした
+- [x] `docker/toolchain/fpwutils.mk`(fpwmakeのMakefile本体)を確認し、`CGRAPHS`/`HALFCHARS`/`FULLCHARS`が未設定/空でも動作すること(画像・gaiji無しのMini相当ビルドに対応)を確認した
 
 ## 変更予定ファイル
 
-- `RELEASE_CHECKLIST.md`(新規)
-- `README.md`(読む順に追加)
-- `TASKS.md`
+- `docker/toolchain/build-epwing.sh`(新規)
+- `Makefile`(`build-epwing`ターゲット追加)
+- `README.md`(「想定コマンド」を実態に更新)
+- `TASKS.md`(TASK-T007追加)
 - `LOG.md`
 - `CURRENT_TASK.md`
 
 ## 実行予定コマンド
 
-なし(ドキュメントのみ。必要に応じて既存実装の有無をgrepで確認する)
+```bash
+# 小規模動作確認(100記事フィクスチャのentries.jsonlを使用、画像・gaiji無し)
+sh docker/toolchain/build-epwing.sh wikiepwing-toolchain:dev <entries.jsonl> /tmp/test.epwing.zip "" "" "テスト百科事典"
+# 生成されたZIPをwikiepwing-eb-searchで検索できることを確認
+```
 
 ## 完了条件
 
-- [x] `RELEASE_CHECKLIST.md`にPLAN.md 31の5カテゴリすべての項目を記載した
-- [x] 各項目について「done」「partial」「not done」を実データ検証結果・コード確認に基づいて判定した
-- [x] 未実装・未検証の項目(BUILD-INFO.jsonの生成未配線、Docker digestの未計算、attribution appendixの未実装、全件規模でのEPWINGバイナリビルド未実施等)を隠さず明記した
-- [x] `README.md`から`RELEASE_CHECKLIST.md`への導線を追加した
+- [x] `docker/toolchain/build-epwing.sh`が任意の`entries.jsonl`(+任意でgraphics/gaijiディレクトリ)から`.epwing.zip`を生成できる
+- [x] `make build-epwing`ターゲットが上記スクリプトを呼び出せる
+- [x] 小規模テスト(100記事フィクスチャ由来のentries.jsonl、画像・gaiji無し)でビルドが成功し、`wikiepwing-eb-search`で実際に検索できることを確認した
+- [x] `README.md`の「想定コマンド」セクションを実態のCLIコマンド・ビルド手順に更新した
 
 ## 非対象
 
-- 未実装項目の実装自体(本タスクは評価・記録のみ)
+- 全件規模(約150万記事)での実際のビルド実行(ユーザー側が実施)
+- 画像・gaiji付きの本番規模テスト(小規模動作確認のみ、時間的制約のため画像・gaiji無しの最小ケースに限定)
+- BUILD-INFO.json/Docker digest/attribution appendixの配線(RELEASE_CHECKLIST.mdに記録済みの別ギャップ、本タスクの範囲外)
 
 ## 実施結果
 
-`RELEASE_CHECKLIST.md`(新規)を作成し、PLAN.md 31の5カテゴリ(Build/Content/Quality/Reproducibility/Documentation)すべての項目を✅done/🟡partial/❌not doneで評価した。
+`docker/toolchain/build-epwing.sh`(新規)を作成した。既存の`freepwing_build_entries.pl`(entries.jsonl解析)、`write_graphics_build_files`/`write_gaiji_build_files`が出力する`cgraphs.txt`/`halfchars.txt`/`fullchars.txt`形式をそのまま入力として受け付け、`catalogs.txt`(EPWINGカタログメタデータ、タイトル/サブブック名をパラメータ化)をスクリプト内で生成し、`fpwmake`→`fpwmake catalogs`→`ebzip`→`zip`で最終的な`.epwing.zip`を組み立てる。画像・gaijiディレクトリは省略可能(Mini相当のビルドに対応、空の`cgraphs.txt`/`halfchars.txt`/`fullchars.txt`をコンテナ内で使う)。
 
-強く検証済みの項目(source lock、resume、Mini/Lite/Full生成、logical hashesなど)はEPIC R/Sでの実データ全件規模・複数環境での検証結果を根拠とした。部分的な項目(画像/数式の全件検証、EPWINGバイナリの全件ビルド、reference/compatibility比較の全件実測)はスコープが縮小されている理由(rate limit、実行時間等)を明記した。
+`Makefile`に`build-epwing`ターゲットと関連変数(`ENTRIES`, `GRAPHICS_DIR`, `GAIJI_DIR`, `TITLE`, `SUBBOOK_DIR`, `EPWING_OUTPUT`)を追加した。
 
-コード確認により新たに発見した3件の未実装ギャップを明記した:
-1. 検索語budget(TASK-Q005の`apply_search_budgets`)が`normalize`/`generate`のどこからも呼ばれていない(grepで確認) — Mini/Lite/Fullの`search`設定が実質的にentries.jsonlへ反映されない
-2. `BUILD-INFO.json`生成関数(TASK-S001)がCLIのどこからも呼ばれていない
-3. Docker image digest(`app_image_digest`/`toolchain_image_digest`)を計算・記録するコードが存在しない(常に`None`)
+小規模動作確認として、`tests/fixtures/enterprise/hundred_articles.ndjson`(既存の100記事フィクスチャ)を実際に`register-local-source`→`ingest`→`normalize`→`generate`→`verify`のPythonパイプラインに通してentries.jsonlを生成し(画像・gaiji無し)、新しい`build-epwing.sh`でEPWINGパッケージを実際にビルドした。ビルドは成功し(`ebinfo`が正しいタイトル「テスト百科事典」を表示)、生成されたZIPを展開して`wikiepwing-eb-search`で"Emacs"を検索したところ、実際に複数の検索結果(R行)が返り、正しく検索可能なEPWING辞書であることを確認した。テスト用の一時ファイルはすべて削除済み。
 
-これらはTASK-T005で発見したattribution appendix未実装と合わせて、v1.0リリース前に対応が必要なギャップとして「まとめ」セクションに整理した。`README.md`の読む順と想定リポジトリ構成に追加した。コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。
+`README.md`の「想定コマンド」「CLIの最終形」セクションを、実際に動作する`wikiepwing`サブコマンド(acquire/ingest/normalize/generate/verify/image-plan/image-fetch/image-convert/disk-usage/clean/update)と、新設した`make build-epwing`による実際のEPWINGビルド手順に更新した。README.mdの読む順に[BUILD.md](BUILD.md)への参照を強調した。
+
+`make check`(既存のPythonテストスイート、コード変更なしのため影響なし)と`git diff --check`が成功することを確認した。

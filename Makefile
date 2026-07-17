@@ -1,11 +1,21 @@
 APP_IMAGE ?= wikiepwing-app:dev
 TOOLCHAIN_IMAGE ?= wikiepwing-toolchain:dev
 FREEPWING_SOURCE ?= data/sources/freepwing_1.6.1.orig.tar.bz2
+ENTRIES ?= output/entries.jsonl
+GRAPHICS_DIR ?=
+GAIJI_DIR ?=
+TITLE ?= Wikipedia
+SUBBOOK_DIR ?= WIKIEP
+EPWING_OUTPUT ?= output/jawiki.epwing.zip
 
-.PHONY: app-image check doctor download-freepwing format format-check lint package-toolchain probe-toolchain test test-app-image test-compose test-eb-image test-eb-source test-ebzip test-freepwing-build-entries test-freepwing-source test-handcrafted test-mini-end-to-end toolchain-image typecheck
+.PHONY: app-image build-epwing check doctor download-freepwing format format-check lint package-toolchain probe-toolchain test test-app-image test-compose test-eb-image test-eb-source test-ebzip test-freepwing-build-entries test-freepwing-source test-handcrafted test-mini-end-to-end toolchain-image typecheck
 
 app-image:
 	docker build --file docker/app.Dockerfile --tag "$(APP_IMAGE)" .
+
+build-epwing: toolchain-image
+	sh docker/toolchain/build-epwing.sh "$(TOOLCHAIN_IMAGE)" "$(ENTRIES)" "$(EPWING_OUTPUT)" \
+		"$(GRAPHICS_DIR)" "$(GAIJI_DIR)" "$(TITLE)" "$(SUBBOOK_DIR)"
 
 doctor:
 	mkdir -p output reports/logs

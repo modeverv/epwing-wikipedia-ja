@@ -6465,3 +6465,37 @@ git diff --check
 **次タスク**
 
 - これでEPIC T(Release documentation、TASK-T001〜T006)がすべて完了した。TASKS.md全体を確認し、残る未完了タスクがあるか棚卸しする
+
+## 2026-07-17 TASK-T007 Production EPWING build script
+
+**目的**
+
+ユーザー依頼。RELEASE_CHECKLIST.md(TASK-T006)で発見した「entries.jsonlから全件規模でHONMONをビルドする本番スクリプトが無い」ギャップに対応する。`docker/toolchain/build-epwing.sh`と`make build-epwing`を追加し、README.mdの「想定コマンド」を実態に更新する。
+
+**変更**
+
+- `docker/toolchain/build-epwing.sh`(新規): 既存の`freepwing_build_entries.pl`/`write_graphics_build_files`/`write_gaiji_build_files`の出力形式をそのまま受け付け、任意件数のentries・任意個数の画像/gaijiから`.epwing.zip`を組み立てる。画像・gaijiディレクトリは省略可能(Mini相当ビルドに対応)。
+- `Makefile`: `build-epwing`ターゲットと関連変数(`ENTRIES`, `GRAPHICS_DIR`, `GAIJI_DIR`, `TITLE`, `SUBBOOK_DIR`, `EPWING_OUTPUT`)を追加。
+- `README.md`: 「想定コマンド」「CLIの最終形」を実際に動作するコマンドに置き換え、`make build-epwing`を追記。
+- `TASKS.md`: TASK-T007を追加。
+
+**実行コマンド**
+
+```bash
+# 小規模動作確認(100記事フィクスチャ、画像・gaiji無し)
+sh docker/toolchain/build-epwing.sh wikiepwing-toolchain:dev <entries.jsonl> /tmp/test.epwing.zip "" "" "テスト百科事典"
+docker run --rm -v <extracted>:/book:ro --entrypoint /opt/eb/bin/wikiepwing-eb-search wikiepwing-toolchain:dev /book word "Emacs" 5
+
+make check
+git diff --check
+```
+
+**結果**
+
+- 100記事フィクスチャ(`tests/fixtures/enterprise/hundred_articles.ndjson`)を実際にPythonパイプライン(register-local-source→ingest→normalize→generate→verify)に通してentries.jsonlを生成し、新しい`build-epwing.sh`でEPWINGパッケージを実際にビルドした。ビルド成功、`ebinfo`が正しいタイトルを表示し、`wikiepwing-eb-search`で"Emacs"検索が実際にヒットすることを確認した。
+- 全件規模(約150万記事)での実行はユーザー側が行う方針のため、本タスクでは実施していない。画像・gaiji付きの本番規模テストも同様に未実施。
+- コード変更(Python側)は無いため`make check`(1395 passed)は影響なし、`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- なし(TASKS.mdの全タスクが完了)。ユーザーが全件規模で`make build-epwing`を実行する際、必要に応じてサポートする
