@@ -15,14 +15,18 @@ surviving terms back by `target_page_id` in priority order for
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from wikiepwing.model.article import Article
 from wikiepwing.search.collision import resolve_single_candidate_per_key
-from wikiepwing.search.search_term import sort_search_terms, title_terms_for_article
+from wikiepwing.search.search_term import SearchTerm, sort_search_terms, title_terms_for_article
 
 
-def headwords_for_articles(articles: Iterable[Article]) -> dict[int, tuple[str, ...]]:
+def headwords_for_articles(
+    articles: Iterable[Article],
+    *,
+    on_progress: Callable[[str, int, int], None] | None = None,
+) -> dict[int, tuple[str, ...]]:
     """Return each article's `page_id` mapped to its final, collision-resolved headwords.
 
     Highest-priority headword first (ARCHITECTURE.md 14.1's `priority`); an
@@ -31,7 +35,11 @@ def headwords_for_articles(articles: Iterable[Article]) -> dict[int, tuple[str, 
     every entry has at least one headword.
     """
     articles = tuple(articles)
-    all_terms = [term for article in articles for term in title_terms_for_article(article)]
+    all_terms: list[SearchTerm] = []
+    for index, article in enumerate(articles, start=1):
+        all_terms.extend(title_terms_for_article(article))
+        if on_progress is not None:
+            on_progress("terms", index, len(articles))
     resolved = resolve_single_candidate_per_key(all_terms)
 
     by_page_id: dict[int, list[str]] = defaultdict(list)
@@ -39,9 +47,11 @@ def headwords_for_articles(articles: Iterable[Article]) -> dict[int, tuple[str, 
         by_page_id[term.target_page_id].append(term.key)
 
     headwords: dict[int, tuple[str, ...]] = {}
-    for article in articles:
+    for index, article in enumerate(articles, start=1):
         keys = by_page_id.get(article.page_id, [])
         if article.title not in keys:
             keys = [article.title, *keys]
         headwords[article.page_id] = tuple(keys)
+        if on_progress is not None:
+            on_progress("group", index, len(articles))
     return headwords

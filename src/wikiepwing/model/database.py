@@ -11,10 +11,12 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 BUSY_TIMEOUT_MILLISECONDS = 5000
+INTEGRITY_PROGRESS_VM_STEPS = 100_000
 MAX_MIGRATION_BYTES = 1024 * 1024
 _MIGRATION_NAME = re.compile(r"^(?P<version>[0-9]{3})_(?P<name>[a-z][a-z0-9_]*)\.sql$")
 
@@ -47,6 +49,7 @@ def initialize_model_database(
     migrations_path: Path | None = None,
     *,
     max_migration_bytes: int = MAX_MIGRATION_BYTES,
+    on_integrity_progress: Callable[[int, bool], None] | None = None,
 ) -> Path:
     """Apply validated pending migrations and verify the resulting database."""
     migrations = _load_migrations(
@@ -59,7 +62,7 @@ def initialize_model_database(
         _verify_applied_history(applied, migrations)
         for migration in migrations[len(applied) :]:
             _apply_migration(connection, migration)
-        _verify_database(connection)
+        _verify_database(connection, on_progress=on_integrity_progress)
     return database
 
 
@@ -166,8 +169,30 @@ COMMIT;
         raise ModelDatabaseError(f"migration {migration.version:03d} failed: {error}") from error
 
 
-def _verify_database(connection: sqlite3.Connection) -> None:
-    integrity = connection.execute("PRAGMA integrity_check").fetchone()
+def _verify_database(
+    connection: sqlite3.Connection,
+    *,
+    on_progress: Callable[[int, bool], None] | None = None,
+) -> None:
+    progress_calls = 0
+
+    def report_progress() -> int:
+        nonlocal progress_calls
+        progress_calls += 1
+        if on_progress is not None:
+            on_progress(progress_calls * INTEGRITY_PROGRESS_VM_STEPS, False)
+        return 0
+
+    if on_progress is not None:
+        connection.set_progress_handler(report_progress, INTEGRITY_PROGRESS_VM_STEPS)
+    try:
+        if on_progress is not None:
+            on_progress(0, False)
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()
+    finally:
+        connection.set_progress_handler(None, 0)
+    if on_progress is not None:
+        on_progress(progress_calls * INTEGRITY_PROGRESS_VM_STEPS, True)
     if integrity is None or integrity[0] != "ok":
         detail = "no result" if integrity is None else str(integrity[0])
         raise ModelDatabaseError(f"model database integrity check failed: {detail}")

@@ -972,3 +972,9 @@
 **依存:** E008,E010
 
 ユーザー依頼により追加。`wikiepwing ingest` の記事処理前に行う全入力チャンクのSHA-256検証と既存raw DBの整合性検証、および記事処理後に行うraw DB全体のfingerprint計算が無表示で、正常に処理中なのか終了不能なのか判別できない。入力検証は全チャンク合計の処理バイト数、DB整合性検証は開始・継続中・完了、DB fingerprintは処理バイト数を標準エラーへ進捗表示する。
+
+### TASK-T018 [x] Post-ingest command progress audit and reporting
+
+**依存:** T017
+
+ユーザーが実行するnormalize、generate、verify、画像パイプライン、toolchain image/build-epwingの一連のコマンドを対象に、実データ規模で長時間になり得る無表示処理を監査する。既存進捗で十分な区間は維持し、開始前・処理中・終了後に無表示となる重い区間だけへbounded-frequencyの進捗表示と回帰テストを追加する。

@@ -6846,3 +6846,45 @@ git diff --check
 **次タスク**
 
 - なし。ingest再実行時の既存complete manifest探索はTASK-T017の非対象。
+
+## 2026-07-18 TASK-T018 Post-ingest command progress audit and reporting
+
+**目的**
+
+`normalize`以降のCLI、画像パイプライン、toolchainビルドを監査し、実データ規模で長時間になり得る無表示区間を可視化する。
+
+**変更**
+
+- 共通の`PhaseProgress`とCLI reporterを追加し、256 MiBごとのファイルI/O、1,000万VMステップごとのSQLite検査、1万件ごとの全件処理をbounded-frequencyで標準エラーへ表示
+- `normalize`/`generate`: 入出力fingerprint、DB integrity、モデル読込、headword生成、gaiji割当・bitmap・registry、JSON encode/writeをフェーズ化
+- `verify-raw`/`verify`: SQLite検査・サンプル展開とJSONL読込・tag/headword/target検査をフェーズ化
+- `image-plan`/`image-fetch`/`image-convert`: SQL走査、画像読込・変換、report/graphics書込をフェーズ化
+- `build-epwing.sh`: 入力配置、`fpwmake`、catalog生成、stage配置、`ebinfo`、`ebzip`、ZIP生成、出力コピーの開始・完了を表示
+- `toolchain-image`は既存のBuildKit進捗が表示されるためコード変更なし
+
+**実行コマンドと結果**
+
+```bash
+uv run pytest -q tests/test_cli.py tests/test_ingest_verify.py tests/test_media_orchestrate.py tests/test_freepwing_toolchain_definition.py
+# 69 passed
+make format-check
+# 292 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 140 source files
+make test
+# 1440 passed, 1 warning
+make toolchain-image
+# success (BuildKit progress displayed)
+sh docker/toolchain/handcrafted-three-entry-smoke.sh wikiepwing-toolchain:dev
+# success
+# 隔離したコミット版freepwing_build_entries.plでbuild-epwing.shを実行
+# phase表示からZIP出力までsuccess
+git diff --check
+# success
+```
+
+**次タスク**
+
+- なし。

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from wikiepwing.pipeline.progress import PhaseProgress
 from wikiepwing.render.verify import EntriesVerificationError, verify_entries_jsonl
 
 
@@ -148,6 +149,30 @@ def test_verify_entries_jsonl_handles_empty_file(tmp_path: Path) -> None:
 
     assert result.ok is True
     assert result.entry_count == 0
+
+
+def test_verify_entries_jsonl_completes_all_progress_phases_for_invalid_records(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "entries.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {"tag": "", "title": "X", "aliases": [], "body": "", "targets": []},
+            {"tag": "p2", "title": "Y", "aliases": [], "body": "", "targets": "bad"},
+        ],
+    )
+    progress: list[PhaseProgress] = []
+
+    verify_entries_jsonl(path, on_progress=progress.append)
+
+    completed_phases = {item.phase for item in progress if item.complete}
+    assert completed_phases == {
+        "verify-entries-read",
+        "verify-entries-tags",
+        "verify-entries-headwords",
+        "verify-entries-targets",
+    }
 
 
 def test_verify_entries_jsonl_rejects_invalid_json(tmp_path: Path) -> None:

@@ -57,8 +57,9 @@ def _ingested_connection(tmp_path: Path):
 
 def test_verifies_clean_ingested_database(tmp_path: Path) -> None:
     connection = _ingested_connection(tmp_path)
+    progress = []
 
-    result = verify_raw_database(connection)
+    result = verify_raw_database(connection, on_progress=progress.append)
 
     assert result.ok is True
     assert result.integrity_check == "ok"
@@ -69,6 +70,10 @@ def test_verifies_clean_ingested_database(tmp_path: Path) -> None:
     assert result.counts.licenses >= 1
     assert result.sample_checked > 0
     assert result.sample_failures == ()
+    assert any(event.phase == "verify-raw-integrity" and event.complete for event in progress)
+    assert any(
+        event.phase == "verify-raw-sample-decompression" and event.complete for event in progress
+    )
 
 
 def test_sample_size_zero_skips_decompression_but_still_checks_integrity(tmp_path: Path) -> None:

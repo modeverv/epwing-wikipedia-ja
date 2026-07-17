@@ -51,6 +51,7 @@ from wikiepwing.model.validate import ModelValidationLimits, validate_article
 from wikiepwing.normalize.media_selection import select_media
 from wikiepwing.normalize.pipeline import NormalizeOptions, normalize_html
 from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
+from wikiepwing.pipeline.progress import PhaseProgress, fingerprint_progress_callback
 from wikiepwing.pipeline.resume import decide_resume
 from wikiepwing.pipeline.stage_manifest import StageManifestError, parse_manifest_timestamp
 from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
@@ -164,6 +165,7 @@ def run_normalize(
     git_commit: str | None = None,
     force: bool = False,
     on_progress: Callable[[NormalizeMetrics], None] | None = None,
+    on_phase_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> NormalizeResult:
     """Normalize every accepted raw article into model.sqlite3.
 
@@ -192,8 +194,10 @@ def run_normalize(
         decision = decide_resume(
             previous_payload,
             stage_version=STAGE_VERSION,
-            current_inputs=_manifest_inputs(raw_database_path),
-            current_output_fingerprint=_current_output_fingerprint(model_database_path),
+            current_inputs=_manifest_inputs(raw_database_path, on_phase_progress=on_phase_progress),
+            current_output_fingerprint=_current_output_fingerprint(
+                model_database_path, on_phase_progress=on_phase_progress
+            ),
         )
         if decision.should_skip:
             assert previous_payload is not None
@@ -211,18 +215,27 @@ def run_normalize(
             model_database_path=None,
             metrics=metrics,
             git_commit=git_commit,
+            on_phase_progress=on_phase_progress,
         ),
         manifest_path,
     )
 
     try:
-        database_path = initialize_model_database(model_database_path, model_migrations_path)
+        database_path = initialize_model_database(
+            model_database_path,
+            model_migrations_path,
+            on_integrity_progress=_integrity_progress_callback(on_phase_progress),
+        )
     except sqlite3.DatabaseError:
         # The previous output was corrupted (e.g. truncated by a mid-write crash)
         # rather than a valid database we can migrate in place; discard it and
         # rebuild from scratch instead of failing this run outright.
         model_database_path.unlink(missing_ok=True)
-        database_path = initialize_model_database(model_database_path, model_migrations_path)
+        database_path = initialize_model_database(
+            model_database_path,
+            model_migrations_path,
+            on_integrity_progress=_integrity_progress_callback(on_phase_progress),
+        )
     status = "failed"
     try:
         raw_connection = connect_raw_database(raw_database_path)
@@ -255,6 +268,7 @@ def run_normalize(
             model_database_path=database_path,
             metrics=metrics,
             git_commit=git_commit,
+            on_phase_progress=on_phase_progress,
         )
         _write_manifest(manifest, manifest_path)
 
@@ -263,10 +277,37 @@ def run_normalize(
     )
 
 
-def _current_output_fingerprint(path: Path) -> tuple[int, str] | None:
+def _integrity_progress_callback(
+    callback: Callable[[PhaseProgress], None] | None,
+) -> Callable[[int, bool], None] | None:
+    if callback is None:
+        return None
+
+    def report(completed: int, complete: bool) -> None:
+        callback(
+            PhaseProgress(
+                phase="normalize-model-integrity",
+                completed=completed,
+                total=None,
+                unit="vm-steps",
+                complete=complete,
+            )
+        )
+
+    return report
+
+
+def _current_output_fingerprint(
+    path: Path, *, on_phase_progress: Callable[[PhaseProgress], None] | None
+) -> tuple[int, str] | None:
     if not path.is_file():
         return None
-    fingerprint = compute_fingerprint(path)
+    fingerprint = compute_fingerprint(
+        path,
+        on_progress=fingerprint_progress_callback(
+            on_phase_progress, "normalize-resume-output-fingerprint"
+        ),
+    )
     return (fingerprint.size_bytes, fingerprint.sha256)
 
 
@@ -292,10 +333,19 @@ def _resume_result(
     )
 
 
-def _manifest_inputs(raw_database_path: Path) -> dict[str, str]:
+def _manifest_inputs(
+    raw_database_path: Path,
+    *,
+    on_phase_progress: Callable[[PhaseProgress], None] | None = None,
+) -> dict[str, str]:
     inputs = {"raw_database_path": str(raw_database_path)}
     if raw_database_path.is_file():
-        inputs["raw_database_fingerprint"] = compute_input_fingerprint(raw_database_path)
+        inputs["raw_database_fingerprint"] = compute_input_fingerprint(
+            raw_database_path,
+            on_progress=fingerprint_progress_callback(
+                on_phase_progress, "normalize-input-fingerprint"
+            ),
+        )
     return inputs
 
 
@@ -309,10 +359,16 @@ def _build_manifest(
     model_database_path: Path | None,
     metrics: NormalizeMetrics,
     git_commit: str | None,
+    on_phase_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> NormalizeManifest:
     outputs: tuple[dict[str, object], ...] = ()
     if model_database_path is not None and model_database_path.is_file():
-        fingerprint = compute_fingerprint(model_database_path)
+        fingerprint = compute_fingerprint(
+            model_database_path,
+            on_progress=fingerprint_progress_callback(
+                on_phase_progress, "normalize-output-fingerprint"
+            ),
+        )
         outputs = (
             {
                 "relative_path": model_database_path.name,
@@ -329,7 +385,7 @@ def _build_manifest(
         run_id=run_id,
         started_at=started_at,
         completed_at=completed_at,
-        inputs=_manifest_inputs(raw_database_path),
+        inputs=_manifest_inputs(raw_database_path, on_phase_progress=on_phase_progress),
         outputs=outputs,
         metrics=metrics,
         software={

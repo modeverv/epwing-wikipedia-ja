@@ -7,6 +7,7 @@ DOCKERFILE = Path("docker/toolchain.Dockerfile")
 BUILD_SCRIPT = Path("docker/toolchain/build-freepwing.sh")
 VERSION_SCRIPT = Path("docker/toolchain/version.sh")
 SMOKE_SCRIPT = Path("docker/toolchain/eb-image-smoke.sh")
+PRODUCTION_BUILD_SCRIPT = Path("docker/toolchain/build-epwing.sh")
 
 
 def _read(path: Path) -> str:
@@ -59,3 +60,17 @@ def test_version_and_smoke_scripts_cover_freepwing_runtime() -> None:
 
     for path in (BUILD_SCRIPT, VERSION_SCRIPT, SMOKE_SCRIPT):
         assert path.stat().st_mode & stat.S_IXUSR, f"{path} is not executable"
+
+
+def test_production_build_reports_each_long_running_phase() -> None:
+    build_script = _read(PRODUCTION_BUILD_SCRIPT)
+
+    for phase in (
+        "build-input-copy",
+        "fpwmake",
+        "fpwmake-catalogs",
+        "ebzip",
+        "deterministic-zip",
+        "output-copy",
+    ):
+        assert f"phase {phase} running" in build_script or f"phase={phase}" in build_script

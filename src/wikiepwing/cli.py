@@ -19,7 +19,7 @@ from wikiepwing.config import load_config
 from wikiepwing.disk_usage import compute_disk_usage
 from wikiepwing.doctor import render_doctor_text, run_doctor
 from wikiepwing.ingest.database import connect_raw_database
-from wikiepwing.ingest.orchestrate import IngestPhaseProgress, run_ingest
+from wikiepwing.ingest.orchestrate import run_ingest
 from wikiepwing.ingest.validate import ValidationLimits
 from wikiepwing.ingest.verify import verify_raw_database
 from wikiepwing.media.cache import MediaCache
@@ -37,6 +37,7 @@ from wikiepwing.normalize.orchestrate import DEFAULT_BATCH_SIZE, run_normalize
 from wikiepwing.normalize.pipeline import NormalizeOptions
 from wikiepwing.pipeline.atomic_write import atomic_write_text
 from wikiepwing.pipeline.build import STAGE_ORDER, is_forced_stage, stages_from
+from wikiepwing.pipeline.progress import PhaseProgress
 from wikiepwing.reference.entries import EbEntryAdapter, sample_reference_entries
 from wikiepwing.reference.inventory import (
     build_reference_inventory,
@@ -60,21 +61,25 @@ from wikiepwing.source_diff import build_update_report, compute_source_diff, wri
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{4,64}$")
 _INGEST_BYTE_PROGRESS_INTERVAL = 256 * 1024 * 1024
 _INGEST_INTEGRITY_PROGRESS_INTERVAL = 10_000_000
+_ITEM_PROGRESS_INTERVAL = 10_000
 
 
-class _IngestPhaseProgressReporter:
-    """Render bounded-frequency progress for ingest's heavyweight surrounding work."""
+class _PhaseProgressReporter:
+    """Render bounded-frequency progress for heavyweight pipeline work."""
 
     def __init__(self) -> None:
         self._last_reported: dict[str, int] = {}
 
-    def __call__(self, progress: IngestPhaseProgress) -> None:
-        interval = (
-            _INGEST_BYTE_PROGRESS_INTERVAL
-            if progress.unit == "bytes"
-            else _INGEST_INTEGRITY_PROGRESS_INTERVAL
-        )
+    def __call__(self, progress: PhaseProgress) -> None:
+        if progress.unit == "bytes":
+            interval = _INGEST_BYTE_PROGRESS_INTERVAL
+        elif progress.unit == "vm-steps":
+            interval = _INGEST_INTEGRITY_PROGRESS_INTERVAL
+        else:
+            interval = _ITEM_PROGRESS_INTERVAL
         previous = self._last_reported.get(progress.phase, -interval)
+        if progress.completed < previous:
+            previous = -interval
         reached_end = progress.total is not None and progress.completed >= progress.total
         if (
             progress.completed != 0
@@ -900,7 +905,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
 
-        phase_progress_reporter = _IngestPhaseProgressReporter()
+        phase_progress_reporter = _PhaseProgressReporter()
         ingest_result = run_ingest(
             lock,
             snapshot_directory=lock_path.parent,
@@ -924,10 +929,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(ingest_result.manifest_path)
         return 0 if ingest_result.manifest.status == "complete" else 1
     if command == "verify-raw":
+        phase_progress_reporter = _PhaseProgressReporter()
         connection = connect_raw_database(cast(Path, arguments.raw_database).resolve())
         try:
             verification = verify_raw_database(
-                connection, sample_size=cast(int, arguments.sample_size)
+                connection,
+                sample_size=cast(int, arguments.sample_size),
+                on_progress=phase_progress_reporter,
             )
         finally:
             connection.close()
@@ -965,6 +973,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
         workers = cast(int | None, arguments.workers) or cast(int, normalize_section["workers"])
 
+        phase_progress_reporter = _PhaseProgressReporter()
         normalize_result = run_normalize(
             raw_database_path=raw_database_path,
             model_database_path=model_database_path,
@@ -983,6 +992,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"articles_rejected={metrics.articles_rejected}",
                 file=sys.stderr,
             ),
+            on_phase_progress=phase_progress_reporter,
         )
         print(normalize_result.manifest_path)
         return 0 if normalize_result.manifest.status == "complete" else 1
@@ -1008,6 +1018,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
         gaiji_section = config.section("gaiji")
 
+        phase_progress_reporter = _PhaseProgressReporter()
         generate_result = run_generate(
             model_database_path=model_database_path,
             entries_path=entries_path,
@@ -1021,6 +1032,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"articles_skipped={metrics.articles_skipped}",
                 file=sys.stderr,
             ),
+            on_phase_progress=phase_progress_reporter,
             gaiji_dir=cast(Path | None, arguments.gaiji_dir) or (entries_path.parent / "gaiji"),
             gaiji_database_path=cast(Path | None, arguments.gaiji_database)
             or (entries_path.parent / "gaiji.sqlite3"),
@@ -1128,15 +1140,37 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return 0
     if command == "verify":
-        entries_verification = verify_entries_jsonl(cast(Path, arguments.entries))
+        phase_progress_reporter = _PhaseProgressReporter()
+        entries_verification = verify_entries_jsonl(
+            cast(Path, arguments.entries), on_progress=phase_progress_reporter
+        )
         print(
             json.dumps(entries_verification.payload(), ensure_ascii=False, indent=2, sort_keys=True)
         )
         return 0 if entries_verification.ok else 1
     if command == "image-plan":
-        plan = plan_media(cast(Path, arguments.model_database))
+        phase_progress_reporter = _PhaseProgressReporter()
+        plan = plan_media(cast(Path, arguments.model_database), on_progress=phase_progress_reporter)
+        phase_progress_reporter(
+            PhaseProgress(
+                phase="image-plan-json",
+                completed=0,
+                total=1,
+                unit="operations",
+            )
+        )
         payload = [{"page_id": entry.page_id, **entry.media.payload()} for entry in plan]
-        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        payload_json = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        phase_progress_reporter(
+            PhaseProgress(
+                phase="image-plan-json",
+                completed=1,
+                total=1,
+                unit="operations",
+                complete=True,
+            )
+        )
+        print(payload_json)
         return 0
     if command == "image-fetch":
         overrides = list(cast(list[Path], arguments.config))
@@ -1146,7 +1180,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_config(_default_config_path(), overrides)
         images_section = config.section("images")
 
-        plan = plan_media(cast(Path, arguments.model_database))
+        phase_progress_reporter = _PhaseProgressReporter()
+        plan = plan_media(cast(Path, arguments.model_database), on_progress=phase_progress_reporter)
         media_downloader = SecureMediaDownloader(
             allowed_hosts=frozenset(cast(list[str], images_section["allowed_hosts"])),
             max_content_length_bytes=cast(int, images_section["max_download_bytes"]),
@@ -1171,22 +1206,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             outcomes,
             originals_dir=cast(Path, arguments.originals_dir),
             report_path=cast(Path, arguments.report),
+            on_progress=phase_progress_reporter,
         )
         succeeded = sum(1 for outcome in outcomes if outcome.ok)
         print(f"fetched={succeeded} failed={len(outcomes) - succeeded} total={len(outcomes)}")
         return 0 if succeeded == len(outcomes) else 1
     if command == "image-convert":
+        phase_progress_reporter = _PhaseProgressReporter()
         outcomes = read_fetch_report(
-            cast(Path, arguments.report), originals_dir=cast(Path, arguments.originals_dir)
+            cast(Path, arguments.report),
+            originals_dir=cast(Path, arguments.originals_dir),
+            on_progress=phase_progress_reporter,
         )
         cache = MediaCache(cast(Path, arguments.cache_dir))
-        converted = convert_media(outcomes, cache=cache)
+        converted = convert_media(outcomes, cache=cache, on_progress=phase_progress_reporter)
         write_graphics_build_files(
             [
                 GraphicBuildEntry(name=result.content_hash, bmp_bytes=result.bmp_bytes)
                 for result in converted
             ],
             cast(Path, arguments.graphics_dir),
+            on_progress=lambda completed, total: phase_progress_reporter(
+                PhaseProgress(
+                    phase="image-graphics-write",
+                    completed=completed,
+                    total=total,
+                    unit="items",
+                    complete=completed >= total,
+                )
+            ),
         )
         print(f"converted={len(converted)}")
         return 0

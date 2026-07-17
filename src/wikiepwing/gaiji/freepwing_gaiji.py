@@ -18,7 +18,7 @@ both matching the real fixture's dimensions.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -92,11 +92,16 @@ def render_glyph_as_xbm(
     return xbm_bytes_from_image(image, name)
 
 
-def write_gaiji_build_files(entries: Sequence[GaijiBuildEntry], destination_dir: Path) -> None:
+def write_gaiji_build_files(
+    entries: Sequence[GaijiBuildEntry],
+    destination_dir: Path,
+    *,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> None:
     """Write each entry's XBM file plus halfchars.txt/fullchars.txt into `destination_dir`."""
     destination_dir.mkdir(parents=True, exist_ok=True)
     lines_by_width_class: dict[str, list[str]] = {"narrow": [], "wide": []}
-    for entry in entries:
+    for index, entry in enumerate(entries, start=1):
         xbm_filename = f"{entry.assigned_code}.xbm"
         xbm_bytes = render_glyph_as_xbm(
             entry.sequence,
@@ -106,6 +111,8 @@ def write_gaiji_build_files(entries: Sequence[GaijiBuildEntry], destination_dir:
         )
         (destination_dir / xbm_filename).write_bytes(xbm_bytes)
         lines_by_width_class[entry.width_class].append(f"{entry.assigned_code} {xbm_filename}")
+        if on_progress is not None:
+            on_progress(index, len(entries))
 
     for width_class, filename in _LIST_FILENAMES.items():
         lines = lines_by_width_class[width_class]

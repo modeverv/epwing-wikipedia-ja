@@ -276,6 +276,7 @@ class CliTest(unittest.TestCase):
 
             verify_result = self.run_cli("verify-raw", "--raw-database", str(work / "raw.sqlite3"))
             self.assertEqual(verify_result.returncode, 0, verify_result.stderr)
+            self.assertIn("phase=verify-raw-integrity state=complete", verify_result.stderr)
             verification = json.loads(verify_result.stdout)
             self.assertTrue(verification["ok"])
             self.assertEqual(verification["counts"]["accepted_articles"], 1)
@@ -369,6 +370,13 @@ class CliTest(unittest.TestCase):
             )
 
             self.assertEqual(normalize_result.returncode, 0, normalize_result.stderr)
+            self.assertIn(
+                "phase=normalize-input-fingerprint state=complete", normalize_result.stderr
+            )
+            self.assertIn("phase=normalize-model-integrity state=complete", normalize_result.stderr)
+            self.assertIn(
+                "phase=normalize-output-fingerprint state=complete", normalize_result.stderr
+            )
             manifest_path = Path(normalize_result.stdout.strip())
             self.assertTrue(manifest_path.is_file())
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -472,6 +480,12 @@ class CliTest(unittest.TestCase):
             )
 
             self.assertEqual(generate_result.returncode, 0, generate_result.stderr)
+            self.assertIn("phase=generate-model-load state=complete", generate_result.stderr)
+            self.assertIn("phase=generate-headwords-terms state=complete", generate_result.stderr)
+            self.assertIn("phase=generate-gaiji-scan state=complete", generate_result.stderr)
+            self.assertIn(
+                "phase=generate-output-fingerprint state=complete", generate_result.stderr
+            )
             manifest_path = Path(generate_result.stdout.strip())
             self.assertTrue(manifest_path.is_file())
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -484,6 +498,8 @@ class CliTest(unittest.TestCase):
 
             verify_result = self.run_cli("verify", "--entries", str(entries_output))
             self.assertEqual(verify_result.returncode, 0, verify_result.stderr)
+            self.assertIn("phase=verify-entries-read state=complete", verify_result.stderr)
+            self.assertIn("phase=verify-entries-targets state=complete", verify_result.stderr)
             verification = json.loads(verify_result.stdout)
             self.assertTrue(verification["ok"])
             self.assertEqual(verification["entry_count"], 1)
@@ -688,6 +704,7 @@ class CliTest(unittest.TestCase):
             result = self.run_cli("verify", "--entries", str(entries_path))
 
             self.assertEqual(result.returncode, 1)
+            self.assertIn("phase=verify-entries-targets state=complete", result.stderr)
             report = json.loads(result.stdout)
             self.assertFalse(report["ok"])
             self.assertTrue(any(issue["code"] == "UNKNOWN_TARGET" for issue in report["issues"]))
@@ -763,6 +780,9 @@ class CliTest(unittest.TestCase):
             result = self.run_cli("image-plan", "--model-database", str(model_database_path))
 
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("phase=image-plan-query state=complete", result.stderr)
+            self.assertIn("phase=image-plan-materialize state=complete", result.stderr)
+            self.assertIn("phase=image-plan-json state=complete", result.stderr)
             plan = json.loads(result.stdout)
             self.assertEqual(len(plan), 1)
             self.assertEqual(plan[0]["page_id"], 1)

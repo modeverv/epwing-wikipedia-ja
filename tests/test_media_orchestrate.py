@@ -355,11 +355,14 @@ def test_convert_media_converts_successful_fetches(tmp_path: Path) -> None:
     cache = MediaCache(tmp_path)
     outcomes = (_fetch_outcome("https://example.org/a.png", _png_bytes(), content_hash="hash1"),)
 
-    result = convert_media(outcomes, cache=cache)
+    progress = []
+    result = convert_media(outcomes, cache=cache, on_progress=progress.append)
 
     assert len(result) == 1
     assert result[0].source_url == "https://example.org/a.png"
     assert result[0].bmp_bytes.startswith(b"BM")
+    assert progress[-1].phase == "image-convert"
+    assert progress[-1].complete is True
 
 
 @_requires_imagemagick

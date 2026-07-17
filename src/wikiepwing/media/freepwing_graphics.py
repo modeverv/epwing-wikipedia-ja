@@ -20,7 +20,7 @@ the build files a set of already-decided graphic names/bytes need.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,14 +48,23 @@ class GraphicBuildEntry:
             raise FreePwingGraphicsError(f"graphic {self.name!r} has empty bmp_bytes")
 
 
-def write_graphics_build_files(entries: Sequence[GraphicBuildEntry], destination_dir: Path) -> None:
+def write_graphics_build_files(
+    entries: Sequence[GraphicBuildEntry],
+    destination_dir: Path,
+    *,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> None:
     """Write each entry's BMP file plus `cgraphs.txt` into `destination_dir`."""
     destination_dir.mkdir(parents=True, exist_ok=True)
     lines: list[str] = []
-    for entry in entries:
+    if not entries and on_progress is not None:
+        on_progress(0, 0)
+    for index, entry in enumerate(entries, start=1):
         bmp_filename = f"{entry.name}.bmp"
         (destination_dir / bmp_filename).write_bytes(entry.bmp_bytes)
         lines.append(f"{entry.name} {bmp_filename}")
+        if on_progress is not None:
+            on_progress(index, len(entries))
 
     (destination_dir / _CATALOG_FILENAME).write_text(
         "".join(f"{line}\n" for line in lines), encoding="utf-8"

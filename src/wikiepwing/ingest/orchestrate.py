@@ -16,6 +16,7 @@ from wikiepwing.ingest.record_parser import RecordParseError, parse_record
 from wikiepwing.ingest.repository import RawRepository
 from wikiepwing.ingest.tar_reader import iter_ndjson_lines
 from wikiepwing.ingest.validate import ValidationLimits, validate_article
+from wikiepwing.pipeline.progress import PhaseProgress
 from wikiepwing.pipeline.resume import decide_resume
 from wikiepwing.pipeline.stage_manifest import StageManifestError, parse_manifest_timestamp
 from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
@@ -59,15 +60,7 @@ class IngestMetrics:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class IngestPhaseProgress:
-    """Progress for heavyweight work outside the article ingest loop."""
-
-    phase: str
-    completed: int
-    total: int | None
-    unit: str
-    complete: bool = False
+IngestPhaseProgress = PhaseProgress
 
 
 @dataclass(frozen=True, slots=True)

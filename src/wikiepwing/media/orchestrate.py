@@ -43,6 +43,9 @@ from wikiepwing.media.svg_sanitizer import SvgSanitizeError, sanitize_svg
 from wikiepwing.media.validation import MediaValidationError, validate_media_bytes
 from wikiepwing.model.article import MediaReference
 from wikiepwing.pipeline.atomic_write import atomic_write_bytes, atomic_write_text
+from wikiepwing.pipeline.progress import PhaseProgress
+
+_SQL_PROGRESS_VM_STEPS = 100_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,11 +56,32 @@ class MediaPlanEntry:
     media: MediaReference
 
 
-def plan_media(model_database_path: Path) -> tuple[MediaPlanEntry, ...]:
+def plan_media(
+    model_database_path: Path,
+    *,
+    on_progress: Callable[[PhaseProgress], None] | None = None,
+) -> tuple[MediaPlanEntry, ...]:
     """Read every non-rejected article's selected media from `model.sqlite3`."""
     connection = sqlite3.connect(model_database_path)
     connection.row_factory = sqlite3.Row
+    progress_calls = 0
+
+    def report_sql_progress() -> int:
+        nonlocal progress_calls
+        progress_calls += 1
+        _report_phase(
+            on_progress,
+            "image-plan-query",
+            progress_calls * _SQL_PROGRESS_VM_STEPS,
+            None,
+            "vm-steps",
+        )
+        return 0
+
     try:
+        _report_phase(on_progress, "image-plan-query", 0, None, "vm-steps")
+        if on_progress is not None:
+            connection.set_progress_handler(report_sql_progress, _SQL_PROGRESS_VM_STEPS)
         rows = connection.execute(
             "SELECT m.page_id, m.media_id, m.source_url, m.source_name, m.alt_text, "
             "m.caption, m.role, m.source_width, m.source_height "
@@ -67,24 +91,38 @@ def plan_media(model_database_path: Path) -> tuple[MediaPlanEntry, ...]:
             "ORDER BY m.page_id, m.ordinal"
         ).fetchall()
     finally:
+        connection.set_progress_handler(None, 0)
+        _report_phase(
+            on_progress,
+            "image-plan-query",
+            progress_calls * _SQL_PROGRESS_VM_STEPS,
+            None,
+            "vm-steps",
+            complete=True,
+        )
         connection.close()
 
-    return tuple(
-        MediaPlanEntry(
-            page_id=row["page_id"],
-            media=MediaReference(
-                media_id=row["media_id"],
-                source_url=row["source_url"],
-                source_name=row["source_name"],
-                alt_text=row["alt_text"],
-                caption=row["caption"],
-                role=row["role"],
-                source_width=row["source_width"],
-                source_height=row["source_height"],
-            ),
+    plan: list[MediaPlanEntry] = []
+    if not rows:
+        _report_phase(on_progress, "image-plan-materialize", 0, 0, "items")
+    for index, row in enumerate(rows, start=1):
+        plan.append(
+            MediaPlanEntry(
+                page_id=row["page_id"],
+                media=MediaReference(
+                    media_id=row["media_id"],
+                    source_url=row["source_url"],
+                    source_name=row["source_name"],
+                    alt_text=row["alt_text"],
+                    caption=row["caption"],
+                    role=row["role"],
+                    source_width=row["source_width"],
+                    source_height=row["source_height"],
+                ),
+            )
         )
-        for row in rows
-    )
+        _report_phase(on_progress, "image-plan-materialize", index, len(rows), "items")
+    return tuple(plan)
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,13 +308,19 @@ class ConvertOutcome:
 
 
 def convert_media(
-    fetch_outcomes: Sequence[FetchOutcome], *, cache: MediaCache
+    fetch_outcomes: Sequence[FetchOutcome],
+    *,
+    cache: MediaCache,
+    on_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> tuple[ConvertOutcome, ...]:
     """Raster-convert every successful fetch to BMP, then drop duplicate content."""
     hashed: list[HashedMedia] = []
     converted_by_source_url: dict[str, tuple[str, bytes]] = {}
-    for outcome in fetch_outcomes:
+    if not fetch_outcomes:
+        _report_phase(on_progress, "image-convert", 0, 0, "items")
+    for index, outcome in enumerate(fetch_outcomes, start=1):
         if not outcome.ok:
+            _report_phase(on_progress, "image-convert", index, len(fetch_outcomes), "items")
             continue
         assert outcome.content is not None
         assert outcome.content_hash is not None
@@ -292,12 +336,14 @@ def convert_media(
         try:
             bmp_bytes = cache.get_or_convert(content_hash, convert=_convert)
         except RasterConversionError:
+            _report_phase(on_progress, "image-convert", index, len(fetch_outcomes), "items")
             continue
 
         converted_by_source_url[outcome.source_url] = (content_hash, bmp_bytes)
         hashed.append(
             HashedMedia(media=_placeholder_media(outcome.source_url), content_hash=content_hash)
         )
+        _report_phase(on_progress, "image-convert", index, len(fetch_outcomes), "items")
 
     return tuple(
         ConvertOutcome(
@@ -323,7 +369,11 @@ def _placeholder_media(source_url: str) -> MediaReference:
 
 
 def write_fetch_report(
-    outcomes: Sequence[FetchOutcome], *, originals_dir: Path, report_path: Path
+    outcomes: Sequence[FetchOutcome],
+    *,
+    originals_dir: Path,
+    report_path: Path,
+    on_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> None:
     """Persist `outcomes` to `report_path`, storing each successful fetch's bytes by content hash.
 
@@ -333,7 +383,9 @@ def write_fetch_report(
     """
     originals_dir.mkdir(parents=True, exist_ok=True)
     records: list[dict[str, object]] = []
-    for outcome in outcomes:
+    if not outcomes:
+        _report_phase(on_progress, "image-fetch-report-write", 0, 0, "items")
+    for index, outcome in enumerate(outcomes, start=1):
         if outcome.ok:
             assert outcome.content is not None and outcome.content_hash is not None
             atomic_write_bytes(originals_dir / f"{outcome.content_hash}.bin", outcome.content)
@@ -346,16 +398,27 @@ def write_fetch_report(
                 "error": outcome.error,
             }
         )
-    atomic_write_text(
-        report_path, json.dumps(records, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    )
+        _report_phase(on_progress, "image-fetch-report-write", index, len(outcomes), "items")
+    _report_phase(on_progress, "image-fetch-report-json", 0, 1, "operations")
+    report_text = json.dumps(records, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    atomic_write_text(report_path, report_text)
+    _report_phase(on_progress, "image-fetch-report-json", 1, 1, "operations")
 
 
-def read_fetch_report(report_path: Path, *, originals_dir: Path) -> tuple[FetchOutcome, ...]:
+def read_fetch_report(
+    report_path: Path,
+    *,
+    originals_dir: Path,
+    on_progress: Callable[[PhaseProgress], None] | None = None,
+) -> tuple[FetchOutcome, ...]:
     """Reconstruct the `FetchOutcome`s a prior `write_fetch_report` call persisted."""
+    _report_phase(on_progress, "image-report-json-read", 0, 1, "operations")
     records = json.loads(report_path.read_text(encoding="utf-8"))
+    _report_phase(on_progress, "image-report-json-read", 1, 1, "operations")
     outcomes: list[FetchOutcome] = []
-    for record in records:
+    if not records:
+        _report_phase(on_progress, "image-report-read", 0, 0, "items")
+    for index, record in enumerate(records, start=1):
         content: bytes | None = None
         if record["ok"]:
             content = (originals_dir / f"{record['content_hash']}.bin").read_bytes()
@@ -368,4 +431,26 @@ def read_fetch_report(report_path: Path, *, originals_dir: Path) -> tuple[FetchO
                 error=record["error"],
             )
         )
+        _report_phase(on_progress, "image-report-read", index, len(records), "items")
     return tuple(outcomes)
+
+
+def _report_phase(
+    callback: Callable[[PhaseProgress], None] | None,
+    phase: str,
+    completed: int,
+    total: int | None,
+    unit: str,
+    *,
+    complete: bool = False,
+) -> None:
+    if callback is not None:
+        callback(
+            PhaseProgress(
+                phase=phase,
+                completed=completed,
+                total=total,
+                unit=unit,
+                complete=complete or (total is not None and completed >= total),
+            )
+        )

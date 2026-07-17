@@ -33,6 +33,7 @@ from wikiepwing.model.article import Article
 from wikiepwing.model.canonical import decode_article
 from wikiepwing.model.database import connect_model_database
 from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
+from wikiepwing.pipeline.progress import PhaseProgress, fingerprint_progress_callback
 from wikiepwing.pipeline.resume import decide_resume
 from wikiepwing.pipeline.stage_manifest import StageManifestError, parse_manifest_timestamp
 from wikiepwing.pipeline.stage_manifest import extract_status as _extract_manifest_status
@@ -138,6 +139,7 @@ def run_generate(
     git_commit: str | None = None,
     force: bool = False,
     on_progress: Callable[[GenerateMetrics], None] | None = None,
+    on_phase_progress: Callable[[PhaseProgress], None] | None = None,
     gaiji_dir: Path | None = None,
     gaiji_database_path: Path | None = None,
     gaiji_migrations_path: Path | None = None,
@@ -173,8 +175,12 @@ def run_generate(
         decision = decide_resume(
             previous_payload,
             stage_version=STAGE_VERSION,
-            current_inputs=_manifest_inputs(model_database_path),
-            current_output_fingerprint=_current_output_fingerprint(entries_path),
+            current_inputs=_manifest_inputs(
+                model_database_path, on_phase_progress=on_phase_progress
+            ),
+            current_output_fingerprint=_current_output_fingerprint(
+                entries_path, on_phase_progress=on_phase_progress
+            ),
         )
         if decision.should_skip:
             assert previous_payload is not None
@@ -192,6 +198,7 @@ def run_generate(
             entries_path=None,
             metrics=metrics,
             git_commit=git_commit,
+            on_phase_progress=on_phase_progress,
         ),
         manifest_path,
     )
@@ -200,13 +207,25 @@ def run_generate(
     try:
         connection = connect_model_database(model_database_path)
         try:
-            entries = _render_all(connection, metrics=metrics, on_progress=on_progress)
+            entries = _render_all(
+                connection,
+                metrics=metrics,
+                on_progress=on_progress,
+                on_phase_progress=on_phase_progress,
+            )
         finally:
             connection.close()
         tracker = UnrepresentableTracker()
-        plan = write_entries_jsonl(entries, entries_path, tracker=tracker)
+        plan = write_entries_jsonl(
+            entries, entries_path, tracker=tracker, on_progress=on_phase_progress
+        )
         if gaiji_dir is not None:
-            _write_gaiji_build_directory(plan, gaiji_dir, font_path=font_path)
+            _write_gaiji_build_directory(
+                plan,
+                gaiji_dir,
+                font_path=font_path,
+                on_phase_progress=on_phase_progress,
+            )
         if gaiji_database_path is not None:
             _write_gaiji_registry(
                 plan,
@@ -214,9 +233,12 @@ def run_generate(
                 migrations_path=gaiji_migrations_path,
                 gaiji_dir=gaiji_dir,
                 font_identifier=font_identifier,
+                on_phase_progress=on_phase_progress,
             )
         if unicode_report_path is not None:
+            _report_phase(on_phase_progress, "generate-unicode-report", 0, 1)
             write_unicode_report(build_unicode_report(tracker), unicode_report_path)
+            _report_phase(on_phase_progress, "generate-unicode-report", 1, 1)
         status = "complete"
     finally:
         manifest = _build_manifest(
@@ -228,6 +250,7 @@ def run_generate(
             entries_path=entries_path if status == "complete" else None,
             metrics=metrics,
             git_commit=git_commit,
+            on_phase_progress=on_phase_progress,
         )
         _write_manifest(manifest, manifest_path)
 
@@ -235,7 +258,11 @@ def run_generate(
 
 
 def _write_gaiji_build_directory(
-    plan: GaijiPlan, gaiji_dir: Path, *, font_path: Path | None
+    plan: GaijiPlan,
+    gaiji_dir: Path,
+    *,
+    font_path: Path | None,
+    on_phase_progress: Callable[[PhaseProgress], None] | None,
 ) -> None:
     build_entries: list[GaijiBuildEntry] = []
     if not plan.is_empty():
@@ -254,7 +281,19 @@ def _write_gaiji_build_directory(
             )
             for character, code in plan.assigned_codes.items()
         ]
-    write_gaiji_build_files(build_entries, gaiji_dir)
+    if not build_entries:
+        _report_phase(on_phase_progress, "generate-gaiji-bitmaps", 0, 0)
+    write_gaiji_build_files(
+        build_entries,
+        gaiji_dir,
+        on_progress=(
+            None
+            if on_phase_progress is None
+            else lambda completed, total: _report_phase(
+                on_phase_progress, "generate-gaiji-bitmaps", completed, total
+            )
+        ),
+    )
 
 
 def _write_gaiji_registry(
@@ -264,6 +303,7 @@ def _write_gaiji_registry(
     migrations_path: Path | None,
     gaiji_dir: Path | None,
     font_identifier: str,
+    on_phase_progress: Callable[[PhaseProgress], None] | None,
 ) -> None:
     # Gaiji code assignment depends on the whole corpus (DATA_CONTRACTS.md
     # 10); a registry left over from a previous, different corpus is stale
@@ -273,11 +313,13 @@ def _write_gaiji_registry(
         database_path.unlink()
     initialize_gaiji_database(database_path, migrations_path)
     if plan.is_empty():
+        _report_phase(on_phase_progress, "generate-gaiji-registry", 0, 0)
         return
     if gaiji_dir is None:
         raise GenerateError("gaiji_database_path requires gaiji_dir to locate bitmap files")
     with connect_gaiji_database(database_path) as connection:
-        for character, code in plan.assigned_codes.items():
+        total = len(plan.assigned_codes)
+        for index, (character, code) in enumerate(plan.assigned_codes.items(), start=1):
             bitmap_path = gaiji_dir / f"{code}.xbm"
             connection.execute(
                 "INSERT INTO gaiji (sequence, normalized_sequence, width_class, assigned_code, "
@@ -294,6 +336,7 @@ def _write_gaiji_registry(
                     plan.usage_counts[character],
                 ),
             )
+            _report_phase(on_phase_progress, "generate-gaiji-registry", index, total)
         connection.commit()
 
 
@@ -302,23 +345,41 @@ def _render_all(
     *,
     metrics: GenerateMetrics,
     on_progress: Callable[[GenerateMetrics], None] | None,
+    on_phase_progress: Callable[[PhaseProgress], None] | None,
 ) -> tuple[RenderedEntry, ...]:
+    _report_phase(on_phase_progress, "generate-model-load", 0, 1)
     rows = connection.execute(
         "SELECT page_id, article_json_zstd, normalize_status FROM articles ORDER BY page_id"
     ).fetchall()
+    _report_phase(on_phase_progress, "generate-model-load", 1, 1)
     articles: list[Article] = []
-    for row in rows:
+    if not rows:
+        _report_phase(on_phase_progress, "generate-model-decode", 0, 0)
+    for index, row in enumerate(rows, start=1):
         metrics.articles_read += 1
         if row["normalize_status"] == "rejected":
             metrics.articles_skipped += 1
             continue
         canonical_json = decompress(row["article_json_zstd"])
         articles.append(decode_article(canonical_json))
+        _report_phase(on_phase_progress, "generate-model-decode", index, len(rows))
 
     # Headwords are resolved across every article at once (TASK-J007) so a
     # SearchTerm collision between two different articles' variants is
     # settled globally, not article-by-article.
-    headwords_by_page_id = headwords_for_articles(articles)
+    if not articles:
+        _report_phase(on_phase_progress, "generate-headwords-terms", 0, 0)
+        _report_phase(on_phase_progress, "generate-headwords-group", 0, 0)
+    headwords_by_page_id = headwords_for_articles(
+        articles,
+        on_progress=(
+            None
+            if on_phase_progress is None
+            else lambda phase, completed, total: _report_phase(
+                on_phase_progress, f"generate-headwords-{phase}", completed, total
+            )
+        ),
+    )
 
     entries: list[RenderedEntry] = []
     for article in articles:
@@ -331,10 +392,17 @@ def _render_all(
     return tuple(entries)
 
 
-def _current_output_fingerprint(path: Path) -> tuple[int, str] | None:
+def _current_output_fingerprint(
+    path: Path, *, on_phase_progress: Callable[[PhaseProgress], None] | None
+) -> tuple[int, str] | None:
     if not path.is_file():
         return None
-    fingerprint = compute_fingerprint(path)
+    fingerprint = compute_fingerprint(
+        path,
+        on_progress=fingerprint_progress_callback(
+            on_phase_progress, "generate-resume-output-fingerprint"
+        ),
+    )
     return (fingerprint.size_bytes, fingerprint.sha256)
 
 
@@ -358,10 +426,19 @@ def _resume_result(
     return GenerateResult(manifest=manifest, manifest_path=manifest_path, entries_path=entries_path)
 
 
-def _manifest_inputs(model_database_path: Path) -> dict[str, str]:
+def _manifest_inputs(
+    model_database_path: Path,
+    *,
+    on_phase_progress: Callable[[PhaseProgress], None] | None = None,
+) -> dict[str, str]:
     inputs = {"model_database_path": str(model_database_path)}
     if model_database_path.is_file():
-        inputs["model_database_fingerprint"] = compute_input_fingerprint(model_database_path)
+        inputs["model_database_fingerprint"] = compute_input_fingerprint(
+            model_database_path,
+            on_progress=fingerprint_progress_callback(
+                on_phase_progress, "generate-input-fingerprint"
+            ),
+        )
     return inputs
 
 
@@ -375,10 +452,16 @@ def _build_manifest(
     entries_path: Path | None,
     metrics: GenerateMetrics,
     git_commit: str | None,
+    on_phase_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> GenerateManifest:
     outputs: tuple[dict[str, object], ...] = ()
     if entries_path is not None and entries_path.is_file():
-        fingerprint = compute_fingerprint(entries_path)
+        fingerprint = compute_fingerprint(
+            entries_path,
+            on_progress=fingerprint_progress_callback(
+                on_phase_progress, "generate-output-fingerprint"
+            ),
+        )
         outputs = (
             {
                 "relative_path": entries_path.name,
@@ -395,7 +478,7 @@ def _build_manifest(
         run_id=run_id,
         started_at=started_at,
         completed_at=completed_at,
-        inputs=_manifest_inputs(model_database_path),
+        inputs=_manifest_inputs(model_database_path, on_phase_progress=on_phase_progress),
         outputs=outputs,
         metrics=metrics,
         software={
@@ -408,3 +491,21 @@ def _build_manifest(
 
 def _write_manifest(manifest: GenerateManifest, destination: Path) -> None:
     _write_stage_manifest_payload(manifest.payload(), destination)
+
+
+def _report_phase(
+    callback: Callable[[PhaseProgress], None] | None,
+    phase: str,
+    completed: int,
+    total: int,
+) -> None:
+    if callback is not None:
+        callback(
+            PhaseProgress(
+                phase=phase,
+                completed=completed,
+                total=total,
+                unit="items",
+                complete=completed >= total,
+            )
+        )

@@ -13,8 +13,11 @@ is later work (e.g. TASK-H013).
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+from wikiepwing.pipeline.progress import PhaseProgress
 
 
 class EntriesVerificationError(ValueError):
@@ -50,28 +53,39 @@ class VerificationResult:
         }
 
 
-def verify_entries_jsonl(path: Path) -> VerificationResult:
+def verify_entries_jsonl(
+    path: Path, *, on_progress: Callable[[PhaseProgress], None] | None = None
+) -> VerificationResult:
     """Verify one entries.jsonl file's structural invariants."""
-    records = _read_records(path)
+    records = _read_records(path, on_progress=on_progress)
     issues: list[VerificationIssue] = []
 
     tags: set[str] = set()
-    for record in records:
+    if not records:
+        _report(on_progress, "verify-entries-tags", 0, 0)
+    for index, record in enumerate(records, start=1):
         tag = record.get("tag")
         title = record.get("title")
         if not isinstance(tag, str) or not tag:
             issues.append(VerificationIssue("EMPTY_TAG", "an entry has an empty or missing tag"))
+            _report(on_progress, "verify-entries-tags", index, len(records))
             continue
         if tag in tags:
             issues.append(VerificationIssue("DUPLICATE_TAG", f"duplicate tag: {tag}"))
         tags.add(tag)
         if not isinstance(title, str) or not title:
             issues.append(VerificationIssue("EMPTY_TITLE", f"entry {tag} has an empty title"))
+        _report(on_progress, "verify-entries-tags", index, len(records))
 
     headword_owners: dict[str, str] = {}
-    for record in records:
+    if not records:
+        _report(on_progress, "verify-entries-headwords", 0, 0)
+    if not records:
+        _report(on_progress, "verify-entries-targets", 0, 0)
+    for index, record in enumerate(records, start=1):
         tag = record.get("tag")
         if not isinstance(tag, str) or not tag:
+            _report(on_progress, "verify-entries-headwords", index, len(records))
             continue
         aliases = record.get("aliases", [])
         headwords: list[object] = [record.get("title")]
@@ -90,11 +104,13 @@ def verify_entries_jsonl(path: Path) -> VerificationResult:
                 )
             else:
                 headword_owners[headword] = tag
+        _report(on_progress, "verify-entries-headwords", index, len(records))
 
-    for record in records:
+    for index, record in enumerate(records, start=1):
         tag = record.get("tag")
         targets = record.get("targets", [])
         if not isinstance(targets, list):
+            _report(on_progress, "verify-entries-targets", index, len(records))
             continue
         for target in targets:
             if target not in tags:
@@ -104,13 +120,16 @@ def verify_entries_jsonl(path: Path) -> VerificationResult:
                         f"entry {tag} references unknown link target: {target!r}",
                     )
                 )
+        _report(on_progress, "verify-entries-targets", index, len(records))
 
     return VerificationResult(ok=not issues, entry_count=len(records), issues=tuple(issues))
 
 
-def _read_records(path: Path) -> list[dict[str, object]]:
+def _read_records(
+    path: Path, *, on_progress: Callable[[PhaseProgress], None] | None
+) -> list[dict[str, object]]:
     try:
-        text = path.read_text(encoding="utf-8")
+        file = path.open(encoding="utf-8")
     except OSError as error:
         raise EntriesVerificationError(f"cannot read {path}: {error}") from error
 
@@ -119,16 +138,56 @@ def _read_records(path: Path) -> list[dict[str, object]]:
     # Wikipedia article bodies legitimately contain inside a JSON string,
     # splitting one valid record into several invalid fragments.
     records: list[dict[str, object]] = []
-    for line_number, line in enumerate(text.split("\n"), start=1):
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError as error:
-            raise EntriesVerificationError(
-                f"{path}:{line_number}: invalid JSON: {error}"
-            ) from error
-        if not isinstance(record, dict):
-            raise EntriesVerificationError(f"{path}:{line_number}: record must be a JSON object")
-        records.append(record)
+    with file:
+        for line_number, line in enumerate(file, start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise EntriesVerificationError(
+                    f"{path}:{line_number}: invalid JSON: {error}"
+                ) from error
+            if not isinstance(record, dict):
+                raise EntriesVerificationError(
+                    f"{path}:{line_number}: record must be a JSON object"
+                )
+            records.append(record)
+            if on_progress is not None:
+                on_progress(
+                    PhaseProgress(
+                        phase="verify-entries-read",
+                        completed=len(records),
+                        total=None,
+                        unit="items",
+                    )
+                )
+    if on_progress is not None:
+        on_progress(
+            PhaseProgress(
+                phase="verify-entries-read",
+                completed=len(records),
+                total=len(records),
+                unit="items",
+                complete=True,
+            )
+        )
     return records
+
+
+def _report(
+    callback: Callable[[PhaseProgress], None] | None,
+    phase: str,
+    completed: int,
+    total: int,
+) -> None:
+    if callback is not None:
+        callback(
+            PhaseProgress(
+                phase=phase,
+                completed=completed,
+                total=total,
+                unit="items",
+                complete=completed >= total,
+            )
+        )

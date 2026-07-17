@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import unicodedata
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 
 from wikiepwing.gaiji.classifier import classify_character
@@ -76,7 +76,12 @@ def _candidate_characters(text: str) -> Iterator[str]:
             yield character
 
 
-def plan_gaiji_codes(texts: Iterable[str]) -> GaijiPlan:
+def plan_gaiji_codes(
+    texts: Iterable[str],
+    *,
+    on_progress: Callable[[int, int], None] | None = None,
+    total: int | None = None,
+) -> GaijiPlan:
     """Scan every string in `texts`, assigning deterministic gaiji codes to distinct candidates.
 
     `texts` should cover every body string that will call `embed_gaiji_tokens`
@@ -84,8 +89,10 @@ def plan_gaiji_codes(texts: Iterable[str]) -> GaijiPlan:
     -- so it need not be included here, though including it is harmless).
     """
     usage_counts: Counter[str] = Counter()
-    for text in texts:
+    for index, text in enumerate(texts, start=1):
         usage_counts.update(_candidate_characters(text))
+        if on_progress is not None:
+            on_progress(index, total if total is not None else index)
 
     width_classes = {character: gaiji_width_class(character) for character in usage_counts}
     assigned = assign_gaiji_codes(

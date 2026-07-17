@@ -8,12 +8,15 @@ TASK-I005's resume decision needs to detect real input changes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from wikiepwing.source.checksums import compute_fingerprint
 
 
-def compute_input_fingerprint(path: Path) -> str:
+def compute_input_fingerprint(
+    path: Path, *, on_progress: Callable[[int, int], None] | None = None
+) -> str:
     """Return a `sha256:<hex>` content fingerprint for one input file."""
-    fingerprint = compute_fingerprint(path)
+    fingerprint = compute_fingerprint(path, on_progress=on_progress)
     return f"sha256:{fingerprint.sha256}"

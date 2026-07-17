@@ -18,6 +18,7 @@ strings those upstream stages already produced.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -29,6 +30,7 @@ from wikiepwing.gaiji.embedding import (
 )
 from wikiepwing.gaiji.unrepresentable import UnrepresentableTracker
 from wikiepwing.pipeline.atomic_write import atomic_write_text
+from wikiepwing.pipeline.progress import PhaseProgress
 from wikiepwing.render.render_node import TextRenderNode
 from wikiepwing.render.rendered_entry import RenderedEntry
 
@@ -38,6 +40,7 @@ def write_entries_jsonl(
     destination: Path,
     *,
     tracker: UnrepresentableTracker | None = None,
+    on_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> GaijiPlan:
     """Write `entries` as FreePWING build input: one JSON object per line, atomically.
 
@@ -51,9 +54,29 @@ def write_entries_jsonl(
     Returns the `GaijiPlan` so the caller can render the matching gaiji
     build files (XBM bitmaps + halfchars.txt/fullchars.txt).
     """
-    records = [_entry_record(entry) for entry in entries]
-    plan = plan_gaiji_codes(cast(str, record["body"]) for record in records)
-    for entry, record in zip(entries, records, strict=True):
+    records = []
+    total = len(entries)
+    if not entries:
+        _report(on_progress, "generate-entry-records", 0, 0)
+    for index, entry in enumerate(entries, start=1):
+        records.append(_entry_record(entry))
+        _report(on_progress, "generate-entry-records", index, total)
+    if not records:
+        _report(on_progress, "generate-gaiji-scan", 0, 0)
+    plan = plan_gaiji_codes(
+        (cast(str, record["body"]) for record in records),
+        on_progress=(
+            None
+            if on_progress is None
+            else lambda completed, count: _report(
+                on_progress, "generate-gaiji-scan", completed, count
+            )
+        ),
+        total=total,
+    )
+    if not entries:
+        _report(on_progress, "generate-gaiji-embedding", 0, 0)
+    for index, (entry, record) in enumerate(zip(entries, records, strict=True), start=1):
         record["title"] = embed_title_fallback(
             cast(str, record["title"]), tracker=tracker, page_id=entry.page_id, title=entry.title
         )
@@ -68,10 +91,36 @@ def write_entries_jsonl(
             page_id=entry.page_id,
             title=entry.title,
         )
-    lines = (json.dumps(record, ensure_ascii=False) for record in records)
+        _report(on_progress, "generate-gaiji-embedding", index, total)
+    lines: list[str] = []
+    if not records:
+        _report(on_progress, "generate-json-encoding", 0, 0)
+    for index, record in enumerate(records, start=1):
+        lines.append(json.dumps(record, ensure_ascii=False))
+        _report(on_progress, "generate-json-encoding", index, total)
+    _report(on_progress, "generate-entries-write", 0, 1)
     text = "".join(f"{line}\n" for line in lines)
     atomic_write_text(destination, text)
+    _report(on_progress, "generate-entries-write", 1, 1)
     return plan
+
+
+def _report(
+    callback: Callable[[PhaseProgress], None] | None,
+    phase: str,
+    completed: int,
+    total: int,
+) -> None:
+    if callback is not None:
+        callback(
+            PhaseProgress(
+                phase=phase,
+                completed=completed,
+                total=total,
+                unit="items",
+                complete=completed >= total,
+            )
+        )
 
 
 def _entry_record(entry: RenderedEntry) -> dict[str, object]:
