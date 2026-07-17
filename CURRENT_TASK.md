@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-S005
+TASK-T001
 
 ## 目的
 
-`TASKS.md`のTASK-S005(Cross-host comparison、依存: S004完了済み)を実施する。この実行環境には物理的に別ホストが存在しないため、ユーザーに確認のうえ、Docker(`docker/app.Dockerfile`、python:3.12.13-slim-bookworm、Debian Linux)コンテナ内でのビルドを「異なる環境」の代替として採用し、macOSホストネイティブ実行(TASK-S004)の成果物とbyte-for-byte比較する。
+`TASKS.md`のTASK-T001(Build guide、依存: R006完了済み)を実施する。実データ全件規模(EPIC R: R001〜R009、EPIC S: S001〜S005)で実際に検証済みの手順に基づき、`wikiepwing`でjawiki EPWING辞書をビルドする手順を`BUILD.md`としてまとめる。
 
 ## 事前条件
 
@@ -14,15 +14,15 @@ TASK-S005
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] `TASKS.md`のTASK-S005(依存: S004、完了済み)を読んだ
-- [x] AskUserQuestionで「Docker経由で同一マシン上で実施する」ことの承認を得た(PLAN.md 28の作業項目に「macOS Docker Desktop」「native Linux Docker」が含まれており、Dockerベースの環境差異検証は元々想定されていた手法であることを確認)
-- [x] `docker compose build app`でイメージをビルド済み(`wikiepwing-app:dev`)
-- [x] `docker/app.Dockerfile`はDebian slim(python:3.12.13-slim-bookworm)ベースで、macOSホスト(Darwin/uv管理Python)とはOS・libc・SQLite/zstandardのビルドが異なる、真の環境差異軸であることを確認した
-- [x] `docker run`で`compose.yaml`の名前付きvolumeを使わず、スクラッチパッドの既存source.lock.json/チャンクを直接bind mountして再ダウンロードを回避する設計にした
+- [x] `TASKS.md`のTASK-T001(依存: R006、完了済み)を読んだ
+- [x] 既存のトップレベルドキュメント(`README.md`, `CONFIG_REFERENCE.md`, `TESTING.md`等)に`BUILD.md`相当のものが無いことを確認した
+- [x] EPIC R/Sで実際に実行し検証済みの実コマンド(acquire→ingest→normalize→generate→verify、image-plan/fetch/convert、doctor/preflight、disk-usage/clean/update)を土台にする方針にした
+- [x] `CONFIG_REFERENCE.md`のsection 20(プロファイル別設定合成例)と内容が重複しないよう、`BUILD.md`はパイプライン全体の手順(何をどの順で実行するか)に集中し、設定ファイルの詳細は`CONFIG_REFERENCE.md`を参照する形にした
 
 ## 変更予定ファイル
 
-- なし(コード変更を伴わない実行タスク。スクラッチパッド内に3回目の`raw3.sqlite3`/`model3.sqlite3`/`entries-rebuild3.jsonl`をコンテナ経由で生成する)
+- `BUILD.md`(新規)
+- `README.md`(「人間が全体像を確認する場合」の読む順にBUILD.mdを追加)
 - `TASKS.md`
 - `LOG.md`
 - `CURRENT_TASK.md`
@@ -30,39 +30,35 @@ TASK-S005
 ## 実行予定コマンド
 
 ```bash
-docker compose build app
-
-docker run --rm \
-  -v "$SCRATCH/data/sources:/data/sources:ro" \
-  -v "$SCRATCH/docker-work:/data/work" \
-  -v "$SCRATCH/docker-cache:/data/cache" \
-  -v "$SCRATCH/config-override.toml:/data/config-override.toml:ro" \
-  wikiepwing-app:dev \
-  wikiepwing ingest --config /data/config-override.toml --raw-database /data/work/raw3.sqlite3 \
-    --lock-path /data/sources/jawiki/.../source.lock.json --run-id docker-ingest
-
-# 同様にnormalize/generateを実行し、macOSホスト版(TASK-S004)の成果物とsha256比較する
+# ドキュメント内のコマンド例が実際のCLIヘルプと一致することを確認
+uv run python -m wikiepwing.cli --help
+uv run python -m wikiepwing.cli doctor --help
 ```
 
 ## 完了条件
 
-- [x] Dockerコンテナ内でingest→normalize→generateがすべて`status=complete`で完了する
-- [x] コンテナ内成果物とmacOSホスト成果物(TASK-S004)の`entries.jsonl`論理ハッシュを比較する
-- [x] 一致しない場合は差異の原因を調査・報告する(PLAN.md出口条件「binary差異説明」)(今回は完全一致のため差異なし)
-- [x] 実行中に実データ固有のクラッシュ・バグが見つかった場合は原因を特定し、コード修正・テスト追加・commitしてから再実行する(コードのバグではなく、Docker Desktopのメモリ割り当て不足という環境要因が原因のクラッシュが1件発生。ユーザーがDocker Desktopのメモリを約85GBへ増やして解決)
+- [x] `BUILD.md`に前提条件(認証情報、ディスク容量、Docker/ネイティブの選択肢)を記載した
+- [x] `BUILD.md`にacquire→ingest→normalize→generate→verifyの手順を記載した(EPIC Rで実際に使ったコマンドと整合)
+- [x] `BUILD.md`にLite/Full向けの画像パイプライン(image-plan/image-fetch/image-convert)手順を記載した
+- [x] `BUILD.md`にfull build前ゲート(doctor/preflight)への言及を含めた
+- [x] `BUILD.md`に運用コマンド(disk-usage/clean/update)への言及を含めた
+- [x] ドキュメント内のCLIフラグ例が実際の`--help`出力と一致することを確認した(全13コマンドの`--help`出力と突き合わせ済み)
+- [x] `README.md`から`BUILD.md`への導線を追加した
 
 ## 非対象
 
-- 真に別の物理・仮想ホストでの検証(この環境では利用不可のためDockerで代替)
-- 実データを`git`にコミットすること
+- Troubleshooting(TASK-T003)
+- Viewer verification guide(TASK-T004)
+- Licensing/attribution guide(TASK-T005)
+- 実際のEPWINGバイナリ(honmon)ビルド手順の詳細(`docker/toolchain`側の話で、まだ全件規模では実施していないため概要のみ触れる)
 
 ## 実施結果
 
-物理的に別ホストが無い制約に対し、ユーザーの承認を得てDockerコンテナ(`wikiepwing-app:dev`、Debian slim/python:3.12.13-slim-bookworm)を「異なる環境」として使い、macOSホスト(TASK-S004)と同一の`source.lock.json`から独立にingest→normalize→generateを実行した。
+`BUILD.md`(新規)を作成した。前提条件(認証情報、ディスク容量、Docker/ネイティブ、ImageMagick)、実行前チェック(`doctor`)、Snapshot取得(`acquire`)、パイプライン本体(`ingest`→`normalize`→`generate`、または`build`でまとめて)、検証(`verify-raw`/`verify`)、Lite/Full向け画像パイプライン(`image-plan`/`image-fetch`/`image-convert`)、Docker実行時の注意(Docker Desktopのメモリ割り当て、TASK-S005で実際に踏んだ問題)、運用コマンド(`disk-usage`/`clean`/`update`)、再現性確認(`compute_logical_build_hash`)の8セクションで構成した。
 
-- コンテナ内`raw3.sqlite3`/`model3.sqlite3`は、articles_read/written/errors/warningsなどのメトリクスがmacOSホスト版と完全一致した(sha256自体はOS/SQLiteビルドの違いにより異なるが、これは想定通りで問題ではない)。
-- 1回目の`generate`実行はDocker Desktop VMのメモリ割り当て不足(既定約7.75GB)によりコンテナが無応答終了(manifestが`status=running`のまま、0記事処理)した。原因調査の結果、`render/generate.py`の`_render_all`が全記事を一括で`fetchall()`しメモリ上に保持する設計(見出し語衝突解決を全記事横断でグローバルに行うため、ストリーミング化が容易ではない)によるもので、ソフトウェアのバグではなくDocker VM側のリソース制約と判断した。ユーザーに確認のうえ、Docker Desktopのメモリ割り当てを約85GBへ増やしてもらい再実行した。
-- 2回目の`generate`実行は成功し、`entries-rebuild3.jsonl`のsha256が macOSホストの`entries-mini/lite/full.jsonl`・TASK-S004の`entries-rebuild2.jsonl`すべてとbyte-for-byte完全一致した(`1b6310d24f3485b1c2436cc2b0b3a7b3d75c006275f59e3f7474fb6078c58ac7`)。
-- `build_logical_hash.compute_logical_build_hash`による論理ハッシュもmacOSホスト版とDocker版で完全一致した(`765528ac4926c5a37d6b527c1f140ca7b9a408be7bcaa8a774d2e9d947141c57`)。
+すべての章はEPIC R(R001〜R009)・EPIC S(S001〜S005)で実際に実行・検証済みのコマンドと知見に基づいて書いた(推測での記述はしていない)。特に重要な実データ発見事項を明記した:
+- `generate`コマンドはプロファイル設定を一切参照しないため、Mini/Lite/Fullで`entries.jsonl`の内容は同一になる(TASK-R008/R009)。プロファイル差は`normalize`時点のメディア選択にのみ表れる。
+- `image-fetch`は逐次ダウンロードで、jawiki全件の約250万ユニークURLでは数日規模になる(TASK-R007)。
+- Docker実行時、Docker Desktopの既定メモリ割り当て(約8GB)では全件`generate`がOOMする(TASK-S005)。
 
-PLAN.md 28(Phase 24 再現性試験)の出口条件「entry logical hash一致」を、OS・libc・SQLite/zstandardビルドが異なる環境間で実データ全件規模で確認した。差異が無かったため「binary差異説明」は不要。コンテナ成果物(`raw3.sqlite3`, `model3.sqlite3`, `entries-rebuild3.jsonl`)はスクラッチパッドのみに保持し、gitにはコミットしない。
+ドキュメント中の全13サブコマンド(`doctor`, `acquire`, `ingest`, `normalize`, `generate`, `build`, `verify-raw`, `verify`, `image-plan`, `image-fetch`, `image-convert`, `disk-usage`, `clean`, `update`)のCLIフラグ例を実際の`--help`出力と突き合わせて一致を確認した。`README.md`の「人間が全体像を確認する場合」の読む順と想定リポジトリ構成に`BUILD.md`を追加した。コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。

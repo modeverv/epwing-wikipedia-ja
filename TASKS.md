@@ -883,7 +883,7 @@
 
 ## EPIC T — Release documentation
 
-### TASK-T001 [ ] Build guide
+### TASK-T001 [x] Build guide
 
 **依存:** R006
 

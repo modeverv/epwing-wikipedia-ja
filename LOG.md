@@ -6325,3 +6325,32 @@ docker run --rm -v .../data/sources:/data/sources:ro -v .../docker-work:/data/wo
 **次タスク**
 
 - これでEPIC S(Reproducibility and operations)の主要タスク(S001-S005)がすべて完了した。残るはEPIC T(Release documentation)のうちT001(Build guide、依存R006、完了済みのため着手可能)、T003(Troubleshooting、依存R009、完了済み)、T004(Viewer verification guide、依存Q009,R009、完了済み)、T005(Licensing/attribution guide、依存O010,R009、完了済み)
+
+## 2026-07-17 TASK-T001 Build guide
+
+**目的**
+
+EPIC R/Sで実データ全件規模で検証済みの手順に基づき、`BUILD.md`としてビルドガイドをまとめる。
+
+**変更**
+
+- `BUILD.md`(新規): 前提条件、doctor、acquire、ingest/normalize/generate/build、verify、画像パイプライン、Docker実行時の注意、運用コマンド、再現性確認の8セクション
+- `README.md`: 読む順と想定リポジトリ構成に`BUILD.md`を追加
+
+**実行コマンド**
+
+```bash
+uv run python -m wikiepwing.cli <各サブコマンド> --help  # ドキュメント内の全フラグ例と突き合わせ
+make check
+git diff --check
+```
+
+**結果**
+
+- 全13サブコマンドのCLIフラグ例を実際の`--help`出力と突き合わせて一致を確認した。
+- EPIC R/Sで発見した重要な知見(generateのプロファイル非依存性、image-fetchの逐次ダウンロード速度、DockerのOOM問題)を明記した。
+- コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- TASK-T003 Troubleshooting(依存: R009、完了済み)
