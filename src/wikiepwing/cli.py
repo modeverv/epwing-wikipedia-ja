@@ -19,7 +19,7 @@ from wikiepwing.config import load_config
 from wikiepwing.disk_usage import compute_disk_usage
 from wikiepwing.doctor import render_doctor_text, run_doctor
 from wikiepwing.ingest.database import connect_raw_database
-from wikiepwing.ingest.orchestrate import run_ingest
+from wikiepwing.ingest.orchestrate import IngestPhaseProgress, run_ingest
 from wikiepwing.ingest.validate import ValidationLimits
 from wikiepwing.ingest.verify import verify_raw_database
 from wikiepwing.media.cache import MediaCache
@@ -58,6 +58,39 @@ from wikiepwing.source.register import LocalSourceFile, register_local_source
 from wikiepwing.source_diff import build_update_report, compute_source_diff, write_update_report
 
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{4,64}$")
+_INGEST_BYTE_PROGRESS_INTERVAL = 256 * 1024 * 1024
+_INGEST_INTEGRITY_PROGRESS_INTERVAL = 10_000_000
+
+
+class _IngestPhaseProgressReporter:
+    """Render bounded-frequency progress for ingest's heavyweight surrounding work."""
+
+    def __init__(self) -> None:
+        self._last_reported: dict[str, int] = {}
+
+    def __call__(self, progress: IngestPhaseProgress) -> None:
+        interval = (
+            _INGEST_BYTE_PROGRESS_INTERVAL
+            if progress.unit == "bytes"
+            else _INGEST_INTEGRITY_PROGRESS_INTERVAL
+        )
+        previous = self._last_reported.get(progress.phase, -interval)
+        reached_end = progress.total is not None and progress.completed >= progress.total
+        if (
+            progress.completed != 0
+            and not progress.complete
+            and not reached_end
+            and progress.completed - previous < interval
+        ):
+            return
+        self._last_reported[progress.phase] = progress.completed
+        if progress.total is None:
+            detail = f"{progress.unit}={progress.completed}"
+        else:
+            percentage = 100.0 if progress.total == 0 else 100 * progress.completed / progress.total
+            detail = f"{progress.unit}={progress.completed}/{progress.total} ({percentage:.1f}%)"
+        state = "complete" if progress.complete or reached_end else "running"
+        print(f"phase={progress.phase} state={state} {detail}", file=sys.stderr)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -867,6 +900,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
 
+        phase_progress_reporter = _IngestPhaseProgressReporter()
         ingest_result = run_ingest(
             lock,
             snapshot_directory=lock_path.parent,
@@ -885,6 +919,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"records_rejected={metrics.records_rejected}",
                 file=sys.stderr,
             ),
+            on_phase_progress=phase_progress_reporter,
         )
         print(ingest_result.manifest_path)
         return 0 if ingest_result.manifest.status == "complete" else 1

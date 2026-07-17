@@ -262,6 +262,10 @@ class CliTest(unittest.TestCase):
             )
 
             self.assertEqual(ingest_result.returncode, 0, ingest_result.stderr)
+            self.assertIn("phase=input-verification state=complete", ingest_result.stderr)
+            self.assertIn("phase=database-integrity state=running", ingest_result.stderr)
+            self.assertIn("phase=database-integrity state=complete", ingest_result.stderr)
+            self.assertIn("phase=database-fingerprint state=complete", ingest_result.stderr)
             manifest_path = Path(ingest_result.stdout.strip())
             self.assertTrue(manifest_path.is_file())
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

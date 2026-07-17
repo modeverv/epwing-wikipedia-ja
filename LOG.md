@@ -6812,3 +6812,37 @@ git diff --check
 - なし(TASKS.mdの全タスクが完了)
 - ユーザーが依頼した場合のみ: パースループの並列化、normalize/generateへの本格的な外字(gaiji)パイプライン統合(GAIJI.md参照)
 - 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
+## 2026-07-18 TASK-T017 Ingest pre/post-processing progress reporting
+
+**目的**
+
+`wikiepwing ingest` の記事処理前後にある長時間の無表示処理へ進捗表示を追加し、正常に処理中なのか終了不能なのかを判別可能にする。
+
+**変更**
+
+- `source/checksums.py`: bounded-memory fingerprint処理へ任意のバイト進捗コールバックを追加
+- `ingest/database.py`: SQLite `integrity_check`へprogress handlerを設定し、開始・VMステップ・完了を通知
+- `ingest/orchestrate.py`: 入力検証、resume判定用出力fingerprint、DB整合性検証、終了時DB fingerprintをフェーズ進捗として通知
+- `cli.py`: 256 MiBごとのバイト進捗、1,000万VMステップごとのDB整合性進捗、各フェーズ完了を標準エラーへ表示
+- `tests/`: fingerprintコールバック、DB整合性開始/完了、CLI表示を回帰テスト化
+
+**実行コマンドと結果**
+
+```bash
+uv run pytest -q tests/test_checksums.py tests/test_raw_database.py tests/test_ingest_orchestrate.py tests/test_cli.py
+# 73 passed
+make format-check
+# 291 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 139 source files
+make test
+# 1437 passed, 1 warning
+git diff --check
+# success
+```
+
+**次タスク**
+
+- なし。ingest再実行時の既存complete manifest探索はTASK-T017の非対象。

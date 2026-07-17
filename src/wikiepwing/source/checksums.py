@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,7 +25,10 @@ class FileFingerprint:
 
 
 def compute_fingerprint(
-    path: Path, *, read_chunk_bytes: int = DEFAULT_READ_CHUNK_BYTES
+    path: Path,
+    *,
+    read_chunk_bytes: int = DEFAULT_READ_CHUNK_BYTES,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> FileFingerprint:
     """Stream `path` in bounded chunks and return its measured size and SHA-256."""
     if read_chunk_bytes < 1:
@@ -34,6 +38,7 @@ def compute_fingerprint(
     hasher = hashlib.sha256()
     size_bytes = 0
     try:
+        total_bytes = path.stat().st_size
         with path.open("rb") as file:
             while True:
                 block = file.read(read_chunk_bytes)
@@ -41,6 +46,8 @@ def compute_fingerprint(
                     break
                 hasher.update(block)
                 size_bytes += len(block)
+                if on_progress is not None:
+                    on_progress(size_bytes, total_bytes)
     except OSError as error:
         raise FingerprintError(f"cannot read fingerprint target {path}: {error}") from error
     return FileFingerprint(size_bytes=size_bytes, sha256=hasher.hexdigest())
@@ -52,13 +59,14 @@ def verify_fingerprint(
     expected_size_bytes: int,
     expected_sha256: str,
     read_chunk_bytes: int = DEFAULT_READ_CHUNK_BYTES,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> FileFingerprint:
     """Verify `path` matches an expected size and SHA-256; return the measured fingerprint."""
     if expected_size_bytes < 0:
         raise FingerprintError("expected_size_bytes must not be negative")
     if not _SHA256.fullmatch(expected_sha256):
         raise FingerprintError("expected_sha256 must be 64 lowercase hex characters")
-    actual = compute_fingerprint(path, read_chunk_bytes=read_chunk_bytes)
+    actual = compute_fingerprint(path, read_chunk_bytes=read_chunk_bytes, on_progress=on_progress)
     if actual.size_bytes != expected_size_bytes:
         raise FingerprintError(
             f"size mismatch for {path}: expected {expected_size_bytes} bytes, "

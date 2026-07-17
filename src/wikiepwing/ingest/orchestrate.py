@@ -60,6 +60,17 @@ class IngestMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class IngestPhaseProgress:
+    """Progress for heavyweight work outside the article ingest loop."""
+
+    phase: str
+    completed: int
+    total: int | None
+    unit: str
+    complete: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class IngestManifest:
     """A stage manifest for one ingest run (DATA_CONTRACTS.md section 3)."""
 
@@ -101,6 +112,22 @@ class IngestResult:
     raw_database_path: Path
 
 
+def _input_fingerprint_progress_callback(
+    callback: Callable[[IngestPhaseProgress], None], *, offset: int, total: int
+) -> Callable[[int, int], None]:
+    def report(completed: int, _file_total: int) -> None:
+        callback(
+            IngestPhaseProgress(
+                phase="input-verification",
+                completed=offset + completed,
+                total=total,
+                unit="bytes",
+            )
+        )
+
+    return report
+
+
 def read_manifest_status(manifest_path: Path) -> str | None:
     """Return a manifest's `status` field, or None if no manifest exists yet.
 
@@ -133,6 +160,7 @@ def run_ingest(
     git_commit: str | None = None,
     force: bool = False,
     on_progress: Callable[[IngestMetrics], None] | None = None,
+    on_phase_progress: Callable[[IngestPhaseProgress], None] | None = None,
 ) -> IngestResult:
     """Verify chunk files, then stream/parse/validate/dedupe/write each into raw.sqlite3.
 
@@ -164,23 +192,39 @@ def run_ingest(
             previous_payload,
             stage_version=STAGE_VERSION,
             current_inputs=_manifest_inputs(lock),
-            current_output_fingerprint=_current_output_fingerprint(raw_database_path),
+            current_output_fingerprint=_current_output_fingerprint(
+                raw_database_path, on_phase_progress=on_phase_progress
+            ),
         )
         if decision.should_skip:
             assert previous_payload is not None
             return _resume_result(previous_payload, manifest_path, raw_database_path)
     started_at = datetime.now(UTC)
 
+    input_total_bytes = sum(file.size_bytes for file in lock.files)
+    input_verified_bytes = 0
     for file in lock.files:
         chunk_path = snapshot_directory / file.relative_path
+        fingerprint_progress: Callable[[int, int], None] | None = None
+        if on_phase_progress is not None:
+            fingerprint_progress = _input_fingerprint_progress_callback(
+                on_phase_progress,
+                offset=input_verified_bytes,
+                total=input_total_bytes,
+            )
+
         try:
             verify_fingerprint(
-                chunk_path, expected_size_bytes=file.size_bytes, expected_sha256=file.sha256
+                chunk_path,
+                expected_size_bytes=file.size_bytes,
+                expected_sha256=file.sha256,
+                on_progress=fingerprint_progress,
             )
         except FingerprintError as error:
             raise IngestError(
                 f"chunk verification failed for {file.relative_path}: {error}"
             ) from error
+        input_verified_bytes += file.size_bytes
 
     metrics = IngestMetrics()
     _write_manifest(
@@ -198,13 +242,45 @@ def run_ingest(
     )
 
     try:
-        database_path = initialize_raw_database(raw_database_path, migrations_path)
+        database_path = initialize_raw_database(
+            raw_database_path,
+            migrations_path,
+            on_integrity_progress=(
+                None
+                if on_phase_progress is None
+                else lambda completed, complete: on_phase_progress(
+                    IngestPhaseProgress(
+                        phase="database-integrity",
+                        completed=completed,
+                        total=None,
+                        unit="vm-steps",
+                        complete=complete,
+                    )
+                )
+            ),
+        )
     except sqlite3.DatabaseError:
         # The previous output was corrupted (e.g. truncated by a mid-write crash)
         # rather than a valid database we can migrate in place; discard it and
         # rebuild from scratch instead of failing this run outright.
         raw_database_path.unlink(missing_ok=True)
-        database_path = initialize_raw_database(raw_database_path, migrations_path)
+        database_path = initialize_raw_database(
+            raw_database_path,
+            migrations_path,
+            on_integrity_progress=(
+                None
+                if on_phase_progress is None
+                else lambda completed, complete: on_phase_progress(
+                    IngestPhaseProgress(
+                        phase="database-integrity",
+                        completed=completed,
+                        total=None,
+                        unit="vm-steps",
+                        complete=complete,
+                    )
+                )
+            ),
+        )
     status = "failed"
     try:
         connection = connect_raw_database(database_path)
@@ -233,6 +309,7 @@ def run_ingest(
             database_path=database_path,
             metrics=metrics,
             git_commit=git_commit,
+            on_phase_progress=on_phase_progress,
         )
         _write_manifest(manifest, manifest_path)
 
@@ -245,10 +322,28 @@ def _manifest_inputs(lock: SourceLock) -> dict[str, str]:
     return {"source_lock": f"sha256:{lock.metadata_response_sha256}"}
 
 
-def _current_output_fingerprint(path: Path) -> tuple[int, str] | None:
+def _current_output_fingerprint(
+    path: Path,
+    *,
+    on_phase_progress: Callable[[IngestPhaseProgress], None] | None,
+) -> tuple[int, str] | None:
     if not path.is_file():
         return None
-    fingerprint = compute_fingerprint(path)
+    fingerprint = compute_fingerprint(
+        path,
+        on_progress=(
+            None
+            if on_phase_progress is None
+            else lambda completed, total: on_phase_progress(
+                IngestPhaseProgress(
+                    phase="resume-output-fingerprint",
+                    completed=completed,
+                    total=total,
+                    unit="bytes",
+                )
+            )
+        ),
+    )
     return (fingerprint.size_bytes, fingerprint.sha256)
 
 
@@ -284,10 +379,25 @@ def _build_manifest(
     database_path: Path | None,
     metrics: IngestMetrics,
     git_commit: str | None,
+    on_phase_progress: Callable[[IngestPhaseProgress], None] | None = None,
 ) -> IngestManifest:
     outputs: tuple[dict[str, object], ...] = ()
     if database_path is not None and database_path.is_file():
-        fingerprint = compute_fingerprint(database_path)
+        fingerprint = compute_fingerprint(
+            database_path,
+            on_progress=(
+                None
+                if on_phase_progress is None
+                else lambda completed, total: on_phase_progress(
+                    IngestPhaseProgress(
+                        phase="database-fingerprint",
+                        completed=completed,
+                        total=total,
+                        unit="bytes",
+                    )
+                )
+            ),
+        )
         outputs = (
             {
                 "relative_path": database_path.name,

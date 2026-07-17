@@ -28,6 +28,19 @@ EXPECTED_TABLES = {
 }
 
 
+def test_reports_integrity_check_start_and_completion(tmp_path: Path) -> None:
+    reports: list[tuple[int, bool]] = []
+
+    initialize_raw_database(
+        tmp_path / "raw.sqlite3",
+        MIGRATIONS,
+        on_integrity_progress=lambda steps, complete: reports.append((steps, complete)),
+    )
+
+    assert reports[0] == (0, False)
+    assert reports[-1][1] is True
+
+
 def test_initial_migration_creates_strict_raw_schema(tmp_path: Path) -> None:
     database = initialize_raw_database(tmp_path / "raw.sqlite3", MIGRATIONS)
 

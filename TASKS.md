@@ -966,3 +966,9 @@
 **依存:** T015
 
 ユーザー依頼により、TASK-T014で追加した進捗出力の間隔(2万件ごと)を10件ごとに変更した。あわせて、`make build-epwing`実行のたびに最新の`freepwing_build_entries.pl`が反映されるか(Dockerイメージにファイルが焼き込まれてキャッシュされていないか)という質問に回答: `docker/toolchain.Dockerfile`はこのファイルを一切COPYしておらず、`build-epwing.sh`が実行時にホスト上の現在のファイルを一時ディレクトリへコピーしてbind mountするため、常に最新版が使われることを`grep`で確認して回答した。
+
+### TASK-T017 [x] Ingest pre/post-processing progress reporting
+
+**依存:** E008,E010
+
+ユーザー依頼により追加。`wikiepwing ingest` の記事処理前に行う全入力チャンクのSHA-256検証と既存raw DBの整合性検証、および記事処理後に行うraw DB全体のfingerprint計算が無表示で、正常に処理中なのか終了不能なのか判別できない。入力検証は全チャンク合計の処理バイト数、DB整合性検証は開始・継続中・完了、DB fingerprintは処理バイト数を標準エラーへ進捗表示する。

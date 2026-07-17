@@ -44,6 +44,21 @@ def test_computes_fingerprint_streaming_across_multiple_chunks(tmp_path: Path) -
     assert fingerprint.sha256 == hashlib.sha256(content).hexdigest()
 
 
+def test_reports_streaming_fingerprint_byte_progress(tmp_path: Path) -> None:
+    content = b"x" * 10
+    path = tmp_path / "progress.bin"
+    path.write_bytes(content)
+    reports: list[tuple[int, int]] = []
+
+    compute_fingerprint(
+        path,
+        read_chunk_bytes=4,
+        on_progress=lambda done, total: reports.append((done, total)),
+    )
+
+    assert reports == [(4, 10), (8, 10), (10, 10)]
+
+
 def test_rejects_symlink(tmp_path: Path) -> None:
     real = tmp_path / "real.bin"
     real.write_bytes(b"data")
