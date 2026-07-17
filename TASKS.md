@@ -978,3 +978,9 @@
 **依存:** T017
 
 ユーザーが実行するnormalize、generate、verify、画像パイプライン、toolchain image/build-epwingの一連のコマンドを対象に、実データ規模で長時間になり得る無表示処理を監査する。既存進捗で十分な区間は維持し、開始前・処理中・終了後に無表示となる重い区間だけへbounded-frequencyの進捗表示と回帰テストを追加する。
+
+### TASK-T019 [x] Ignore generated root gaiji artifacts
+
+**依存:** T018
+
+ユーザーが`generate`実行後に大量の生成物がGit管理候補へ現れたことを報告した。`.gitignore`の履歴を確認し、リポジトリ直下へ既定出力される`gaiji/`、`gaiji.sqlite3`、`unicode-report.json`を、ソースの`src/wikiepwing/gaiji/`へ影響しないroot限定パターンで除外する。

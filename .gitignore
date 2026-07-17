@@ -10,3 +10,6 @@ data/
 .env
 .DS_Store
 entries-*.jsonl
+/gaiji/
+/gaiji.sqlite3
+/unicode-report.json

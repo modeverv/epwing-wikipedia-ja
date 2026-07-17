@@ -6888,3 +6888,38 @@ git diff --check
 **次タスク**
 
 - なし。
+
+## 2026-07-18 TASK-T019 Ignore generated root gaiji artifacts
+
+**目的**
+
+`generate`がリポジトリ直下へ既定出力したgaiji成果物をGit管理候補から除外し、誤コミットを防止する。
+
+**変更**
+
+- `.gitignore`: `/gaiji/`、`/gaiji.sqlite3`、`/unicode-report.json`をroot限定で追加。`src/wikiepwing/gaiji/`配下の新規ソースを誤ってignoreしない。
+- `tests/test_repository_hygiene.py`: 上記3パターンを回帰テスト化。
+
+**実行コマンドと結果**
+
+```bash
+git check-ignore -v gaiji gaiji.sqlite3 unicode-report.json
+# 3件とも新規root限定パターンに一致
+uv run pytest -q tests/test_repository_hygiene.py
+# 1 passed
+make format-check
+# 293 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 140 source files
+make test
+# 1441 passed, 1 warning
+git diff --check
+# success
+```
+
+**結果**
+
+- `.gitignore`は削除されておらず、履歴上の最新版を保持していた。
+- 漏れていた生成物は未追跡のままだったため、ファイル削除や`git rm --cached`は不要だった。
