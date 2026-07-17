@@ -68,6 +68,7 @@ RUN printf '%s\n' \
     && apt-get install --yes --no-install-recommends \
         fonts-noto-cjk=1:20220127+repack1-1 \
         imagemagick=8:6.9.11.60+dfsg-1.6+deb12u9 \
+        libjson-xs-perl=4.040-1~deb12u1 \
         librsvg2-bin=2.54.7+dfsg-1~deb12u1 \
         make=4.3-4.1 \
         perl=5.36.0-7+deb12u3 \

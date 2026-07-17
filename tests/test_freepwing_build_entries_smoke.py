@@ -39,3 +39,11 @@ def test_driver_script_rejects_duplicate_headwords_across_entries() -> None:
     content = DRIVER_SCRIPT.read_text(encoding="utf-8")
 
     assert "duplicate headword" in content
+
+
+def test_driver_script_parallelizes_parsing_and_prefers_json_xs() -> None:
+    content = DRIVER_SCRIPT.read_text(encoding="utf-8")
+
+    assert "JSON::XS" in content
+    assert "WIKIEPWING_PARSE_JOBS" in content
+    assert "fork" in content
