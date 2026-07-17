@@ -740,6 +740,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             acquirer_name="wikiepwing",
             acquirer_version=__version__,
             acquirer_git_commit=git_commit,
+            on_progress=lambda progress: print(
+                f"chunk {progress.chunks_completed}/{progress.chunks_total} "
+                f"{progress.chunk_identifier}: "
+                f"{'already present' if progress.already_present else 'downloaded'} "
+                f"({_format_mib(progress.size_bytes)})",
+                file=sys.stderr,
+            ),
+            on_chunk_progress=lambda progress: print(
+                f"chunk {progress.chunk_index}/{progress.chunks_total} "
+                f"{progress.chunk_identifier}: "
+                f"{_format_mib(progress.bytes_downloaded)} / {_format_mib(progress.total_bytes)}",
+                file=sys.stderr,
+            ),
         )
         print(result.lock_path)
         return 0
@@ -1208,6 +1221,11 @@ def _latest_source_lock_path(project_sources_dir: Path) -> Path | None:
         reverse=True,
     )
     return candidates[0] if candidates else None
+
+
+def _format_mib(size_bytes: int) -> str:
+    """Format a byte count as mebibytes with one decimal place, e.g. "330.5 MB"."""
+    return f"{size_bytes / (1 << 20):.1f} MB"
 
 
 def _parse_file_argument(value: str) -> LocalSourceFile:

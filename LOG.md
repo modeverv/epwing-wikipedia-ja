@@ -6499,3 +6499,35 @@ git diff --check
 **次タスク**
 
 - なし(TASKS.mdの全タスクが完了)。ユーザーが全件規模で`make build-epwing`を実行する際、必要に応じてサポートする
+
+## 2026-07-17 TASK-T008 Acquire progress reporting
+
+**目的**
+
+ユーザー依頼。`acquire`が実行中に一切進捗を出力しないため「動いているのか固まっているのか分からない」という問題に実際に遭遇した。チャンク単位・チャンク内バイト単位の進捗コールバックを追加し、CLIで標準エラー出力に表示するようにする。
+
+**変更**
+
+- `src/wikiepwing/source/downloader.py`: `ChunkDownloadProgress`追加、`ResumableChunkDownloader`に`progress_interval_bytes`(既定8MiB)・`download`の`on_progress`引数を追加
+- `src/wikiepwing/source/acquire.py`: `AcquireProgress`・`AcquireChunkProgress`追加、`acquire_snapshot`に`on_progress`・`on_chunk_progress`引数を追加
+- `src/wikiepwing/cli.py`: `acquire`コマンドで両コールバックをstderr printに接続、`_format_mib`ヘルパー追加
+- `tests/test_acquire.py`・`tests/test_chunk_downloader.py`: 回帰テスト計6件追加
+- `TASKS.md`(TASK-T008追加)
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_acquire.py tests/test_chunk_downloader.py
+make check
+git diff --check
+```
+
+**結果**
+
+- 既存の`_FakeDownloader`(test_acquire.py)を新しい`on_progress`引数に対応させた上で、チャンクごとの進捗イベント順序・already_presentマーキング・チャンク内バイト進捗の3件、downloader側で間引き・最終イベント保証・バリデーションの3件、計6件のテストを追加した。
+- `make check`(1401 passed)、`git diff --check`が成功することを確認した。
+- 既存のingest/normalize/generateと同じ「stderrへの進捗print」パターンに合わせた。
+
+**次タスク**
+
+- なし(TASKS.mdの全タスクが完了)

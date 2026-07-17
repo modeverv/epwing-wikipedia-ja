@@ -6,6 +6,7 @@ import http.client
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from os import replace as os_replace
 from pathlib import Path
@@ -16,9 +17,18 @@ from wikiepwing.source.checksums import compute_fingerprint
 DEFAULT_DOWNLOAD_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_READ_CHUNK_BYTES = 1 << 20
+DEFAULT_PROGRESS_INTERVAL_BYTES = 8 * (1 << 20)
 _URL_SEGMENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 _CONTENT_RANGE = re.compile(r"^bytes (\d+)-(\d+)/(\d+)$")
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkDownloadProgress:
+    """How much of one chunk has been written to disk so far."""
+
+    bytes_downloaded: int
+    total_bytes: int
 
 
 class ChunkDownloadError(RuntimeError):
@@ -77,6 +87,7 @@ class ResumableChunkDownloader:
         timeout_seconds: float = DEFAULT_DOWNLOAD_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_MAX_RETRIES,
         read_chunk_bytes: int = DEFAULT_READ_CHUNK_BYTES,
+        progress_interval_bytes: int = DEFAULT_PROGRESS_INTERVAL_BYTES,
     ) -> None:
         if timeout_seconds <= 0:
             raise ChunkDownloadError("download timeout_seconds must be positive")
@@ -84,10 +95,13 @@ class ResumableChunkDownloader:
             raise ChunkDownloadError("max_retries must not be negative")
         if read_chunk_bytes < 1:
             raise ChunkDownloadError("read_chunk_bytes must be positive")
+        if progress_interval_bytes < 1:
+            raise ChunkDownloadError("progress_interval_bytes must be positive")
         self._transport = transport
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
         self._read_chunk_bytes = read_chunk_bytes
+        self._progress_interval_bytes = progress_interval_bytes
 
     def download(
         self,
@@ -96,6 +110,7 @@ class ResumableChunkDownloader:
         snapshot_identifier: str,
         chunk_identifier: str,
         destination: Path,
+        on_progress: Callable[[ChunkDownloadProgress], None] | None = None,
     ) -> ChunkDownloadResult:
         """Download one chunk to `destination`, resuming a `.partial` file if present."""
         _validate_not_symlink("destination", destination)
@@ -115,6 +130,7 @@ class ResumableChunkDownloader:
                     range_header,
                     offset,
                     partial_path,
+                    on_progress,
                 )
                 break
             except ChunkDownloadAuthError:
@@ -142,6 +158,7 @@ class ResumableChunkDownloader:
         range_header: str,
         offset: int,
         partial_path: Path,
+        on_progress: Callable[[ChunkDownloadProgress], None] | None,
     ) -> int:
         with self._transport.fetch_range(
             access_token,
@@ -153,6 +170,8 @@ class ResumableChunkDownloader:
             if response.status not in (200, 206):
                 raise ChunkDownloadError(f"unexpected chunk stream status: {response.status}")
             total_size = _parse_total_size(response, offset)
+            downloaded = offset
+            reported = offset
             try:
                 with partial_path.open("ab") as file:
                     while True:
@@ -160,8 +179,22 @@ class ResumableChunkDownloader:
                         if not data:
                             break
                         file.write(data)
+                        downloaded += len(data)
+                        if on_progress is not None and (
+                            downloaded - reported >= self._progress_interval_bytes
+                        ):
+                            reported = downloaded
+                            on_progress(
+                                ChunkDownloadProgress(
+                                    bytes_downloaded=downloaded, total_bytes=total_size
+                                )
+                            )
             except OSError as error:
                 raise ChunkDownloadError(f"chunk stream interrupted: {error}") from error
+            if on_progress is not None and downloaded != reported:
+                on_progress(
+                    ChunkDownloadProgress(bytes_downloaded=downloaded, total_bytes=total_size)
+                )
         return total_size
 
 

@@ -912,3 +912,9 @@
 **依存:** T006
 
 ユーザー依頼により追加(RELEASE_CHECKLIST.mdで発見した「entries.jsonlから全件規模でHONMONをビルドする本番スクリプトが無い」ギャップへの対応)。`docker/toolchain/build-epwing.sh`と`make build-epwing`を追加し、README.mdを実態に合わせて更新する。
+
+### TASK-T008 [x] Acquire progress reporting
+
+**依存:** T007
+
+ユーザー依頼により追加。`acquire`が実行中に一切進捗を出力せず、実際にユーザーが「動いているのか固まっているのか分からない」という問題に遭遇したため、チャンク単位・チャンク内バイト単位の進捗コールバックを追加し、CLIで標準エラー出力に表示するようにする。

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -9,10 +10,15 @@ from typing import Any
 import pytest
 
 from wikiepwing.secrets import EnterpriseSecrets
-from wikiepwing.source.acquire import AcquireError, acquire_snapshot
+from wikiepwing.source.acquire import (
+    AcquireChunkProgress,
+    AcquireError,
+    AcquireProgress,
+    acquire_snapshot,
+)
 from wikiepwing.source.auth import ResolvedAccessToken
 from wikiepwing.source.checksums import FingerprintError
-from wikiepwing.source.downloader import ChunkDownloadResult
+from wikiepwing.source.downloader import ChunkDownloadProgress, ChunkDownloadResult
 from wikiepwing.source.enterprise import ResolvedSnapshot
 
 SECRETS = EnterpriseSecrets(
@@ -81,6 +87,7 @@ class _FakeDownloader:
         snapshot_identifier: str,
         chunk_identifier: str,
         destination: Path,
+        on_progress: Callable[[ChunkDownloadProgress], None] | None = None,
     ) -> ChunkDownloadResult:
         self.calls.append(
             {
@@ -91,6 +98,8 @@ class _FakeDownloader:
             }
         )
         data = self._contents[chunk_identifier]
+        if on_progress is not None:
+            on_progress(ChunkDownloadProgress(bytes_downloaded=len(data), total_bytes=len(data)))
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
         reported = self._lie_about.get(chunk_identifier, data)
@@ -165,6 +174,90 @@ def test_acquires_multiple_chunks_in_order(tmp_path: Path) -> None:
     identifiers = [file.chunk_identifier for file in result.lock.files]
     assert identifiers == ["chunk_0", "chunk_1", "chunk_2"]
     assert len(downloader.calls) == 3
+
+
+def test_on_progress_reports_one_event_per_chunk_in_order(tmp_path: Path) -> None:
+    resolved = _resolved_snapshot(chunk_identifiers=("chunk_0", "chunk_1", "chunk_2"))
+    downloader = _FakeDownloader({"chunk_0": b"AAA", "chunk_1": b"BB", "chunk_2": b"C"})
+    events: list[AcquireProgress] = []
+
+    acquire_snapshot(
+        SECRETS,
+        auth_client=_FakeAuthClient(),
+        metadata_client=_FakeMetadataClient(resolved),
+        downloader=downloader,
+        project="jawiki",
+        namespace=0,
+        requested_version="latest",
+        sources_root=tmp_path,
+        acquirer_name="wikiepwing",
+        acquirer_version="0.1.0",
+        acquirer_git_commit="abc1234",
+        on_progress=events.append,
+    )
+
+    assert [(event.chunks_completed, event.chunk_identifier) for event in events] == [
+        (1, "chunk_0"),
+        (2, "chunk_1"),
+        (3, "chunk_2"),
+    ]
+    assert [event.chunks_total for event in events] == [3, 3, 3]
+    assert [event.size_bytes for event in events] == [3, 2, 1]
+    assert [event.already_present for event in events] == [False, False, False]
+
+
+def test_on_progress_marks_already_present_chunks(tmp_path: Path) -> None:
+    resolved = _resolved_snapshot(chunk_identifiers=("chunk_0",))
+    snapshot_dir = tmp_path / "jawiki" / resolved.version_identifier
+    snapshot_dir.mkdir(parents=True)
+    (snapshot_dir / "chunk_0.tar.gz").write_bytes(b"already-here")
+    events: list[AcquireProgress] = []
+
+    acquire_snapshot(
+        SECRETS,
+        auth_client=_FakeAuthClient(),
+        metadata_client=_FakeMetadataClient(resolved),
+        downloader=_FakeDownloader({"chunk_0": b"would-be-fresh-download"}),
+        project="jawiki",
+        namespace=0,
+        requested_version="latest",
+        sources_root=tmp_path,
+        acquirer_name="wikiepwing",
+        acquirer_version="0.1.0",
+        acquirer_git_commit="abc1234",
+        on_progress=events.append,
+    )
+
+    assert len(events) == 1
+    assert events[0].already_present is True
+
+
+def test_on_chunk_progress_reports_bytes_downloaded_mid_chunk(tmp_path: Path) -> None:
+    resolved = _resolved_snapshot(chunk_identifiers=("chunk_0",))
+    downloader = _FakeDownloader({"chunk_0": b"hello world"})
+    events: list[AcquireChunkProgress] = []
+
+    acquire_snapshot(
+        SECRETS,
+        auth_client=_FakeAuthClient(),
+        metadata_client=_FakeMetadataClient(resolved),
+        downloader=downloader,
+        project="jawiki",
+        namespace=0,
+        requested_version="latest",
+        sources_root=tmp_path,
+        acquirer_name="wikiepwing",
+        acquirer_version="0.1.0",
+        acquirer_git_commit="abc1234",
+        on_chunk_progress=events.append,
+    )
+
+    assert len(events) == 1
+    assert events[0].chunk_identifier == "chunk_0"
+    assert events[0].chunk_index == 1
+    assert events[0].chunks_total == 1
+    assert events[0].bytes_downloaded == len(b"hello world")
+    assert events[0].total_bytes == len(b"hello world")
 
 
 def test_skips_redownload_when_chunk_already_present(tmp_path: Path) -> None:

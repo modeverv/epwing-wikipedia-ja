@@ -10,6 +10,7 @@ import pytest
 from wikiepwing.source.downloader import (
     ChunkDownloadAuthError,
     ChunkDownloadError,
+    ChunkDownloadProgress,
     HttpChunkTransport,
     ResumableChunkDownloader,
 )
@@ -112,6 +113,53 @@ def test_downloads_full_content_in_one_attempt(tmp_path: Path) -> None:
             "timeout_seconds": 60.0,
         }
     ]
+
+
+def test_on_progress_reports_periodic_byte_counts_and_a_final_event(tmp_path: Path) -> None:
+    content = b"HELLOWORLD"
+    response = _FakeResponse(
+        status=200,
+        headers={"Content-Length": str(len(content))},
+        # Delivered in small pieces so progress fires more than once even
+        # though the whole chunk is well under one progress_interval_bytes.
+        chunks=[b"HELLO", b"WOR", b"LD"],
+    )
+    transport = _FakeTransport([response])
+    downloader = ResumableChunkDownloader(transport, progress_interval_bytes=5)
+    destination = tmp_path / "chunk_0.tar.gz"
+    events: list[ChunkDownloadProgress] = []
+
+    downloader.download(
+        "token",
+        snapshot_identifier="jawiki_namespace_0",
+        chunk_identifier="jawiki_namespace_0_chunk_0",
+        destination=destination,
+        on_progress=events.append,
+    )
+
+    assert [event.bytes_downloaded for event in events] == [5, 10]
+    assert all(event.total_bytes == len(content) for event in events)
+
+
+def test_on_progress_reports_a_final_event_even_below_the_interval(tmp_path: Path) -> None:
+    content = b"HI"
+    response = _FakeResponse(
+        status=200, headers={"Content-Length": str(len(content))}, chunks=[content]
+    )
+    transport = _FakeTransport([response])
+    downloader = ResumableChunkDownloader(transport, progress_interval_bytes=1 << 20)
+    destination = tmp_path / "chunk_0.tar.gz"
+    events: list[ChunkDownloadProgress] = []
+
+    downloader.download(
+        "token",
+        snapshot_identifier="jawiki_namespace_0",
+        chunk_identifier="jawiki_namespace_0_chunk_0",
+        destination=destination,
+        on_progress=events.append,
+    )
+
+    assert [event.bytes_downloaded for event in events] == [2]
 
 
 def test_resumes_from_existing_partial_file(tmp_path: Path) -> None:
@@ -335,6 +383,11 @@ def test_negative_max_retries_is_rejected() -> None:
 def test_non_positive_read_chunk_bytes_is_rejected() -> None:
     with pytest.raises(ChunkDownloadError):
         ResumableChunkDownloader(_FakeTransport([]), read_chunk_bytes=0)
+
+
+def test_non_positive_progress_interval_bytes_is_rejected() -> None:
+    with pytest.raises(ChunkDownloadError):
+        ResumableChunkDownloader(_FakeTransport([]), progress_interval_bytes=0)
 
 
 # --- HttpChunkTransport: real two-hop redirect-then-storage dance ---

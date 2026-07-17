@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Protocol
 from wikiepwing.secrets import EnterpriseSecrets
 from wikiepwing.source.auth import ResolvedAccessToken
 from wikiepwing.source.checksums import compute_fingerprint, verify_fingerprint
-from wikiepwing.source.downloader import ChunkDownloadResult
+from wikiepwing.source.downloader import ChunkDownloadProgress, ChunkDownloadResult
 from wikiepwing.source.enterprise import ResolvedSnapshot
 from wikiepwing.source.lockfile import (
     SourceLock,
@@ -35,6 +36,28 @@ class AcquireResult:
     snapshot_directory: Path
     lock_path: Path
     lock: SourceLock
+
+
+@dataclass(frozen=True, slots=True)
+class AcquireProgress:
+    """One chunk's completion, reported after it is downloaded or found already present."""
+
+    chunks_completed: int
+    chunks_total: int
+    chunk_identifier: str
+    size_bytes: int
+    already_present: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AcquireChunkProgress:
+    """In-progress byte count for the chunk currently downloading."""
+
+    chunk_index: int
+    chunks_total: int
+    chunk_identifier: str
+    bytes_downloaded: int
+    total_bytes: int
 
 
 class AuthResolver(Protocol):
@@ -66,6 +89,7 @@ class ChunkDownloader(Protocol):
         snapshot_identifier: str,
         chunk_identifier: str,
         destination: Path,
+        on_progress: Callable[[ChunkDownloadProgress], None] | None = None,
     ) -> ChunkDownloadResult: ...
 
 
@@ -82,6 +106,8 @@ def acquire_snapshot(
     acquirer_name: str,
     acquirer_version: str,
     acquirer_git_commit: str,
+    on_progress: Callable[[AcquireProgress], None] | None = None,
+    on_chunk_progress: Callable[[AcquireChunkProgress], None] | None = None,
 ) -> AcquireResult:
     """Resolve, download, verify, and lock one Snapshot version."""
     if not sources_root.is_absolute():
@@ -103,19 +129,42 @@ def acquire_snapshot(
     snapshot_directory.mkdir(parents=True, exist_ok=True)
 
     files: list[SourceLockFile] = []
-    for chunk_identifier in resolved_snapshot.chunk_identifiers:
+    chunks_total = len(resolved_snapshot.chunk_identifiers)
+    for chunks_completed, chunk_identifier in enumerate(
+        resolved_snapshot.chunk_identifiers, start=1
+    ):
         relative_path = f"{chunk_identifier}.tar.gz"
         destination = snapshot_directory / relative_path
         if destination.is_symlink():
             raise AcquireError(f"chunk destination must not be a symlink: {destination}")
-        if destination.is_file():
+        already_present = destination.is_file()
+        if already_present:
             fingerprint = compute_fingerprint(destination)
         else:
+            chunk_progress_callback = None
+            if on_chunk_progress is not None:
+
+                def chunk_progress_callback(
+                    progress: ChunkDownloadProgress,
+                    _index: int = chunks_completed,
+                    _identifier: str = chunk_identifier,
+                ) -> None:
+                    on_chunk_progress(
+                        AcquireChunkProgress(
+                            chunk_index=_index,
+                            chunks_total=chunks_total,
+                            chunk_identifier=_identifier,
+                            bytes_downloaded=progress.bytes_downloaded,
+                            total_bytes=progress.total_bytes,
+                        )
+                    )
+
             result = downloader.download(
                 resolved_token.value,
                 snapshot_identifier=resolved_snapshot.snapshot_identifier,
                 chunk_identifier=chunk_identifier,
                 destination=destination,
+                on_progress=chunk_progress_callback,
             )
             fingerprint = verify_fingerprint(
                 destination,
@@ -131,6 +180,16 @@ def acquire_snapshot(
                 media_type=CHUNK_MEDIA_TYPE,
             )
         )
+        if on_progress is not None:
+            on_progress(
+                AcquireProgress(
+                    chunks_completed=chunks_completed,
+                    chunks_total=chunks_total,
+                    chunk_identifier=chunk_identifier,
+                    size_bytes=fingerprint.size_bytes,
+                    already_present=already_present,
+                )
+            )
 
     lock = build_source_lock(
         provider=PROVIDER,
