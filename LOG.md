@@ -6409,3 +6409,31 @@ git diff --check
 **次タスク**
 
 - TASK-T005 Licensing/attribution guide(依存: O010,R009、両方完了済み)
+
+## 2026-07-17 TASK-T005 Licensing/attribution guide
+
+**目的**
+
+プログラム自体のライセンスと生成辞書のコンテンツライセンス(本文・画像)が別であることを明確にし、実装済みの帰属情報の仕組みと未実装の部分を`LICENSING.md`にまとめる。
+
+**変更**
+
+- `LICENSING.md`(新規): プログラムライセンス、本文/画像のコンテンツライセンス、BUILD-INFO.json、未実装の部分(attribution appendix)
+- `README.md`: 既存「ライセンス」セクションから`LICENSING.md`への導線、読む順・想定リポジトリ構成に追加
+
+**実行コマンド**
+
+```bash
+make check
+git diff --check
+```
+
+**結果**
+
+- `src/wikiepwing/config.py`をgrepし、`distribution.include_attribution_appendix`が設定検証のみで、実際にappendixファイルを生成するコードが存在しないことを確認し、正直に明記した。
+- DATA_CONTRACTS.md 11のパッケージ内部構成(LICENSES.txt/ATTRIBUTION.txt/attribution.jsonl)とコードの実装状況を突き合わせた。
+- コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- TASK-T006 v1.0 release checklist(依存: S005,T001-T005、すべて完了済み)

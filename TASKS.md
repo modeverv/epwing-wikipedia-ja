@@ -899,7 +899,7 @@
 
 **依存:** Q009,R009
 
-### TASK-T005 [ ] Licensing/attribution guide
+### TASK-T005 [x] Licensing/attribution guide
 
 **依存:** O010,R009
 
