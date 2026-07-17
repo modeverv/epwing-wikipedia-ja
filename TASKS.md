@@ -859,7 +859,7 @@
 
 **依存:** R006,S001-S003
 
-### TASK-S005 [ ] Cross-host comparison
+### TASK-S005 [x] Cross-host comparison
 
 **依存:** S004
 

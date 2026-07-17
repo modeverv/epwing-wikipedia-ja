@@ -6294,3 +6294,34 @@ uv run python3 -c "from wikiepwing.build_logical_hash import compute_logical_bui
 **次タスク**
 
 - TASK-S005 Cross-host comparison(依存: S004、完了) — 別ホストでの再現性検証。実行環境の制約(単一ホストのみ利用可能)により実施方法を検討する必要がある
+
+## 2026-07-17 TASK-S005 Cross-host comparison
+
+**目的**
+
+PLAN.md 28(Phase 24 再現性試験)の出口条件「entry logical hash一致」を、異なる環境間で検証する。この実行環境には物理的に別ホストが無いため、ユーザーの承認を得てDockerコンテナ(Debian Linux)を「異なる環境」の代替として使用する。
+
+**変更**
+
+コード変更なし。`TASKS.md`(TASK-S005を`[x]`に)、`CURRENT_TASK.md`。
+
+**実行コマンド**
+
+```bash
+docker compose build app
+docker run --rm -v .../data/sources:/data/sources:ro -v .../docker-work:/data/work ... \
+  wikiepwing-app:dev wikiepwing ingest --raw-database /data/work/raw3.sqlite3 --lock-path ... --run-id docker-ingest
+# 同様にnormalize/generate
+```
+
+**結果**
+
+- コンテナ内`raw3.sqlite3`/`model3.sqlite3`はmacOSホスト版(TASK-S004)とメトリクス(articles_read/written/errors/warnings)が完全一致。sha256自体はOS/SQLiteビルド差異により異なるが想定通り。
+- 1回目の`generate`はDocker Desktop VMのメモリ不足(既定約7.75GB)によりコンテナが無応答終了。`render/generate.py`が全記事を一括`fetchall()`する設計(見出し語衝突解決をグローバルに行うため)によるもので、コードのバグではなくDocker VM側のリソース制約と判断した。ユーザーがDocker Desktopのメモリを約85GBへ増やして再実行。
+- 2回目の`generate`は成功し、`entries-rebuild3.jsonl`のsha256がmacOSホスト版・TASK-S004のDocker以外の再ビルド版すべてとbyte-for-byte完全一致(`1b6310d24f3485b1c2436cc2b0b3a7b3d75c006275f59e3f7474fb6078c58ac7`)。
+- `compute_logical_build_hash`による論理ハッシュもmacOSホスト版とDocker版で完全一致(`765528ac...`)。
+- OS・libc・SQLite/zstandardビルドが異なる環境間でも実データ全件規模での論理再現性を確認した。コンテナ成果物はスクラッチパッドのみに保持し、gitにはコミットしていない。
+
+**次タスク**
+
+- これでEPIC S(Reproducibility and operations)の主要タスク(S001-S005)がすべて完了した。残るはEPIC T(Release documentation)のうちT001(Build guide、依存R006、完了済みのため着手可能)、T003(Troubleshooting、依存R009、完了済み)、T004(Viewer verification guide、依存Q009,R009、完了済み)、T005(Licensing/attribution guide、依存O010,R009、完了済み)
