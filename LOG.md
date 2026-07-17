@@ -6572,3 +6572,42 @@ git diff --check
 - なし(TASKS.mdの全タスクが完了)
 - 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
 - ユーザーが依頼した場合のみ: `generate`ステージの3層メモリ蓄積問題(30-40GB)の改善
+
+## 2026-07-17 TASK-T010 Image fetch concurrency and fetch-count limit mode
+
+**目的**
+
+ユーザー依頼。`image-fetch`が`upload.wikimedia.org`への完全逐次ダウンロードで、全件(約250万ユニークURL)実行すると4〜12日かかる見積もり(RELEASE_CHECKLIST.md)だった。相手サーバーに迷惑をかけない範囲で並列ダウンロードに対応し、加えて「画像が不足した状態で一旦EPWINGビルドを最後まで通して動かしてみたい」という要望に応えるため、先頭N件のユニークURLを取得した時点で打ち切るlimitモードを追加する。
+
+**変更**
+
+- `src/wikiepwing/media/orchestrate.py`: `fetch_media`に`max_workers`(既定1=逐次)・`limit`(既定None=無制限)引数を追加。`max_workers > 1`のときのみ`ThreadPoolExecutor`を生成し(ネットワークI/OなのでThreadPoolExecutor。normalizeのCPU律速な`ProcessPoolExecutor`とは別の選択)、`executor.map`でplan順を保った並列ダウンロードを行う。`limit`はユニークURL抽出時に先頭N件で打ち切る(件数は「試行したユニークURL数」であり「成功件数」ではない)
+- `src/wikiepwing/config.py`: `[images]`セクションに`fetch_concurrency`(INTEGER)を追加、`_validate_semantics`に0を拒否するチェックを追加
+- `config/default.toml`: `images.fetch_concurrency = 4`(相手サーバーへの配慮を優先した控えめな既定値)を追加
+- `src/wikiepwing/cli.py`: `image-fetch`コマンドに`--concurrency`(未指定時は`config`の`images.fetch_concurrency`)・`--limit`オプションを追加
+- `tests/test_media_orchestrate.py`: 並列時のplan順序保持・`max_workers`/`limit`のバリデーション・limitがユニークURL単位でありplanエントリ単位ではないことを検証するテスト計5件追加
+- `README.md`: `image-fetch`の`--concurrency`/`--limit`の使い方と、全件所要時間の見積もりを追記
+- `TASKS.md`(TASK-T010追加)
+
+**実行コマンド**
+
+```bash
+uv run mypy src
+uv run ruff format .
+uv run ruff check .
+uv run pytest tests/test_media_orchestrate.py tests/test_config.py -q
+make check
+git diff --check
+```
+
+**結果**
+
+- `make check`(1407 passed、+5件)、`uv run mypy src`(138ファイル、エラーなし)、`git diff --check`が成功することを確認した。
+- `SecureMediaDownloader`はURLごとに独立した`urllib`リクエストを行い共有可変状態を持たないため、スレッドプールでの並行実行は安全と判断した。
+- `limit`は「試行したユニークURL数」の上限であり「成功取得数」の上限ではない(失敗もカウントされる)。実行時間を予測可能にするための単純な設計を優先した。
+
+**次タスク**
+
+- なし(TASKS.mdの全タスクが完了)
+- 未解決: `config/local-paths.toml`をコミットするか`.gitignore`に追加するか、ユーザーへの確認待ち
+- ユーザーが依頼した場合のみ: `generate`ステージの3層メモリ蓄積問題(30-40GB)の改善

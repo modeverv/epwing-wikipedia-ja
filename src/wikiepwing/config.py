@@ -152,6 +152,7 @@ _SCHEMA: dict[str, _SchemaNode] = {
         "allow_svg": _Kind.BOOLEAN,
         "allow_animated": _Kind.BOOLEAN,
         "missing_license_action": _Kind.STRING,
+        "fetch_concurrency": _Kind.INTEGER,
     },
     "math": {
         "enabled": _Kind.BOOLEAN,
@@ -324,6 +325,8 @@ def _validate_semantics(values: Mapping[str, object], paths: PathsConfig) -> Non
     images = cast(Mapping[str, object], values["images"])
     if images["enabled"] is True and images["max_per_article"] == 0:
         raise ConfigurationError("images.max_per_article must be positive when images are enabled")
+    if images["fetch_concurrency"] == 0:
+        raise ConfigurationError("images.fetch_concurrency must be positive")
 
     distribution = cast(Mapping[str, object], values["distribution"])
     if distribution["mode"] == "public":

@@ -147,6 +147,10 @@ uv run python -m wikiepwing.cli verify --entries entries-mini.jsonl
 uv run python -m wikiepwing.cli image-plan --model-database data/work/model.sqlite3
 uv run python -m wikiepwing.cli image-fetch --config config/local-paths.toml --config config/profiles/lite.toml \
   --model-database data/work/model.sqlite3 --originals-dir <dir> --report <report.json>
+# 並列度・件数上限を指定する場合(既定は images.fetch_concurrency=4、上限なし)
+uv run python -m wikiepwing.cli image-fetch --config config/local-paths.toml --config config/profiles/lite.toml \
+  --model-database data/work/model.sqlite3 --originals-dir <dir> --report <report.json> \
+  --concurrency 4 --limit 1000
 uv run python -m wikiepwing.cli image-convert --originals-dir <dir> --report <report.json> \
   --cache-dir <cache> --graphics-dir <graphics>
 
@@ -165,6 +169,8 @@ uv run python -m wikiepwing.cli update --config config/local-paths.toml
 CLIサブコマンド一覧は`uv run python -m wikiepwing.cli --help`で確認できます。`wikiepwing`は現時点でPythonパッケージのエントリポイント(`uv run python -m wikiepwing.cli` または`pip install`後は`wikiepwing`コマンド)として提供され、`make`のサブコマンド化(`make acquire`等)はまだ行っていません。
 
 `make build-epwing`が呼ぶ`docker/toolchain/build-epwing.sh`は、`entries.jsonl`から実際にEPWING本体(HONMON)をビルドする本番用スクリプトです。小規模(3記事・100記事)フィクスチャでは動作確認済みですが、日本語Wikipedia全件規模での実行時間・成果物サイズはまだ計測していません([TROUBLESHOOTING.md](TROUBLESHOOTING.md)参照)。
+
+`image-fetch`は`upload.wikimedia.org`への逐次ダウンロードだと約250万ユニークURL全件で4〜12日かかる想定です(詳細は[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)参照)。`--concurrency`(既定: `images.fetch_concurrency`、既定値4)で相手サーバーに配慮した範囲の並列ダウンロードができ、`--limit N`を指定すると先頭N件のユニークURLを取得した時点で打ち切れます。画像が一部しかない状態でも`image-convert`以降・EPWINGビルドまで一通り動作確認したい場合は`--limit`を使ってください。
 
 ## 開発順序の最重要ルール
 

@@ -522,6 +522,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="fetch report JSON output path (read back by image-convert)",
     )
+    image_fetch.add_argument(
+        "--concurrency",
+        type=int,
+        help="parallel download workers (default: config images.fetch_concurrency)",
+    )
+    image_fetch.add_argument(
+        "--limit",
+        type=int,
+        help="stop after attempting this many unique media URLs (default: no limit)",
+    )
     image_convert = subparsers.add_parser(
         "image-convert", help="raster-convert an image-fetch report's originals to BMP graphics"
     )
@@ -1061,11 +1071,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             allowed_hosts=frozenset(cast(list[str], images_section["allowed_hosts"])),
             max_content_length_bytes=cast(int, images_section["max_download_bytes"]),
         )
+        concurrency = cast(int | None, arguments.concurrency) or cast(
+            int, images_section["fetch_concurrency"]
+        )
         outcomes = fetch_media(
             plan,
             downloader=media_downloader,
             max_pixels=cast(int, images_section["max_pixels"]),
             allow_svg=cast(bool, images_section["allow_svg"]),
+            max_workers=concurrency,
+            limit=cast(int | None, arguments.limit),
         )
         write_fetch_report(
             outcomes,

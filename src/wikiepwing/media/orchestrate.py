@@ -30,7 +30,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from wikiepwing.media.cache import MediaCache, compute_content_hash
@@ -107,19 +110,49 @@ def fetch_media(
     downloader: SecureMediaDownloader,
     max_pixels: int,
     allow_svg: bool,
+    max_workers: int = 1,
+    limit: int | None = None,
 ) -> tuple[FetchOutcome, ...]:
-    """Download and validate each unique `source_url` in `plan`, once each."""
+    """Download and validate each unique `source_url` in `plan`, once each.
+
+    `max_workers` (default 1, sequential) fetches multiple URLs concurrently
+    via a thread pool -- this is network I/O (each `SecureMediaDownloader.download`
+    call already backs off on its own on HTTP 429), so threads are the right
+    tool, unlike normalize's CPU-bound process pool. Keep this modest (a
+    handful of workers, not `os.cpu_count()`) to stay polite to the single
+    upstream host (`upload.wikimedia.org`) rather than hammering it with as
+    many concurrent connections as this machine has cores.
+
+    `limit`, if set, stops after attempting the first `limit` unique URLs
+    (in `plan` order) rather than every one -- useful for exercising the rest
+    of the pipeline (convert, generate, EPWING build) end-to-end without
+    waiting for a full-scale fetch to finish first.
+    """
+    if max_workers < 1:
+        raise ValueError("max_workers must be positive")
+    if limit is not None and limit < 0:
+        raise ValueError("limit must not be negative")
+
     seen_urls: dict[str, None] = {}
-    outcomes: list[FetchOutcome] = []
+    unique_urls: list[str] = []
     for entry in plan:
         url = entry.media.source_url
         if url in seen_urls:
             continue
         seen_urls[url] = None
-        outcomes.append(
-            _fetch_one(url, downloader=downloader, max_pixels=max_pixels, allow_svg=allow_svg)
-        )
-    return tuple(outcomes)
+        unique_urls.append(url)
+        if limit is not None and len(unique_urls) >= limit:
+            break
+
+    fetch_one = partial(
+        _fetch_one, downloader=downloader, max_pixels=max_pixels, allow_svg=allow_svg
+    )
+    executor_context = (
+        ThreadPoolExecutor(max_workers=max_workers) if max_workers > 1 else nullcontext()
+    )
+    with executor_context as executor:
+        mapper = executor.map if executor is not None else map
+        return tuple(mapper(fetch_one, unique_urls))
 
 
 def _fetch_one(

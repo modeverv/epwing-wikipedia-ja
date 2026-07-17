@@ -217,6 +217,71 @@ def test_fetch_media_rejects_content_over_pixel_limit() -> None:
     assert outcomes[0].ok is False
 
 
+def test_fetch_media_with_multiple_workers_preserves_plan_order() -> None:
+    urls = [f"https://example.org/{index}.png" for index in range(8)]
+    downloader = _FakeDownloader(
+        results_by_url={
+            url: MediaDownloadResult(content=_png_bytes(), content_type="image/png") for url in urls
+        }
+    )
+    plan = tuple(MediaPlanEntry(page_id=index, media=_media(url)) for index, url in enumerate(urls))
+
+    outcomes = fetch_media(
+        plan, downloader=downloader, max_pixels=10_000, allow_svg=True, max_workers=4
+    )  # type: ignore[arg-type]
+
+    assert [outcome.source_url for outcome in outcomes] == urls
+    assert all(outcome.ok for outcome in outcomes)
+
+
+def test_fetch_media_rejects_non_positive_max_workers() -> None:
+    downloader = _FakeDownloader()
+    plan = (MediaPlanEntry(page_id=1, media=_media("https://example.org/a.png")),)
+
+    with pytest.raises(ValueError, match="max_workers"):
+        fetch_media(plan, downloader=downloader, max_pixels=10_000, allow_svg=True, max_workers=0)  # type: ignore[arg-type]
+
+
+def test_fetch_media_limit_stops_after_n_unique_urls() -> None:
+    urls = [f"https://example.org/{index}.png" for index in range(5)]
+    downloader = _FakeDownloader(
+        results_by_url={
+            url: MediaDownloadResult(content=_png_bytes(), content_type="image/png") for url in urls
+        }
+    )
+    plan = tuple(MediaPlanEntry(page_id=index, media=_media(url)) for index, url in enumerate(urls))
+
+    outcomes = fetch_media(plan, downloader=downloader, max_pixels=10_000, allow_svg=True, limit=2)  # type: ignore[arg-type]
+
+    assert [outcome.source_url for outcome in outcomes] == urls[:2]
+
+
+def test_fetch_media_limit_counts_unique_urls_not_plan_entries() -> None:
+    downloader = _FakeDownloader(
+        results_by_url={
+            "https://example.org/a.png": MediaDownloadResult(
+                content=_png_bytes(), content_type="image/png"
+            ),
+        }
+    )
+    plan = (
+        MediaPlanEntry(page_id=1, media=_media("https://example.org/a.png")),
+        MediaPlanEntry(page_id=2, media=_media("https://example.org/a.png")),
+    )
+
+    outcomes = fetch_media(plan, downloader=downloader, max_pixels=10_000, allow_svg=True, limit=1)  # type: ignore[arg-type]
+
+    assert len(outcomes) == 1
+
+
+def test_fetch_media_rejects_negative_limit() -> None:
+    downloader = _FakeDownloader()
+    plan = (MediaPlanEntry(page_id=1, media=_media("https://example.org/a.png")),)
+
+    with pytest.raises(ValueError, match="limit"):
+        fetch_media(plan, downloader=downloader, max_pixels=10_000, allow_svg=True, limit=-1)  # type: ignore[arg-type]
+
+
 @_requires_imagemagick
 def test_convert_media_converts_successful_fetches(tmp_path: Path) -> None:
     cache = MediaCache(tmp_path)

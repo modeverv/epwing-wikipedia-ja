@@ -924,3 +924,9 @@
 **依存:** T008
 
 ユーザー依頼により追加。`normalize`の処理時間についてユーザーから懸念があり、「処理時間が短縮できる変更ならば実装してほしいが、速度低下やバグ増加のリスクがあるならこのままにしたい」という条件付きで、16コア機での並列化による高速化を検討した。`normalize_html`によるDOM正規化からバリデーション・ハッシュ計算までの、記事1件ごとに副作用のないCPU律速な計算部分のみを`ProcessPoolExecutor`でプロセスプールに分散し、`raw.sqlite3`の読み込みと`model.sqlite3`への書き込みはこれまで通りメインプロセスで`page_id`順に逐次実行する(バッチ単位で分散・収集するため、メモリ使用量は既存の`batch_size`のままで変わらない)。以前から`config`の`[normalize]`に宣言されていた`workers`(デフォルト8)を初めて実際に使用するようにした。小規模フィクスチャで`workers=1`(逐次)と`workers=4`(並列)が完全にバイト単位で同一の`model.sqlite3`を生成することをテストで検証済み。
+
+### TASK-T010 [x] Image fetch concurrency and fetch-count limit mode
+
+**依存:** T009
+
+ユーザー依頼により追加。`image-fetch`が`upload.wikimedia.org`への完全逐次ダウンロードで、全件(約250万ユニークURL)実行すると4〜12日かかる見積もり([RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md))だった。相手サーバーに迷惑をかけない範囲(既定4並列)で`ThreadPoolExecutor`による並列ダウンロードに対応し(ネットワークI/Oのため、normalizeのプロセスプールと違いスレッドプールを使用)、加えて「画像が不足した状態で一旦EPWINGビルドを最後まで通して動かしてみたい」という要望に応えるため、先頭N件のユニークURLを取得した時点で打ち切る`--limit`オプションを追加した。`config`の`[images]`に`fetch_concurrency`(既定4)を新設。並列時も出力順序(plan順)が逐次実行時と一致することをテストで検証済み。
