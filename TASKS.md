@@ -891,7 +891,7 @@
 
 **依存:** P003,Q006
 
-### TASK-T003 [ ] Troubleshooting
+### TASK-T003 [x] Troubleshooting
 
 **依存:** R009
 

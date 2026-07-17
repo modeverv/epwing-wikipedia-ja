@@ -6354,3 +6354,30 @@ git diff --check
 **次タスク**
 
 - TASK-T003 Troubleshooting(依存: R009、完了済み)
+
+## 2026-07-17 TASK-T003 Troubleshooting
+
+**目的**
+
+PLAN.md 31(v1.0 Definition of Done)のDocumentation項目「troubleshooting」を満たす。EPIC R/Sで実際に遭遇した問題と対処を`TROUBLESHOOTING.md`としてまとめる。
+
+**変更**
+
+- `TROUBLESHOOTING.md`(新規): 既に修正済みの実データ限定バグ7件、運用上の注意点7件、診断手順
+- `README.md`: 読む順と想定リポジトリ構成に`TROUBLESHOOTING.md`を追加
+
+**実行コマンド**
+
+```bash
+make check
+git diff --check
+```
+
+**結果**
+
+- すべての項目はLOG.mdに記録済みの実際の問題(EPIC R: redirects重複キー・NDJSON行サイズ・data: URI・Unicode改行文字・プロトコル相対URL・User-Agent・429リトライ、EPIC S: Docker OOM)に基づいて記述した。
+- コード変更を伴わないドキュメントのみの変更のため、`make check`(1395 passed)と`git diff --check`が成功することを確認した。
+
+**次タスク**
+
+- TASK-T004 Viewer verification guide(依存: Q009,R009、両方完了済み)
