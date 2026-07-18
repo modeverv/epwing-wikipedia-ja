@@ -158,10 +158,18 @@ uv run python -m wikiepwing.cli image-fetch --config config/local-paths.toml --c
 uv run python -m wikiepwing.cli image-convert --originals-dir <dir> --report <report.json> \
   --cache-dir <cache> --graphics-dir <graphics>
 
-# 実際にEPWINGバイナリ(.epwing.zip)をビルドする
-make build-epwing ENTRIES=entries-mini.jsonl TITLE="日本語Wikipedia" EPWING_OUTPUT=output/jawiki.epwing.zip \
-  GAIJI_DIR=data/work/gaiji
-# 画像がある場合はGRAPHICS_DIR=<graphics>も追加する
+# toolchain imageをビルドし、EPWINGバイナリ(.epwing.zip)を生成する。
+# TASK-T020以降のgenerateはFreePWINGの上限に合わせ、半角・全角外字を
+# それぞれ最大8,192文字へ自動制御する。既定出力を使った場合、gaijiは
+# entries-mini.jsonlと同じディレクトリのgaiji/にある。
+make toolchain-image
+make build-epwing ENTRIES=entries-mini.jsonl \
+  GRAPHICS_DIR=data/work/graphics GAIJI_DIR=gaiji \
+  TITLE="日本語ウィキペディア二〇二六年六月" \
+  EPWING_OUTPUT=data/output/jawiki.epwing.zip
+
+# 生成したZIP自体の整合性を検証する
+unzip -t data/output/jawiki.epwing.zip
 
 # 運用コマンド
 uv run python -m wikiepwing.cli disk-usage --config config/local-paths.toml
@@ -173,7 +181,50 @@ uv run python -m wikiepwing.cli update --config config/local-paths.toml
 
 CLIサブコマンド一覧は`uv run python -m wikiepwing.cli --help`で確認できます。`wikiepwing`は現時点でPythonパッケージのエントリポイント(`uv run python -m wikiepwing.cli` または`pip install`後は`wikiepwing`コマンド)として提供され、`make`のサブコマンド化(`make acquire`等)はまだ行っていません。
 
-`make build-epwing`が呼ぶ`docker/toolchain/build-epwing.sh`は、`entries.jsonl`から実際にEPWING本体(HONMON)をビルドする本番用スクリプトです。小規模(3記事・100記事)フィクスチャでは動作確認済みですが、日本語Wikipedia全件規模での実行時間・成果物サイズはまだ計測していません([TROUBLESHOOTING.md](TROUBLESHOOTING.md)参照)。
+### 上限制御導入前のgaiji生成物を再利用する場合
+
+半角・全角外字が各8,192文字を超えている既存の`entries-mini.jsonl`、
+`gaiji.sqlite3`、`gaiji/`は、そのままFreePWINGへ渡すと
+`define too many characters`で停止します。全件generateをやり直さず、今回の
+実ビルドと同じ入力へ変換するには、未使用の出力先を指定して次を実行します。
+
+```bash
+uv run python -m wikiepwing.gaiji.capacity \
+  --entries-source entries-mini.jsonl \
+  --database gaiji.sqlite3 \
+  --gaiji-source gaiji \
+  --entries-output data/work/entries-mini.jsonl \
+  --gaiji-output data/work/gaiji \
+  --report data/reports/gaiji-capacity-report.json
+
+make toolchain-image
+make build-epwing ENTRIES=data/work/entries-mini.jsonl \
+  GRAPHICS_DIR=data/work/graphics GAIJI_DIR=data/work/gaiji \
+  TITLE="日本語ウィキペディア二〇二六年六月" \
+  EPWING_OUTPUT=data/output/jawiki.epwing.zip
+
+unzip -t data/output/jawiki.epwing.zip
+```
+
+`data/work/entries-mini.jsonl`と`data/work/gaiji`は変換前に存在しない出力先で
+ある必要があります。既存成果物を上書きせず、容量超過文字は本文中の
+`[U+XXXX]`表記へ変換され、件数は指定したJSON reportへ記録されます。
+
+今回最後まで成功したtoolchain scriptの直接実行形は次です。通常は上の
+`make build-epwing`を使用してください。
+
+```bash
+sh docker/toolchain/build-epwing.sh \
+  "wikiepwing-toolchain:dev" \
+  "data/work/entries-mini.jsonl" \
+  "data/output/jawiki.epwing.zip" \
+  "data/work/graphics" \
+  "data/work/gaiji" \
+  "日本語ウィキペディア二〇二六年六月" \
+  "WIKIEP"
+```
+
+`make build-epwing`が呼ぶ`docker/toolchain/build-epwing.sh`は、`entries.jsonl`から実際にEPWING本体(HONMON)をビルドする本番用スクリプトです。2026-07-18に日本語Wikipedia 1,508,200記事で全件ビルドまで確認し、5.7 GiBの`data/output/jawiki.epwing.zip`を生成しました。生成前後の`ebinfo`と`unzip -t`が成功しています。成果物のSHA-256は`d3ec046a0c710e1d6fae61a2f5ec476a555cbda32df0f1f484da1bdf2b4b8b3a`です([TROUBLESHOOTING.md](TROUBLESHOOTING.md)参照)。
 
 `image-fetch`は`upload.wikimedia.org`への逐次ダウンロードだと約250万ユニークURL全件で4〜12日かかる想定です(詳細は[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)参照)。`--concurrency`(既定: `images.fetch_concurrency`、既定値4)で相手サーバーに配慮した範囲の並列ダウンロードができ、`--limit N`を指定すると先頭N件のユニークURLを取得した時点で打ち切れます。画像が一部しかない状態でも`image-convert`以降・EPWINGビルドまで一通り動作確認したい場合は`--limit`を使ってください。
 

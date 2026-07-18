@@ -990,3 +990,9 @@
 **依存:** T019
 
 全件`generate`が半角26,837・全角113,761の外字を生成した一方、FreePWINGは各幅8,192文字までしか定義できず、`fpwhalfchar`が`define too many characters`で停止した。各幅で使用頻度上位8,192文字だけを決定的に外字化し、残りを明示的なUnicodeコードポイント表記へフォールバックして、実EPWING ZIPの生成・検証まで行う。
+
+### TASK-T021 [x] Document the verified full-build commands
+
+**依存:** T020
+
+TASK-T020で実際に成功した外字容量調整、toolchain image、EPWING生成、ZIP検証のコマンドと全件ビルドの実測結果をREADMEへ反映する。新規generate出力と、上限制御導入前の既存生成物を再利用する場合を区別する。

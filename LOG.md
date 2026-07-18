@@ -6985,3 +6985,29 @@ git diff --check
 **次タスク**
 
 - 自動実装タスクはなし。生成済みEPWINGを実ビューアで開く手動確認へ進む。
+
+## 2026-07-18 TASK-T021 Document verified full-build commands
+
+**目的**
+
+TASK-T020で実際に成功した外字容量調整・toolchain image・EPWING生成・ZIP検証コマンドをREADMEへ反映する。
+
+**変更**
+
+- 新規generate出力では外字が各幅8,192文字へ自動制御されることと、既定の`GAIJI_DIR=gaiji`を明記した。
+- 上限制御導入前の既存生成物を再利用する`wikiepwing.gaiji.capacity`と、容量調整後の`data/work`入力を使うbuildコマンドを追加した。
+- 最終的に成功した`docker/toolchain/build-epwing.sh`の直接実行形を記録し、通常は同等の`make build-epwing`を推奨した。
+- 全件1,508,200記事、ZIP 5.7 GiB、SHA-256、`ebinfo`・`unzip -t`成功という実測値へ、READMEの古い「全件未計測」記述を更新した。
+
+**検証**
+
+```bash
+git diff --check
+# success
+uv run pytest -q tests/test_repository_hygiene.py
+# 1 passed
+```
+
+**次タスク**
+
+- 自動実装タスクはなし。生成済みEPWINGを実ビューアで開く手動確認へ進む。
