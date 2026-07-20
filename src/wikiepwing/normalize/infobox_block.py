@@ -16,6 +16,7 @@ from wikiepwing.model.diagnostics import Diagnostic
 from wikiepwing.normalize.convert_block import convert_document
 from wikiepwing.normalize.html_parser import ElementNode
 from wikiepwing.normalize.infobox_fields import parse_infobox_dom
+from wikiepwing.normalize.whitespace import normalize_text
 
 
 def build_infobox_block(table_element: ElementNode) -> tuple[InfoboxBlock, tuple[Diagnostic, ...]]:
@@ -25,9 +26,13 @@ def build_infobox_block(table_element: ElementNode) -> tuple[InfoboxBlock, tuple
 
     fields = []
     for raw_field in raw_infobox.fields:
+        field_name = normalize_text(raw_field.name)
+        if not field_name:
+            diagnostics.append(_empty_field_name_diagnostic(raw_field.name))
+            continue
         blocks, field_diagnostics = convert_document(raw_field.value_nodes)
         diagnostics.extend(field_diagnostics)
-        fields.append(InfoboxField(name=raw_field.name, value=blocks))
+        fields.append(InfoboxField(name=field_name, value=blocks))
 
     infobox = InfoboxBlock(
         title=raw_infobox.title,
@@ -50,5 +55,19 @@ def _empty_diagnostic() -> Diagnostic:
         message="infobox has no title, fields, or images",
         source_path=None,
         source_excerpt=None,
+        details={},
+    )
+
+
+def _empty_field_name_diagnostic(raw_name: str) -> Diagnostic:
+    return Diagnostic(
+        code="INFOBOX_EMPTY_FIELD_NAME",
+        severity="warning",
+        stage="normalize_infobox",
+        page_id=None,
+        title=None,
+        message="infobox field name became empty after whitespace normalization",
+        source_path=None,
+        source_excerpt=raw_name,
         details={},
     )

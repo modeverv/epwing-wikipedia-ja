@@ -85,6 +85,23 @@ def test_plan_media_reads_media_references(tmp_path: Path) -> None:
     assert plan == (MediaPlanEntry(page_id=1, media=_make_article().media[0]),)
 
 
+def test_plan_media_filters_by_page_id(tmp_path: Path) -> None:
+    database = initialize_model_database(tmp_path / "model.sqlite3", MIGRATIONS)
+    _write_article(database, _make_article(page_id=1, title="One", normalized_title="One"))
+    _write_article(database, _make_article(page_id=2, title="Two", normalized_title="Two"))
+
+    plan = plan_media(database, page_ids=(2,))
+
+    assert [entry.page_id for entry in plan] == [2]
+
+
+def test_plan_media_rejects_nonpositive_page_id(tmp_path: Path) -> None:
+    database = initialize_model_database(tmp_path / "model.sqlite3", MIGRATIONS)
+
+    with pytest.raises(ValueError, match="positive integers"):
+        plan_media(database, page_ids=(0,))
+
+
 def test_plan_media_excludes_rejected_articles(tmp_path: Path) -> None:
     database = initialize_model_database(tmp_path / "model.sqlite3", MIGRATIONS)
     _write_article(database, _make_article(), normalize_status="rejected")
@@ -103,8 +120,10 @@ def test_plan_media_empty_database(tmp_path: Path) -> None:
 @dataclass
 class _FakeDownloader:
     results_by_url: dict[str, MediaDownloadResult | Exception] = field(default_factory=dict)
+    calls: list[str] = field(default_factory=list)
 
     def download(self, url: str) -> MediaDownloadResult:
+        self.calls.append(url)
         result = self.results_by_url[url]
         if isinstance(result, Exception):
             raise result
@@ -435,3 +454,36 @@ def test_write_fetch_report_stores_bytes_by_content_hash(tmp_path: Path) -> None
     write_fetch_report(outcomes, originals_dir=originals_dir, report_path=tmp_path / "report.json")
 
     assert (originals_dir / "hash-a.bin").read_bytes() == b"content-a"
+
+
+def test_fetch_media_skips_already_fetched_urls() -> None:
+    urls = ["https://example.org/cached.png", "https://example.org/new.png"]
+    downloader = _FakeDownloader(
+        results_by_url={
+            "https://example.org/new.png": MediaDownloadResult(
+                content=_png_bytes(), content_type="image/png"
+            )
+        }
+    )
+    plan = tuple(MediaPlanEntry(page_id=i, media=_media(url)) for i, url in enumerate(urls))
+
+    cached_outcome = FetchOutcome(
+        source_url="https://example.org/cached.png",
+        content=_png_bytes(),
+        content_hash="cached-hash",
+        detected_format="png",
+        error=None,
+    )
+
+    outcomes = fetch_media(
+        plan,
+        downloader=downloader,  # type: ignore[arg-type]
+        max_pixels=10_000,
+        allow_svg=True,
+        existing_outcomes=(cached_outcome,),
+    )
+
+    assert len(outcomes) == 2
+    assert outcomes[0] == cached_outcome
+    assert outcomes[1].source_url == "https://example.org/new.png"
+    assert downloader.calls == ["https://example.org/new.png"]

@@ -47,6 +47,7 @@ from wikiepwing.reference.report import write_reference_report
 from wikiepwing.reference.searches import EbSearchAdapter, run_reference_searches
 from wikiepwing.release_notes import render_release_notes
 from wikiepwing.render.generate import GenerateMetrics, run_generate
+from wikiepwing.render.graphic_mapping import load_graphic_names_by_media_id
 from wikiepwing.render.verify import verify_entries_jsonl
 from wikiepwing.secrets import load_enterprise_secrets
 from wikiepwing.source.acquire import acquire_snapshot
@@ -521,6 +522,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="font file used to render gaiji bitmaps (default: auto-detected CJK font)",
     )
+    generate.add_argument(
+        "--image-report",
+        type=Path,
+        help="image-fetch report used to map media source URLs to converted graphics",
+    )
+    generate.add_argument(
+        "--graphics-dir",
+        type=Path,
+        help="converted FreePWING graphics directory containing cgraphs.txt",
+    )
     build = subparsers.add_parser(
         "build", help="chain ingest -> normalize -> generate, reusing completed stages"
     )
@@ -580,6 +591,12 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="model.sqlite3 input path",
     )
+    image_plan.add_argument(
+        "--page-id",
+        action="append",
+        type=int,
+        help="limit the plan to this page ID (repeatable)",
+    )
     image_fetch = subparsers.add_parser(
         "image-fetch", help="download and validate/sanitize an image-plan's unique media URLs"
     )
@@ -595,6 +612,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="model.sqlite3 input path",
+    )
+    image_fetch.add_argument(
+        "--page-id",
+        action="append",
+        type=int,
+        help="limit fetching to this page ID (repeatable)",
     )
     image_fetch.add_argument(
         "--originals-dir",
@@ -1035,10 +1058,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         git_commit = cast(str | None, arguments.git_commit) or _resolve_git_commit()
         gaiji_section = config.section("gaiji")
+        image_report = cast(Path | None, arguments.image_report)
+        graphics_dir = cast(Path | None, arguments.graphics_dir)
+        if (image_report is None) != (graphics_dir is None):
+            parser.error("generate requires --image-report and --graphics-dir together")
+        graphic_names_by_media_id = (
+            load_graphic_names_by_media_id(image_report, graphics_dir)
+            if image_report is not None and graphics_dir is not None
+            else None
+        )
 
         phase_progress_reporter = _PhaseProgressReporter()
         generate_progress_reporter = _GenerateProgressReporter()
         generate_result = run_generate(
+            config=config,
             model_database_path=model_database_path,
             entries_path=entries_path,
             manifest_path=manifest_path,
@@ -1054,7 +1087,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             or (entries_path.parent / "unicode-report.json"),
             font_path=cast(Path | None, arguments.gaiji_font_path),
             font_identifier=f"{gaiji_section['font_family']} ({gaiji_section['font_package_id']})",
+            graphic_names_by_media_id=graphic_names_by_media_id,
         )
+
         print(generate_result.manifest_path)
         return 0 if generate_result.manifest.status == "complete" else 1
     if command == "build":
@@ -1135,6 +1170,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if "generate" in stages:
             gaiji_section = config.section("gaiji")
             generate_result = run_generate(
+                config=config,
                 model_database_path=model_database_path,
                 entries_path=entries_path,
                 manifest_path=manifests_root / "50-generate.json",
@@ -1148,6 +1184,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"{gaiji_section['font_family']} ({gaiji_section['font_package_id']})"
                 ),
             )
+
             print(generate_result.manifest_path)
             if generate_result.manifest.status != "complete":
                 return 1
@@ -1164,7 +1201,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if entries_verification.ok else 1
     if command == "image-plan":
         phase_progress_reporter = _PhaseProgressReporter()
-        plan = plan_media(cast(Path, arguments.model_database), on_progress=phase_progress_reporter)
+        page_ids = cast(list[int] | None, arguments.page_id)
+        if page_ids is not None and any(page_id < 1 for page_id in page_ids):
+            parser.error("--page-id must be a positive integer")
+        plan = plan_media(
+            cast(Path, arguments.model_database),
+            page_ids=tuple(page_ids) if page_ids is not None else None,
+            on_progress=phase_progress_reporter,
+        )
         phase_progress_reporter(
             PhaseProgress(
                 phase="image-plan-json",
@@ -1195,7 +1239,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         images_section = config.section("images")
 
         phase_progress_reporter = _PhaseProgressReporter()
-        plan = plan_media(cast(Path, arguments.model_database), on_progress=phase_progress_reporter)
+        page_ids = cast(list[int] | None, arguments.page_id)
+        if page_ids is not None and any(page_id < 1 for page_id in page_ids):
+            parser.error("--page-id must be a positive integer")
+        plan = plan_media(
+            cast(Path, arguments.model_database),
+            page_ids=tuple(page_ids) if page_ids is not None else None,
+            on_progress=phase_progress_reporter,
+        )
         media_downloader = SecureMediaDownloader(
             allowed_hosts=frozenset(cast(list[str], images_section["allowed_hosts"])),
             max_content_length_bytes=cast(int, images_section["max_download_bytes"]),
@@ -1203,6 +1254,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         concurrency = cast(int | None, arguments.concurrency) or cast(
             int, images_section["fetch_concurrency"]
         )
+        report_path = cast(Path, arguments.report)
+        originals_dir = cast(Path, arguments.originals_dir)
+        existing_outcomes = None
+        if report_path.is_file() and originals_dir.is_dir():
+            try:
+                existing_outcomes = read_fetch_report(report_path, originals_dir=originals_dir)
+            except Exception:
+                existing_outcomes = None
         outcomes = fetch_media(
             plan,
             downloader=media_downloader,
@@ -1210,6 +1269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             allow_svg=cast(bool, images_section["allow_svg"]),
             max_workers=concurrency,
             limit=cast(int | None, arguments.limit),
+            existing_outcomes=existing_outcomes,
             on_progress=lambda progress: print(
                 f"fetch {progress.completed}/{progress.total} "
                 f"succeeded={progress.succeeded} failed={progress.failed}",

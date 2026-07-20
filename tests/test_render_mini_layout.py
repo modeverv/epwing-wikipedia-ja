@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from wikiepwing.model.article import Alias, Article
+from wikiepwing.model.article import Alias, Article, MediaReference
 from wikiepwing.model.blocks import (
     HeadingBlock,
     HorizontalRuleBlock,
+    ImageBlock,
     InfoboxBlock,
     InfoboxField,
     ListItem,
@@ -20,7 +21,7 @@ from wikiepwing.model.blocks import (
 from wikiepwing.model.inline import InternalLinkInline, TextInline
 from wikiepwing.render.entry_id import compute_entry_id
 from wikiepwing.render.mini_layout import render_article_to_entry
-from wikiepwing.render.render_node import TextRenderNode
+from wikiepwing.render.render_node import GraphicRenderNode, LinkRenderNode, TextRenderNode
 
 
 def _make_article(**overrides: object) -> Article:
@@ -66,6 +67,44 @@ def test_body_includes_title_update_date_and_abstract() -> None:
     assert "An extensible editor." in lines
 
 
+def test_image_block_uses_graphic_mapping_and_caption_at_body_position() -> None:
+    media_id = "//upload.wikimedia.org/flag.png"
+    article = _make_article(
+        blocks=(ImageBlock(media_id=media_id, alt_text="国旗"),),
+        media=(
+            MediaReference(
+                media_id=media_id,
+                source_url=media_id,
+                source_name="flag.png",
+                alt_text="国旗",
+                caption="日本の国旗",
+                role="lead",
+                source_width=320,
+                source_height=200,
+            ),
+        ),
+    )
+
+    entry = render_article_to_entry(article, graphic_names_by_media_id={media_id: "abc123"})
+
+    assert any(node == GraphicRenderNode(name="abc123") for node in entry.body)
+    assert entry.graphics == ("abc123",)
+    assert "日本の国旗" in "".join(
+        node.text for node in entry.body if isinstance(node, TextRenderNode)
+    )
+
+
+def test_unavailable_image_falls_back_to_alt_text() -> None:
+    article = _make_article(blocks=(ImageBlock(media_id="missing", alt_text="国旗"),))
+
+    entry = render_article_to_entry(article)
+
+    assert entry.graphics == ()
+    assert "[画像: 国旗]" in "".join(
+        node.text for node in entry.body if isinstance(node, TextRenderNode)
+    )
+
+
 def test_headwords_include_title_and_aliases() -> None:
     article = _make_article(aliases=(Alias(title="GNU Emacs", source="redirect", confidence=1.0),))
 
@@ -92,10 +131,10 @@ def test_headings_are_numbered_with_sibling_and_nesting_rules() -> None:
     body_node = entry.body[0]
     assert isinstance(body_node, TextRenderNode)
     text = body_node.text
-    assert "1 History" in text
-    assert "1.1 Early" in text
-    assert "1.2 Later" in text
-    assert "2 Legacy" in text
+    assert "■ History" in text
+    assert "■ Early" in text
+    assert "■ Later" in text
+    assert "■ Legacy" in text
 
 
 def test_categories_and_source_license_ids_are_included() -> None:
@@ -125,7 +164,7 @@ def test_unordered_list_and_horizontal_rule_render() -> None:
 
     body_node = entry.body[0]
     assert isinstance(body_node, TextRenderNode)
-    assert "- item" in body_node.text
+    assert "・ item" in body_node.text
     assert "----" in body_node.text
 
 
@@ -208,6 +247,7 @@ def test_internal_targets_extracted_from_resolved_links() -> None:
     entry = render_article_to_entry(article)
 
     assert entry.internal_targets == (compute_entry_id(42),)
+    assert LinkRenderNode(label="GNU", target=compute_entry_id(42)) in entry.body
 
 
 def test_internal_targets_exclude_missing_links() -> None:
@@ -231,6 +271,8 @@ def test_internal_targets_exclude_missing_links() -> None:
     entry = render_article_to_entry(article)
 
     assert entry.internal_targets == ()
+    assert all(not isinstance(node, LinkRenderNode) for node in entry.body)
+    assert "Ghost" in "".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
 
 def _cell(text: str, *, is_header: bool = False) -> TableCell:
@@ -279,10 +321,9 @@ def test_wide_table_with_header_row_renders_labeled_vertical_records() -> None:
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
     assert "Wide data" in text
-    assert "Name: Small" in text
-    assert "Size: 1" in text
-    assert "Name: Large" in text
-    assert "Size: 2" in text
+    assert "Name | Size" in text
+    assert "Small | 1" in text
+    assert "Large | 2" in text
 
 
 def test_wide_table_without_header_row_falls_back_to_generic_labels() -> None:
@@ -297,8 +338,7 @@ def test_wide_table_without_header_row_falls_back_to_generic_labels() -> None:
     entry = render_article_to_entry(article)
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
-    assert "列1: a" in text
-    assert "列2: b" in text
+    assert "a | b" in text
 
 
 def test_complex_table_also_renders_as_vertical_records() -> None:
@@ -313,7 +353,8 @@ def test_complex_table_also_renders_as_vertical_records() -> None:
     entry = render_article_to_entry(article)
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
-    assert "Header: Value" in text
+    assert "Header" in text
+    assert "Value" in text
 
 
 def test_unsupported_empty_table_renders_only_its_caption() -> None:
@@ -347,9 +388,9 @@ def test_infobox_renders_title_fields_and_image_placeholder() -> None:
     entry = render_article_to_entry(article)
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
-    assert "Emacs" in text
-    assert "Developer: GNU Project" in text
-    assert "[画像: emacs.png]" in text
+    assert "【Infobox Emacs】" in text
+    assert "【Developer|GNU Project】" in text
+    assert "【画像|emacs.png】" in text
 
 
 def test_infobox_without_title_still_renders_fields() -> None:
@@ -367,7 +408,8 @@ def test_infobox_without_title_still_renders_fields() -> None:
     entry = render_article_to_entry(article)
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
-    assert "License: GPL" in text
+    assert "【Infobox】" in text
+    assert "【License|GPL】" in text
 
 
 def test_references_render_as_numbered_list() -> None:
@@ -425,3 +467,29 @@ def test_math_inline_renders_its_source_within_the_paragraph_text() -> None:
     text = "\n".join(node.text for node in entry.body if isinstance(node, TextRenderNode))
 
     assert "see x^2 here" in text
+
+
+def test_infobox_renders_graphic_node_when_mapped() -> None:
+    from wikiepwing.model.article import MediaReference
+    from wikiepwing.render.render_node import GraphicRenderNode
+
+    infobox = InfoboxBlock(
+        title="Japan",
+        fields=(),
+        images=("//upload.wikimedia.org/flag.png",),
+    )
+    media = MediaReference(
+        media_id="flag_id",
+        source_url="//upload.wikimedia.org/flag.png",
+        source_name="flag.png",
+        alt_text=None,
+        caption=None,
+        role="infobox",
+        source_width=None,
+        source_height=None,
+    )
+    article = _make_article(blocks=(infobox,), media=(media,))
+
+    entry = render_article_to_entry(article, graphic_names_by_media_id={"flag_id": "g1234"})
+    assert "g1234" in entry.graphics
+    assert any(isinstance(node, GraphicRenderNode) and node.name == "g1234" for node in entry.body)

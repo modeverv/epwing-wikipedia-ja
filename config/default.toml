@@ -90,7 +90,7 @@ allowed_hosts = ["upload.wikimedia.org"]
 allow_svg = true
 allow_animated = false
 missing_license_action = "warn"
-fetch_concurrency = 4
+fetch_concurrency = 16
 
 [math]
 enabled = true

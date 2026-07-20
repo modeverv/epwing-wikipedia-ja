@@ -15,13 +15,16 @@ ARCHITECTURE.md 17.2's "catalog/subbook設定" responsibility).
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
 
+from wikiepwing.config import AppConfig
 from wikiepwing.gaiji.database import connect_gaiji_database, initialize_gaiji_database
 from wikiepwing.gaiji.embedding import GaijiPlan
 from wikiepwing.gaiji.freepwing_gaiji import GaijiBuildEntry, write_gaiji_build_files
@@ -30,7 +33,7 @@ from wikiepwing.gaiji.report import build_unicode_report, write_unicode_report
 from wikiepwing.gaiji.unrepresentable import UnrepresentableTracker
 from wikiepwing.ingest.zstd_codec import decompress
 from wikiepwing.model.article import Article
-from wikiepwing.model.canonical import decode_article
+from wikiepwing.model.canonical import decode_article, decode_article_metadata_only
 from wikiepwing.model.database import connect_model_database
 from wikiepwing.pipeline.fingerprint import compute_input_fingerprint
 from wikiepwing.pipeline.progress import PhaseProgress, fingerprint_progress_callback
@@ -41,15 +44,21 @@ from wikiepwing.pipeline.stage_manifest import read_manifest_payload as _read_ma
 from wikiepwing.pipeline.stage_manifest import (
     write_stage_manifest_payload as _write_stage_manifest_payload,
 )
-from wikiepwing.render.freepwing_source import write_entries_jsonl
+from wikiepwing.render.freepwing_source import write_entries_jsonl_stream
 from wikiepwing.render.mini_layout import render_article_to_entry
 from wikiepwing.render.rendered_entry import RenderedEntry
 from wikiepwing.search.backend_mapping import headwords_for_articles
+from wikiepwing.search.search_term import (
+    SearchTerm,
+    apply_search_budgets,
+    heading_keyword_terms_for_article,
+    infobox_keyword_terms_for_article,
+)
 from wikiepwing.source.checksums import compute_fingerprint
 
 SCHEMA_VERSION = 1
 STAGE_NAME = "50-generate"
-STAGE_VERSION = 1
+STAGE_VERSION = 2
 DEFAULT_GAIJI_FONT_IDENTIFIER = "unknown"
 
 
@@ -132,6 +141,7 @@ def read_manifest_status(manifest_path: Path) -> str | None:
 
 def run_generate(
     *,
+    config: AppConfig,
     model_database_path: Path,
     entries_path: Path,
     manifest_path: Path,
@@ -146,6 +156,7 @@ def run_generate(
     unicode_report_path: Path | None = None,
     font_path: Path | None = None,
     font_identifier: str = DEFAULT_GAIJI_FONT_IDENTIFIER,
+    graphic_names_by_media_id: dict[str, str] | None = None,
 ) -> GenerateResult:
     """Render every non-rejected model article into entries.jsonl.
 
@@ -176,7 +187,9 @@ def run_generate(
             previous_payload,
             stage_version=STAGE_VERSION,
             current_inputs=_manifest_inputs(
-                model_database_path, on_phase_progress=on_phase_progress
+                model_database_path,
+                graphic_names_by_media_id=graphic_names_by_media_id,
+                on_phase_progress=on_phase_progress,
             ),
             current_output_fingerprint=_current_output_fingerprint(
                 entries_path, on_phase_progress=on_phase_progress
@@ -199,6 +212,7 @@ def run_generate(
             metrics=metrics,
             git_commit=git_commit,
             on_phase_progress=on_phase_progress,
+            graphic_names_by_media_id=graphic_names_by_media_id,
         ),
         manifest_path,
     )
@@ -207,18 +221,21 @@ def run_generate(
     try:
         connection = connect_model_database(model_database_path)
         try:
-            entries = _render_all(
+            headwords_by_page_id, entries_generator = _render_all_stream(
                 connection,
+                config=config,
                 metrics=metrics,
                 on_progress=on_progress,
                 on_phase_progress=on_phase_progress,
+                graphic_names_by_media_id=graphic_names_by_media_id,
+            )
+            tracker = UnrepresentableTracker()
+            plan = write_entries_jsonl_stream(
+                entries_generator, entries_path, tracker=tracker, on_progress=on_phase_progress
             )
         finally:
             connection.close()
-        tracker = UnrepresentableTracker()
-        plan = write_entries_jsonl(
-            entries, entries_path, tracker=tracker, on_progress=on_phase_progress
-        )
+
         if gaiji_dir is not None:
             _write_gaiji_build_directory(
                 plan,
@@ -251,6 +268,7 @@ def run_generate(
             metrics=metrics,
             git_commit=git_commit,
             on_phase_progress=on_phase_progress,
+            graphic_names_by_media_id=graphic_names_by_media_id,
         )
         _write_manifest(manifest, manifest_path)
 
@@ -340,38 +358,36 @@ def _write_gaiji_registry(
         connection.commit()
 
 
-def _render_all(
+def _render_all_stream(
     connection: sqlite3.Connection,
     *,
+    config: AppConfig,
     metrics: GenerateMetrics,
     on_progress: Callable[[GenerateMetrics], None] | None,
     on_phase_progress: Callable[[PhaseProgress], None] | None,
-) -> tuple[RenderedEntry, ...]:
+    graphic_names_by_media_id: dict[str, str] | None,
+) -> tuple[dict[int, tuple[str, ...]], Callable[[], Iterable[RenderedEntry]]]:
     _report_phase(on_phase_progress, "generate-model-load", 0, 1)
     rows = connection.execute(
         "SELECT page_id, article_json_zstd, normalize_status FROM articles ORDER BY page_id"
     ).fetchall()
     _report_phase(on_phase_progress, "generate-model-load", 1, 1)
-    articles: list[Article] = []
+
+    articles_metadata: list[Article] = []
     if not rows:
         _report_phase(on_phase_progress, "generate-model-decode", 0, 0)
     for index, row in enumerate(rows, start=1):
-        metrics.articles_read += 1
         if row["normalize_status"] == "rejected":
-            metrics.articles_skipped += 1
             continue
         canonical_json = decompress(row["article_json_zstd"])
-        articles.append(decode_article(canonical_json))
+        articles_metadata.append(decode_article_metadata_only(canonical_json))
         _report_phase(on_phase_progress, "generate-model-decode", index, len(rows))
 
-    # Headwords are resolved across every article at once (TASK-J007) so a
-    # SearchTerm collision between two different articles' variants is
-    # settled globally, not article-by-article.
-    if not articles:
+    if not articles_metadata:
         _report_phase(on_phase_progress, "generate-headwords-terms", 0, 0)
         _report_phase(on_phase_progress, "generate-headwords-group", 0, 0)
     headwords_by_page_id = headwords_for_articles(
-        articles,
+        articles_metadata,
         on_progress=(
             None
             if on_phase_progress is None
@@ -380,16 +396,53 @@ def _render_all(
             )
         ),
     )
+    del articles_metadata
 
-    entries: list[RenderedEntry] = []
-    for article in articles:
-        entries.append(
-            render_article_to_entry(article, headwords=headwords_by_page_id[article.page_id])
-        )
-        metrics.entries_written += 1
-        if on_progress is not None:
-            on_progress(metrics)
-    return tuple(entries)
+    search_config = config.section("search")
+    include_heading_keywords = bool(search_config["include_heading_keywords"])
+    include_infobox_keywords = bool(search_config["include_infobox_keywords"])
+    max_terms_per_article = int(cast(int, search_config["max_terms_per_article"]))
+    max_key_bytes = int(cast(int, search_config["max_key_bytes"]))
+
+    def entries_generator() -> Iterable[RenderedEntry]:
+        metrics.articles_read = 0
+        metrics.articles_skipped = 0
+        metrics.entries_written = 0
+
+        for row in rows:
+            metrics.articles_read += 1
+            if row["normalize_status"] == "rejected":
+                metrics.articles_skipped += 1
+                continue
+            canonical_json = decompress(row["article_json_zstd"])
+            article = decode_article(canonical_json)
+
+            keywords_terms: list[SearchTerm] = []
+            if include_heading_keywords:
+                keywords_terms.extend(heading_keyword_terms_for_article(article))
+            if include_infobox_keywords:
+                keywords_terms.extend(infobox_keyword_terms_for_article(article))
+
+            budgeted = apply_search_budgets(
+                keywords_terms,
+                max_terms_per_article=max_terms_per_article,
+                max_key_bytes=max_key_bytes,
+            )
+            keywords = tuple(dict.fromkeys(term.key for term in budgeted if term.kind == "keyword"))
+
+            entry = render_article_to_entry(
+                article,
+                headwords=headwords_by_page_id[article.page_id],
+                graphic_names_by_media_id=graphic_names_by_media_id,
+                keywords=keywords,
+            )
+            metrics.entries_written += 1
+            if on_progress is not None:
+                on_progress(metrics)
+
+            yield entry
+
+    return headwords_by_page_id, entries_generator
 
 
 def _current_output_fingerprint(
@@ -429,6 +482,7 @@ def _resume_result(
 def _manifest_inputs(
     model_database_path: Path,
     *,
+    graphic_names_by_media_id: dict[str, str] | None = None,
     on_phase_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> dict[str, str]:
     inputs = {"model_database_path": str(model_database_path)}
@@ -439,6 +493,11 @@ def _manifest_inputs(
                 on_phase_progress, "generate-input-fingerprint"
             ),
         )
+    if graphic_names_by_media_id:
+        encoded = json.dumps(
+            graphic_names_by_media_id, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        inputs["graphic_mapping_sha256"] = hashlib.sha256(encoded).hexdigest()
     return inputs
 
 
@@ -452,6 +511,7 @@ def _build_manifest(
     entries_path: Path | None,
     metrics: GenerateMetrics,
     git_commit: str | None,
+    graphic_names_by_media_id: dict[str, str] | None = None,
     on_phase_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> GenerateManifest:
     outputs: tuple[dict[str, object], ...] = ()
@@ -478,7 +538,11 @@ def _build_manifest(
         run_id=run_id,
         started_at=started_at,
         completed_at=completed_at,
-        inputs=_manifest_inputs(model_database_path, on_phase_progress=on_phase_progress),
+        inputs=_manifest_inputs(
+            model_database_path,
+            graphic_names_by_media_id=graphic_names_by_media_id,
+            on_phase_progress=on_phase_progress,
+        ),
         outputs=outputs,
         metrics=metrics,
         software={

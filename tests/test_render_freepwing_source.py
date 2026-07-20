@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from wikiepwing.render.freepwing_source import write_entries_jsonl
-from wikiepwing.render.render_node import TextRenderNode
+from wikiepwing.render.freepwing_source import write_entries_jsonl_stream
+from wikiepwing.render.render_node import GraphicRenderNode, LinkRenderNode, TextRenderNode
 from wikiepwing.render.rendered_entry import RenderedEntry
 
 
@@ -29,7 +29,7 @@ def _make_entry(**overrides: object) -> RenderedEntry:
 def test_write_entries_jsonl_writes_one_json_object_per_line(tmp_path: Path) -> None:
     destination = tmp_path / "entries.jsonl"
 
-    write_entries_jsonl((_make_entry(),), destination)
+    write_entries_jsonl_stream(lambda: (_make_entry(),), destination)
 
     lines = destination.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
@@ -38,6 +38,7 @@ def test_write_entries_jsonl_writes_one_json_object_per_line(tmp_path: Path) -> 
         "tag": "p1",
         "title": "Emacs",
         "aliases": ["GNU Emacs"],
+        "keywords": [],
         "body": "line one\nline two",
         "targets": ["p2"],
     }
@@ -47,7 +48,7 @@ def test_write_entries_jsonl_handles_no_aliases_and_no_targets(tmp_path: Path) -
     destination = tmp_path / "entries.jsonl"
     entry = _make_entry(headwords=("Emacs",), internal_targets=())
 
-    write_entries_jsonl((entry,), destination)
+    write_entries_jsonl_stream(lambda: (entry,), destination)
 
     record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
     assert record["aliases"] == []
@@ -61,7 +62,7 @@ def test_write_entries_jsonl_writes_multiple_entries_in_order(tmp_path: Path) ->
         _make_entry(entry_id="p2", page_id=2, title="Linux", headwords=("Linux",)),
     )
 
-    write_entries_jsonl(entries, destination)
+    write_entries_jsonl_stream(lambda: entries, destination)
 
     lines = destination.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
@@ -72,7 +73,7 @@ def test_write_entries_jsonl_writes_multiple_entries_in_order(tmp_path: Path) ->
 def test_write_entries_jsonl_creates_parent_directories(tmp_path: Path) -> None:
     destination = tmp_path / "nested" / "dir" / "entries.jsonl"
 
-    write_entries_jsonl((_make_entry(),), destination)
+    write_entries_jsonl_stream(lambda: (_make_entry(),), destination)
 
     assert destination.is_file()
 
@@ -81,10 +82,43 @@ def test_write_entries_jsonl_preserves_multiline_body(tmp_path: Path) -> None:
     destination = tmp_path / "entries.jsonl"
     entry = _make_entry(body=(TextRenderNode(text="a\nb\nc"),))
 
-    write_entries_jsonl((entry,), destination)
+    write_entries_jsonl_stream(lambda: (entry,), destination)
 
     record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
     assert record["body"] == "a\nb\nc"
+
+
+def test_write_entries_jsonl_serializes_inline_link_at_body_position(tmp_path: Path) -> None:
+    destination = tmp_path / "entries.jsonl"
+    entry = _make_entry(
+        body=(
+            TextRenderNode(text="See "),
+            LinkRenderNode(label="GNU Project", target="p2"),
+            TextRenderNode(text=" now."),
+        )
+    )
+
+    write_entries_jsonl_stream(lambda: (entry,), destination)
+
+    record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
+    assert record["body"] == "See \x1eR:p2\x1fGNU Project\x1eE\x1f now."
+
+
+def test_write_entries_jsonl_serializes_graphic_at_body_position(tmp_path: Path) -> None:
+    destination = tmp_path / "entries.jsonl"
+    entry = _make_entry(
+        body=(
+            TextRenderNode(text="before\n"),
+            GraphicRenderNode(name="abc123"),
+            TextRenderNode(text="\nafter"),
+        ),
+        graphics=("abc123",),
+    )
+
+    write_entries_jsonl_stream(lambda: (entry,), destination)
+
+    record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
+    assert record["body"] == "before\n\x1eG:abc123\x1f\nafter"
 
 
 def test_write_entries_jsonl_does_not_touch_destination_on_failure(
@@ -99,7 +133,7 @@ def test_write_entries_jsonl_does_not_touch_destination_on_failure(
     monkeypatch.setattr("os.replace", _broken_replace)
 
     with pytest.raises(OSError, match="simulated failure"):
-        write_entries_jsonl((_make_entry(),), destination)
+        write_entries_jsonl_stream(lambda: (_make_entry(),), destination)
 
     assert destination.read_text(encoding="utf-8") == "original\n"
 
@@ -111,7 +145,7 @@ def test_write_entries_jsonl_replaces_gaiji_candidate_body_characters_with_token
     # U+4E02 ("丂") is JIS X 0212-only (SS3): not backend-representable.
     entry = _make_entry(body=(TextRenderNode(text="before 丂 after"),))
 
-    plan = write_entries_jsonl((entry,), destination)
+    plan = write_entries_jsonl_stream(lambda: (entry,), destination)
 
     assert not plan.is_empty()
     code = plan.assigned_codes["丂"]
@@ -125,7 +159,7 @@ def test_write_entries_jsonl_never_embeds_gaiji_tokens_in_title_or_aliases(
     destination = tmp_path / "entries.jsonl"
     entry = _make_entry(title="丂 Title", headwords=("丂 Title", "丂 Alias"))
 
-    write_entries_jsonl((entry,), destination)
+    write_entries_jsonl_stream(lambda: (entry,), destination)
 
     record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])
     assert record["title"] == "[U+4E02] Title"
@@ -139,7 +173,7 @@ def test_write_entries_jsonl_leaves_fully_representable_text_unchanged(
 ) -> None:
     destination = tmp_path / "entries.jsonl"
 
-    plan = write_entries_jsonl((_make_entry(),), destination)
+    plan = write_entries_jsonl_stream(lambda: (_make_entry(),), destination)
 
     assert plan.is_empty()
     record = json.loads(destination.read_text(encoding="utf-8").splitlines()[0])

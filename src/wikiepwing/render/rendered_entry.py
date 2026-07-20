@@ -30,6 +30,7 @@ class RenderedEntry:
     graphics: tuple[str, ...]
     estimated_size: int
     diagnostics: tuple[Diagnostic, ...]
+    keywords: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.entry_id:

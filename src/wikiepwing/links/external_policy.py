@@ -43,5 +43,8 @@ def apply_external_link_policy(
 def _is_safe_url(url: str) -> bool:
     if url.startswith("//"):
         return True
-    parsed = urllib.parse.urlsplit(url)
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
     return parsed.scheme.lower() in _SAFE_SCHEMES and bool(parsed.netloc)

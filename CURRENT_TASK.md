@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-T021
+TASK-T038
 
 ## 目的
 
-全件ビルドで実際に成功した外字容量調整・toolchain・EPWING生成・検証コマンドをREADMEへ反映する。
+`EDIT.md` に定義した標準レイアウト方針に基づき、`mini_layout.py` における Infobox（`【項目|値】`）、見出し（`■ 見出し`）、リスト（`1. ` および ` ・`）、Table（テキストグリッド化）の表示フォーマットを改修する。
 
 ## 事前条件
 
@@ -14,36 +14,40 @@ TASK-T021
 - [x] `MEMORY.md`を読んだ
 - [x] `LOG.md`末尾を読んだ
 - [x] `CURRENT_TASK.md`を確認した
-- [x] TASK-T020の実行ログと最終成果物を確認した
+- [x] `EDIT.md`が作成されていること
 
 ## 変更予定ファイル
 
-- `README.md`
-- `TASKS.md`
-- `LOG.md`
+- `EDIT.md`
+- `src/wikiepwing/render/mini_layout.py`
+- `tests/test_render_mini_layout.py`
 - `CURRENT_TASK.md`
 
 ## 実行予定コマンド
 
 ```bash
-git diff --check
-uv run pytest -q tests/test_repository_hygiene.py
+uv run pytest tests/test_render_mini_layout.py
+make check
 ```
 
 ## 完了条件
 
-- [x] 新規generate出力からの標準ビルドコマンドが明記されている
-- [x] 上限制御導入前の既存生成物を再利用する変換コマンドが明記されている
-- [x] 実際に成功した最終コマンド、成果物サイズ、検証方法が明記されている
-- [x] 文書差分と局所テストが成功する
+- [x] Infobox が `【Infobox {title}】` および `【項目名|値】` の形式で出力されること
+- [x] セクション見出しが `■ 見出し名` の形式で出力されること
+- [x] 箇条書きリストが ` ・` (インデント + 中黒)、順序付きリストが `1. ` 形式で出力されること
+- [x] Table がテキストグリッド形式で出力されること
+- [x] 関連するすべてのテストスイートが正常にパスすること
 
 ## 結果
 
-- READMEの標準ビルドを`make toolchain-image`、正しいgaiji path、実際のtitle/output pathへ更新した。
-- 上限制御導入前の12GB生成物を再利用する`wikiepwing.gaiji.capacity`手順を追加した。
-- 最後まで成功したtoolchain scriptの直接実行形、1,508,200記事・5.7 GiB・SHA-256・`unzip -t`検証結果を記録した。
+- `EDIT.md` を作成し、標準レイアウト・編集方針（Infobox, 見出し, リスト, Table）を策定・明記。
+- `src/wikiepwing/render/mini_layout.py` を改修し、以下の表示フォーマットを適用：
+  - **Infobox**: `【Infobox {title}】` および `【項目名|値】` 形式
+  - **セクション見出し**: `■ {見出し名}` 形式
+  - **箇条書きリスト**: ` ・{内容}` 形式 / 順序付きリスト `1. {内容}` 形式
+  - **表（Table）**: 全テーブルのテキストグリッド（`|` 区切り）形式化
+- `tests/test_render_mini_layout.py` を新しい指定形式に合わせて修正し、1,485件の全テストおよび `make check` をクリア。
 
 ## 非対象
 
-- コード・設定形式の変更
-- 全件generate/buildの再実行
+- HTML直出し等の非テキスト出力

@@ -20,6 +20,10 @@
 - FreePWING固有処理はEPWING adapter内へ隔離する。
 - 内部文字列はUTF-8を維持し、出力時に標準文字・置換・外字へ分類する。
 - フルビルドよりfixture vertical sliceを優先する。
+- **キーワード検索（条件検索）とクロス検索（複合検索）の対応** (2026-07-19):
+  - heading / infobox から抽出された `SearchTerm(kind="keyword")` を Python generate ステージで集計し、FreePWING の `KeyWord` インデックスへ登録する。
+  - テストビルド（キーワード数 0）時の FreePWING `Index.pm` クラッシュを避けるため、キーワードが 0 件のときはダミーキーワード `"dummy"` を登録する。
+  - クロス（複合）検索能力は、制御ファイル（`control`）内に `0x81` (cross) エントリーとして `kidx` を同一マッピング・宣言することで有効化する（FreePWING パッチ `cross_search.patch` を適用）。
 
 ## 品質原則
 
@@ -34,4 +38,4 @@
 - Boookends 2023版が使用する外字方式の詳細
 - EPWING backendが扱える画像形式・寸法の最適値
 - Fullプロファイルの画像上限と最終容量
-- 条件検索・クロス検索の具体的な索引設計
+

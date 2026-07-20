@@ -1,0 +1,29 @@
+diff -urN a/fpwutils/fpwcontrol.in b/fpwutils/fpwcontrol.in
+--- a/fpwutils/fpwcontrol.in	2009-10-24 11:31:39
++++ b/fpwutils/fpwcontrol.in	2026-07-19 02:15:06
+@@ -100,6 +100,9 @@
+ if (0 < $i && !$control->add_keyindex_entry(@file_names)) {
+     die "$PROGRAM_NAME: " . $control->error_message() . "\n";
+ }
++if (0 < $i && !$control->add_crossindex_entry(@file_names)) {
++    die "$PROGRAM_NAME: " . $control->error_message() . "\n";
++}
+ 
+ #
+ # メニュー表示用データエントリを追加する。
+diff -urN a/src/Control.pm b/src/Control.pm
+--- a/src/Control.pm	2009-10-24 11:31:39
++++ b/src/Control.pm	2026-07-19 02:15:06
+@@ -305,6 +305,12 @@
+ #
+ # 条件検索インデックス
+ #
++sub add_crossindex_entry {
++    my $self = shift;
++    my (@file_names) = @ARG;
++    return $self->add_entry(0x81, 0x02415554, @file_names);
++}
++
+ sub add_keyindex_entry {
+     my $self = shift;
+     my (@file_names) = @ARG;

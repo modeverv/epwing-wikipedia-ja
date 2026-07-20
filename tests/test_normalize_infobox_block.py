@@ -90,3 +90,12 @@ def test_diagnostics_from_row_parsing_are_propagated() -> None:
     _, diagnostics = build_infobox_block(table)
 
     assert any(diagnostic.code == "TABLE_INVALID_SPAN" for diagnostic in diagnostics)
+
+
+def test_field_name_that_normalizes_empty_is_skipped_with_diagnostic() -> None:
+    table = _parse_table("<table><tr><th>\u200b</th><td>value</td></tr></table>")
+
+    block, diagnostics = build_infobox_block(table)
+
+    assert block.fields == ()
+    assert any(diagnostic.code == "INFOBOX_EMPTY_FIELD_NAME" for diagnostic in diagnostics)

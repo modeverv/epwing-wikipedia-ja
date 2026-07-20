@@ -25,6 +25,7 @@ from wikiepwing.normalize.html_parser import ElementNode, Node
 from wikiepwing.normalize.infobox import is_infobox
 from wikiepwing.normalize.infobox_fields import parse_infobox_dom
 from wikiepwing.normalize.media_node import (
+    _source_name,
     is_figure_with_image,
     is_image_node,
     parse_figure_media,
@@ -57,6 +58,25 @@ def _collect_raw_media(nodes: tuple[Node, ...]) -> list[MediaReference]:
 
     def visit(node: Node) -> None:
         if not isinstance(node, ElementNode):
+            return
+        if is_infobox(node):
+            raw_infobox, _diagnostics = parse_infobox_dom(node)
+            for src in raw_infobox.image_srcs:
+                if src and not src.startswith("data:"):
+                    found.append(
+                        MediaReference(
+                            media_id=src,
+                            source_url=src,
+                            source_name=_source_name(src),
+                            alt_text=None,
+                            caption=None,
+                            role="infobox",
+                            source_width=None,
+                            source_height=None,
+                        )
+                    )
+            for child in node.children:
+                visit(child)
             return
         if is_figure_with_image(node):
             media = parse_figure_media(node)

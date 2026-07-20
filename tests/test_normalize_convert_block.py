@@ -3,6 +3,7 @@ from __future__ import annotations
 from wikiepwing.model.blocks import (
     HeadingBlock,
     HorizontalRuleBlock,
+    ImageBlock,
     InfoboxBlock,
     OrderedListBlock,
     ParagraphBlock,
@@ -13,7 +14,7 @@ from wikiepwing.model.blocks import (
     UnorderedListBlock,
     UnsupportedBlock,
 )
-from wikiepwing.model.inline import TextInline
+from wikiepwing.model.inline import InternalLinkInline, TextInline
 from wikiepwing.normalize.convert_block import convert_block, convert_document
 from wikiepwing.normalize.html_parser import ElementNode, parse_html
 
@@ -189,6 +190,53 @@ def test_convert_document_propagates_fallback_diagnostics() -> None:
     assert isinstance(blocks[0], UnsupportedBlock)
     codes = {d.code for d in diagnostics}
     assert "DOM_UNKNOWN_ELEMENT" in codes
+
+
+def test_convert_document_unwraps_parsoid_section_structure() -> None:
+    nodes = _body_children(
+        '<section data-mw-section-id="1">'
+        '<h2 id="History">History</h2>'
+        '<p>See <a href="/wiki/GNU">GNU</a>.</p>'
+        '<table class="infobox"><tr><th>Name</th><td>Emacs</td></tr></table>'
+        "</section>"
+    )
+
+    blocks, diagnostics = convert_document(nodes)
+
+    assert diagnostics == ()
+    assert [type(block) for block in blocks] == [HeadingBlock, ParagraphBlock, InfoboxBlock]
+
+
+def test_convert_document_preserves_related_link_div_as_paragraph() -> None:
+    nodes = _body_children(
+        '<div class="rellink">→詳細は「'
+        '<a href="/wiki/History_of_Japan">日本の歴史</a>」を参照</div>'
+    )
+
+    blocks, diagnostics = convert_document(nodes)
+
+    assert diagnostics == ()
+    assert len(blocks) == 1
+    assert isinstance(blocks[0], ParagraphBlock)
+    assert "日本の歴史" in "".join(
+        label.value
+        for inline in blocks[0].inlines
+        if isinstance(inline, InternalLinkInline)
+        for label in inline.label
+        if isinstance(label, TextInline)
+    )
+
+
+def test_convert_block_preserves_figure_as_image_block() -> None:
+    node = _body_children(
+        '<figure><a href="./File:X.jpg"><img src="https://upload.wikimedia.org/x.jpg" '
+        'alt="国旗"></a><figcaption>日本の国旗</figcaption></figure>'
+    )[0]
+
+    block, diagnostics = convert_block(node)
+
+    assert block == ImageBlock(media_id="https://upload.wikimedia.org/x.jpg", alt_text="国旗")
+    assert diagnostics == ()
 
 
 def test_convert_block_dispatches_block_math_with_tex_source() -> None:

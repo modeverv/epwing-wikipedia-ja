@@ -155,8 +155,17 @@ uv run python -m wikiepwing.cli image-fetch --config config/local-paths.toml --c
 uv run python -m wikiepwing.cli image-fetch --config config/local-paths.toml --config config/profiles/lite.toml \
   --model-database data/work/model.sqlite3 --originals-dir <dir> --report <report.json> \
   --concurrency 4 --limit 1000
+# 特定記事だけを取得する場合（反復指定可。日本のpage IDは4821051）
+uv run python -m wikiepwing.cli image-fetch --config config/local-paths.toml --config config/profiles/lite.toml \
+  --model-database data/work/model.sqlite3 --page-id 4821051 \
+  --originals-dir <dir> --report <report.json> --concurrency 4
 uv run python -m wikiepwing.cli image-convert --originals-dir <dir> --report <report.json> \
   --cache-dir <cache> --graphics-dir <graphics>
+# 変換済み画像を本文中のImageBlock位置へ埋め込むためgenerateを再実行する。
+# reportにはあるがcgraphs.txtにない画像はalt/captionのplain textへfallbackする。
+uv run python -m wikiepwing.cli generate --config config/local-paths.toml \
+  --model-database data/work/model.sqlite3 --entries-output entries-mini.jsonl \
+  --image-report <report.json> --graphics-dir <graphics> --force
 
 # toolchain imageをビルドし、EPWINGバイナリ(.epwing.zip)を生成する。
 # TASK-T020以降のgenerateはFreePWINGの上限に合わせ、半角・全角外字を

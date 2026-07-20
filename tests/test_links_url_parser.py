@@ -25,6 +25,12 @@ def test_parses_document_relative_path() -> None:
     assert result == ParsedInternalUrl(namespace=None, title="Emacs", fragment=None)
 
 
+def test_document_relative_redlink_query_is_not_part_of_title() -> None:
+    result = parse_internal_url("./Missing_page?action=edit&redlink=1", project_base_urls=_BASES)
+
+    assert result == ParsedInternalUrl(namespace=None, title="Missing page", fragment=None)
+
+
 def test_separates_fragment() -> None:
     result = parse_internal_url("/wiki/Emacs#History", project_base_urls=_BASES)
 
@@ -51,6 +57,12 @@ def test_detects_known_namespace_prefix() -> None:
     result = parse_internal_url("/wiki/Category:Text_editors", project_base_urls=_BASES)
 
     assert result == ParsedInternalUrl(namespace="Category", title="Text editors", fragment=None)
+
+
+def test_detects_japanese_namespace_prefix() -> None:
+    result = parse_internal_url("./ファイル:Flag.svg", project_base_urls=_BASES)
+
+    assert result == ParsedInternalUrl(namespace="ファイル", title="Flag.svg", fragment=None)
 
 
 def test_unknown_colon_prefix_is_not_treated_as_namespace() -> None:

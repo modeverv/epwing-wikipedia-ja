@@ -29,6 +29,7 @@ from __future__ import annotations
 from wikiepwing.model.blocks import (
     Block,
     HorizontalRuleBlock,
+    ImageBlock,
     MathBlock,
     ParagraphBlock,
     UnsupportedBlock,
@@ -36,7 +37,7 @@ from wikiepwing.model.blocks import (
 from wikiepwing.model.diagnostics import Diagnostic
 from wikiepwing.normalize.definition_lists import convert_definition_list, is_definition_list
 from wikiepwing.normalize.headings import convert_heading, is_heading
-from wikiepwing.normalize.html_parser import ElementNode, Node, TextNode
+from wikiepwing.normalize.html_parser import ElementNode, Node, TextNode, has_class
 from wikiepwing.normalize.infobox import is_infobox
 from wikiepwing.normalize.lists import (
     convert_ordered_list,
@@ -46,6 +47,7 @@ from wikiepwing.normalize.lists import (
 )
 from wikiepwing.normalize.math_content import resolve_math_source
 from wikiepwing.normalize.math_node import is_math_node, parse_math_node
+from wikiepwing.normalize.media_node import is_figure_with_image, parse_figure_media
 from wikiepwing.normalize.paragraphs import convert_inline_nodes
 from wikiepwing.normalize.quotes import (
     convert_preformatted,
@@ -66,6 +68,12 @@ def convert_block(node: ElementNode) -> tuple[Block, tuple[Diagnostic, ...]]:
         return convert_heading(node)
     if node.tag == "p":
         return ParagraphBlock(inlines=convert_inline_nodes(node.children)), ()
+    if node.tag == "div" and has_class(node, "rellink"):
+        return ParagraphBlock(inlines=convert_inline_nodes(node.children)), ()
+    if is_figure_with_image(node):
+        media = parse_figure_media(node)
+        assert media is not None
+        return ImageBlock(media_id=media.media_id, alt_text=media.alt_text), ()
     if is_unordered_list(node):
         return convert_unordered_list(node)
     if is_reference_list(node):
@@ -109,6 +117,12 @@ def convert_document(nodes: tuple[Node, ...]) -> tuple[tuple[Block, ...], tuple[
             inline_buffer.clear()
 
     for node in nodes:
+        if isinstance(node, ElementNode) and node.tag == "section":
+            flush()
+            section_blocks, section_diagnostics = convert_document(node.children)
+            blocks.extend(section_blocks)
+            diagnostics.extend(section_diagnostics)
+            continue
         if isinstance(node, ElementNode) and _is_block_level(node):
             flush()
             block, block_diagnostics = convert_block(node)

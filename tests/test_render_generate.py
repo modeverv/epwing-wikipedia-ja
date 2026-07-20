@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from wikiepwing.config import AppConfig, load_config
 from wikiepwing.gaiji.database import connect_gaiji_database
 from wikiepwing.gaiji.glyph_renderer import resolve_font_path
 from wikiepwing.model.article import Article
@@ -18,6 +19,12 @@ from wikiepwing.model.repository import ModelRepository
 from wikiepwing.render.generate import GenerateError, read_manifest_status, run_generate
 
 MIGRATIONS = Path(__file__).parents[1] / "migrations" / "model"
+DEFAULT_CONFIG = Path("config/default.toml")
+
+
+@pytest.fixture
+def config() -> AppConfig:
+    return load_config(DEFAULT_CONFIG)
 
 
 def _make_article(**overrides: object) -> Article:
@@ -55,7 +62,9 @@ def _seed_model_database(database_path: Path, articles: list[tuple[Article, str]
     return database
 
 
-def test_run_generate_writes_entries_for_non_rejected_articles(tmp_path: Path) -> None:
+def test_run_generate_writes_entries_for_non_rejected_articles(
+    tmp_path: Path, config: AppConfig
+) -> None:
     database_path = _seed_model_database(
         tmp_path / "model.sqlite3",
         [
@@ -66,6 +75,7 @@ def test_run_generate_writes_entries_for_non_rejected_articles(tmp_path: Path) -
     )
 
     result = run_generate(
+        config=config,
         model_database_path=database_path,
         entries_path=tmp_path / "entries.jsonl",
         manifest_path=tmp_path / "manifests" / "50-generate.json",
@@ -83,7 +93,9 @@ def test_run_generate_writes_entries_for_non_rejected_articles(tmp_path: Path) -
     assert tags == {"p1", "p2"}
 
 
-def test_run_generate_refuses_running_manifest_without_force(tmp_path: Path) -> None:
+def test_run_generate_refuses_running_manifest_without_force(
+    tmp_path: Path, config: AppConfig
+) -> None:
     database_path = _seed_model_database(
         tmp_path / "model.sqlite3", [(_make_article(), "complete")]
     )
@@ -93,6 +105,7 @@ def test_run_generate_refuses_running_manifest_without_force(tmp_path: Path) -> 
 
     with pytest.raises(GenerateError, match="still 'running'"):
         run_generate(
+            config=config,
             model_database_path=database_path,
             entries_path=tmp_path / "entries.jsonl",
             manifest_path=manifest_path,
@@ -100,7 +113,9 @@ def test_run_generate_refuses_running_manifest_without_force(tmp_path: Path) -> 
         )
 
 
-def test_run_generate_force_proceeds_over_running_manifest(tmp_path: Path) -> None:
+def test_run_generate_force_proceeds_over_running_manifest(
+    tmp_path: Path, config: AppConfig
+) -> None:
     database_path = _seed_model_database(
         tmp_path / "model.sqlite3", [(_make_article(), "complete")]
     )
@@ -109,6 +124,7 @@ def test_run_generate_force_proceeds_over_running_manifest(tmp_path: Path) -> No
     manifest_path.write_text('{"status": "running"}', encoding="utf-8")
 
     result = run_generate(
+        config=config,
         model_database_path=database_path,
         entries_path=tmp_path / "entries.jsonl",
         manifest_path=manifest_path,
@@ -121,6 +137,7 @@ def test_run_generate_force_proceeds_over_running_manifest(tmp_path: Path) -> No
 
 def test_run_generate_skips_rerun_when_previous_run_is_complete_and_unchanged(
     tmp_path: Path,
+    config: AppConfig,
 ) -> None:
     database_path = _seed_model_database(
         tmp_path / "model.sqlite3", [(_make_article(), "complete")]
@@ -129,6 +146,7 @@ def test_run_generate_skips_rerun_when_previous_run_is_complete_and_unchanged(
     manifest_path = tmp_path / "manifests" / "50-generate.json"
 
     first = run_generate(
+        config=config,
         model_database_path=database_path,
         entries_path=entries_path,
         manifest_path=manifest_path,
@@ -137,6 +155,7 @@ def test_run_generate_skips_rerun_when_previous_run_is_complete_and_unchanged(
     entries_text_after_first = entries_path.read_text(encoding="utf-8")
 
     second = run_generate(
+        config=config,
         model_database_path=database_path,
         entries_path=entries_path,
         manifest_path=manifest_path,
@@ -148,7 +167,9 @@ def test_run_generate_skips_rerun_when_previous_run_is_complete_and_unchanged(
     assert entries_path.read_text(encoding="utf-8") == entries_text_after_first
 
 
-def test_run_generate_force_reruns_despite_complete_manifest(tmp_path: Path) -> None:
+def test_run_generate_force_reruns_despite_complete_manifest(
+    tmp_path: Path, config: AppConfig
+) -> None:
     database_path = _seed_model_database(
         tmp_path / "model.sqlite3", [(_make_article(), "complete")]
     )
@@ -156,6 +177,7 @@ def test_run_generate_force_reruns_despite_complete_manifest(tmp_path: Path) -> 
     manifest_path = tmp_path / "manifests" / "50-generate.json"
 
     run_generate(
+        config=config,
         model_database_path=database_path,
         entries_path=entries_path,
         manifest_path=manifest_path,
@@ -163,6 +185,7 @@ def test_run_generate_force_reruns_despite_complete_manifest(tmp_path: Path) -> 
     )
 
     second = run_generate(
+        config=config,
         model_database_path=database_path,
         entries_path=entries_path,
         manifest_path=manifest_path,
@@ -179,12 +202,14 @@ def test_read_manifest_status_returns_none_when_missing(tmp_path: Path) -> None:
 
 def test_run_generate_with_no_gaiji_candidates_leaves_optional_outputs_untouched(
     tmp_path: Path,
+    config: AppConfig,
 ) -> None:
     database_path = _seed_model_database(
         tmp_path / "model.sqlite3", [(_make_article(), "complete")]
     )
 
     run_generate(
+        config=config,
         model_database_path=database_path,
         entries_path=tmp_path / "entries.jsonl",
         manifest_path=tmp_path / "manifests" / "50-generate.json",
@@ -203,7 +228,9 @@ def test_run_generate_with_no_gaiji_candidates_leaves_optional_outputs_untouched
     assert report["total_occurrences"] == 0
 
 
-def test_run_generate_renders_gaiji_bitmap_and_registers_it(tmp_path: Path) -> None:
+def test_run_generate_renders_gaiji_bitmap_and_registers_it(
+    tmp_path: Path, config: AppConfig
+) -> None:
     font_path = resolve_font_path()
     if font_path is None:
         pytest.skip("no CJK font available in this environment")
@@ -223,6 +250,7 @@ def test_run_generate_renders_gaiji_bitmap_and_registers_it(tmp_path: Path) -> N
     gaiji_database_path = tmp_path / "gaiji.sqlite3"
 
     result = run_generate(
+        config=config,
         model_database_path=database_path,
         entries_path=tmp_path / "entries.jsonl",
         manifest_path=tmp_path / "manifests" / "50-generate.json",
@@ -250,7 +278,7 @@ def test_run_generate_renders_gaiji_bitmap_and_registers_it(tmp_path: Path) -> N
 
 
 def test_run_generate_raises_when_gaiji_needed_but_no_font_available(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: AppConfig
 ) -> None:
     monkeypatch.setattr("wikiepwing.render.generate.resolve_font_path", lambda **_kwargs: None)
     database_path = _seed_model_database(
@@ -267,6 +295,7 @@ def test_run_generate_raises_when_gaiji_needed_but_no_font_available(
 
     with pytest.raises(GenerateError, match="no CJK font"):
         run_generate(
+            config=config,
             model_database_path=database_path,
             entries_path=tmp_path / "entries.jsonl",
             manifest_path=tmp_path / "manifests" / "50-generate.json",
@@ -275,7 +304,7 @@ def test_run_generate_raises_when_gaiji_needed_but_no_font_available(
         )
 
 
-def test_run_generate_gaiji_database_requires_gaiji_dir(tmp_path: Path) -> None:
+def test_run_generate_gaiji_database_requires_gaiji_dir(tmp_path: Path, config: AppConfig) -> None:
     database_path = _seed_model_database(
         tmp_path / "model.sqlite3",
         [
@@ -293,6 +322,7 @@ def test_run_generate_gaiji_database_requires_gaiji_dir(tmp_path: Path) -> None:
 
     with pytest.raises(GenerateError, match="requires gaiji_dir"):
         run_generate(
+            config=config,
             model_database_path=database_path,
             entries_path=tmp_path / "entries.jsonl",
             manifest_path=tmp_path / "manifests" / "50-generate.json",

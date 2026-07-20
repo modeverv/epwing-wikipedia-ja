@@ -8,18 +8,18 @@ effect-free step (`normalize_html` through hashing) across a process pool
 (TASK-T009; `[normalize].workers`/`queue_depth` were declared in config
 since early in the project but never wired to anything -- this is the
 first code that reads `workers`). Every other per-article step --
-`raw.sqlite3` reads (redirects/categories/media/licenses) and the
-`model.sqlite3` write -- stays on the main process, sequential, in
-`page_id` order, exactly as before: batches are still read via
-`fetchmany`/written via one `repository.batch()` each, so this does not
-change memory use, output ordering, or (per
-`test_normalize_parallel_matches_sequential_output`) the resulting
-`model.sqlite3` bytes -- only how the CPU-heavy part is scheduled.
+Batch metadata is read with set-based joins. Each worker keeps its own raw
+reader and large link-resolution cache, so link resolution and final canonical
+encoding are parallel too. Results are still consumed and bulk-written in
+`page_id` order, preserving deterministic output while intentionally trading
+RAM for throughput.
 """
 
 from __future__ import annotations
 
+import gc
 import sqlite3
+import urllib.parse
 from collections.abc import Callable, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import nullcontext
@@ -29,8 +29,9 @@ from pathlib import Path
 from typing import cast
 
 from wikiepwing.ingest.database import connect_raw_database
-from wikiepwing.ingest.zstd_codec import decompress
-from wikiepwing.links.redirect_aliases import extract_redirect_aliases
+from wikiepwing.ingest.zstd_codec import compress, decompress
+from wikiepwing.links.article_resolver import resolve_article_links
+from wikiepwing.links.resolver import ResolvedLink
 from wikiepwing.model.article import Alias, Article, MediaReference
 from wikiepwing.model.blocks import (
     Block,
@@ -46,7 +47,7 @@ from wikiepwing.model.canonical import encode_article
 from wikiepwing.model.database import connect_model_database, initialize_model_database
 from wikiepwing.model.diagnostics import Diagnostic
 from wikiepwing.model.logical_hash import compute_logical_hash
-from wikiepwing.model.repository import ModelRepository
+from wikiepwing.model.repository import ArticleWrite, ModelRepository
 from wikiepwing.model.validate import ModelValidationLimits, validate_article
 from wikiepwing.normalize.media_selection import select_media
 from wikiepwing.normalize.pipeline import NormalizeOptions, normalize_html
@@ -243,16 +244,21 @@ def run_normalize(
             model_connection = connect_model_database(database_path)
             try:
                 repository = ModelRepository(model_connection, zstd_level=zstd_level)
+                deferred_link_index = repository.defer_link_target_index()
                 _normalize_all(
                     raw_connection,
+                    raw_database_path=raw_database_path,
                     repository=repository,
                     metrics=metrics,
                     model_validation_limits=model_validation_limits,
                     normalize_options=normalize_options,
+                    zstd_level=zstd_level,
                     batch_size=batch_size,
                     workers=workers,
                     on_progress=on_progress,
                 )
+                if deferred_link_index:
+                    repository.restore_link_target_index()
                 status = "complete"
             finally:
                 model_connection.close()
@@ -415,12 +421,16 @@ class _WorkItem:
     license_ids: tuple[str, ...]
     model_validation_limits: ModelValidationLimits
     normalize_options: NormalizeOptions
+    raw_database_path: str
+    zstd_level: int
 
 
 @dataclass(frozen=True)
 class _ComputedResult:
     article: Article
     canonical_json: bytes
+    canonical_json_zstd: bytes
+    zstd_level: int
     logical_hash: str
     normalize_status: str
 
@@ -428,81 +438,208 @@ class _ComputedResult:
 def _normalize_all(
     raw_connection: sqlite3.Connection,
     *,
+    raw_database_path: Path,
     repository: ModelRepository,
     metrics: NormalizeMetrics,
     model_validation_limits: ModelValidationLimits,
     normalize_options: NormalizeOptions,
+    zstd_level: int,
     batch_size: int,
     workers: int,
     on_progress: Callable[[NormalizeMetrics], None] | None,
 ) -> None:
+    completed_page_ids = repository.deferred_bulk_article_ids()
+    if completed_page_ids:
+        read, written, rejected, severity_counts = repository.current_metrics()
+        metrics.articles_read = read
+        metrics.articles_written = written
+        metrics.articles_rejected = rejected
+        metrics.warnings = severity_counts.get("warning", 0)
+        metrics.errors = severity_counts.get("error", 0)
+        metrics.fatals = severity_counts.get("fatal", 0)
     cursor = raw_connection.execute(
         "SELECT page_id, revision_id, title, normalized_title, url, date_modified, html_zstd "
         "FROM articles WHERE ingest_status = 'accepted' AND is_deleted = 0 ORDER BY page_id"
     )
     executor_context = ProcessPoolExecutor(max_workers=workers) if workers > 1 else nullcontext()
     with executor_context as executor:
-        mapper: Callable[..., Iterator[_ComputedResult]] = executor.map if executor else map
         while True:
             rows = cursor.fetchmany(batch_size)
             if not rows:
                 return
-            work_items = [
-                _build_work_item(
-                    row,
-                    raw_connection=raw_connection,
-                    model_validation_limits=model_validation_limits,
-                    normalize_options=normalize_options,
-                )
-                for row in rows
-            ]
+            if completed_page_ids:
+                rows = [row for row in rows if int(row["page_id"]) not in completed_page_ids]
+                if not rows:
+                    continue
+            work_items = _build_work_items(
+                rows,
+                raw_connection=raw_connection,
+                model_validation_limits=model_validation_limits,
+                normalize_options=normalize_options,
+                raw_database_path=raw_database_path,
+                zstd_level=zstd_level,
+            )
+            pending_writes: list[ArticleWrite] = []
             with repository.batch():
-                for result in mapper(_compute_normalized, work_items):
-                    metrics.articles_read += 1
-                    for diagnostic in result.article.diagnostics:
-                        if diagnostic.severity == "warning":
-                            metrics.warnings += 1
-                        elif diagnostic.severity == "error":
-                            metrics.errors += 1
-                        elif diagnostic.severity == "fatal":
-                            metrics.fatals += 1
-                    if result.normalize_status == "rejected":
-                        metrics.articles_rejected += 1
-                    else:
-                        metrics.articles_written += 1
-                    repository.write_article(
-                        result.article,
-                        canonical_json=result.canonical_json,
-                        logical_hash=result.logical_hash,
-                        normalize_status=result.normalize_status,
-                    )
+                results = _map_computed_results(
+                    executor,
+                    work_items,
+                    batch_size=batch_size,
+                    workers=workers,
+                )
+                gc_was_enabled = gc.isenabled()
+                if gc_was_enabled:
+                    gc.disable()
+                try:
+                    for result in results:
+                        metrics.articles_read += 1
+                        for diagnostic in result.article.diagnostics:
+                            if diagnostic.severity == "warning":
+                                metrics.warnings += 1
+                            elif diagnostic.severity == "error":
+                                metrics.errors += 1
+                            elif diagnostic.severity == "fatal":
+                                metrics.fatals += 1
+                        if result.normalize_status == "rejected":
+                            metrics.articles_rejected += 1
+                        else:
+                            metrics.articles_written += 1
+                        pending_writes.append(
+                            ArticleWrite(
+                                article=result.article,
+                                canonical_json=result.canonical_json,
+                                canonical_json_zstd=result.canonical_json_zstd,
+                                logical_hash=result.logical_hash,
+                                normalize_status=result.normalize_status,
+                            )
+                        )
+                finally:
+                    if gc_was_enabled:
+                        gc.enable()
+                repository.write_articles(pending_writes)
+            gc.collect()
             if on_progress is not None:
                 on_progress(metrics)
 
 
-def _build_work_item(
-    row: sqlite3.Row,
+def _map_computed_results(
+    executor: ProcessPoolExecutor | None,
+    work_items: list[_WorkItem],
+    *,
+    batch_size: int,
+    workers: int,
+) -> Iterator[_ComputedResult]:
+    if executor is None:
+        return map(_compute_normalized, work_items)
+    chunksize = max(1, batch_size // max(1, workers * 8))
+    return executor.map(_compute_normalized, work_items, chunksize=chunksize)
+
+
+def _build_work_items(
+    rows: list[sqlite3.Row],
     *,
     raw_connection: sqlite3.Connection,
     model_validation_limits: ModelValidationLimits,
     normalize_options: NormalizeOptions,
-) -> _WorkItem:
-    page_id = row["page_id"]
-    return _WorkItem(
-        page_id=page_id,
-        revision_id=row["revision_id"],
-        title=row["title"],
-        normalized_title=row["normalized_title"],
-        url=row["url"],
-        date_modified=row["date_modified"],
-        html_zstd=row["html_zstd"],
-        aliases=extract_redirect_aliases(raw_connection, page_id),
-        categories=_read_categories(raw_connection, page_id),
-        media=_read_media(raw_connection, page_id),
-        license_ids=_read_license_ids(raw_connection, page_id),
-        model_validation_limits=model_validation_limits,
-        normalize_options=normalize_options,
+    raw_database_path: Path,
+    zstd_level: int,
+) -> list[_WorkItem]:
+    """Hydrate one article batch with four range scans instead of per-article queries."""
+    if not rows:
+        return []
+    page_ids = {int(row["page_id"]) for row in rows}
+    raw_connection.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS normalize_batch_page_ids "
+        "(page_id INTEGER PRIMARY KEY) WITHOUT ROWID"
     )
+    raw_connection.execute("DELETE FROM normalize_batch_page_ids")
+    raw_connection.executemany(
+        "INSERT INTO normalize_batch_page_ids (page_id) VALUES (?)",
+        ((page_id,) for page_id in page_ids),
+    )
+
+    aliases: dict[int, list[Alias]] = {page_id: [] for page_id in page_ids}
+    for item in raw_connection.execute(
+        "SELECT redirects.target_page_id, redirects.redirect_title "
+        "FROM normalize_batch_page_ids CROSS JOIN redirects ON "
+        "redirects.target_page_id = normalize_batch_page_ids.page_id "
+        "ORDER BY redirects.target_page_id, redirects.ordinal"
+    ):
+        page_id = int(item["target_page_id"])
+        if page_id in page_ids:
+            aliases[page_id].append(
+                Alias(title=item["redirect_title"], source="redirect", confidence=1.0)
+            )
+
+    categories: dict[int, list[str]] = {page_id: [] for page_id in page_ids}
+    for item in raw_connection.execute(
+        "SELECT categories.page_id, categories.category_name "
+        "FROM normalize_batch_page_ids CROSS JOIN categories ON "
+        "categories.page_id = normalize_batch_page_ids.page_id "
+        "ORDER BY categories.page_id, categories.ordinal"
+    ):
+        page_id = int(item["page_id"])
+        if page_id in page_ids:
+            categories[page_id].append(item["category_name"])
+
+    media: dict[int, tuple[MediaReference, ...]] = {page_id: () for page_id in page_ids}
+    for item in raw_connection.execute(
+        "SELECT main_images.page_id, main_images.content_url, "
+        "main_images.width, main_images.height "
+        "FROM normalize_batch_page_ids CROSS JOIN main_images ON "
+        "main_images.page_id = normalize_batch_page_ids.page_id "
+        "ORDER BY main_images.page_id"
+    ):
+        page_id = int(item["page_id"])
+        if page_id in page_ids:
+            media[page_id] = (
+                MediaReference(
+                    media_id=item["content_url"],
+                    source_url=item["content_url"],
+                    source_name=None,
+                    alt_text=None,
+                    caption=None,
+                    role="main",
+                    source_width=item["width"],
+                    source_height=item["height"],
+                ),
+            )
+
+    license_ids: dict[int, list[str]] = {page_id: [] for page_id in page_ids}
+    for item in raw_connection.execute(
+        """
+        SELECT article_licenses.page_id, licenses.identifier
+        FROM normalize_batch_page_ids
+        CROSS JOIN article_licenses ON
+            article_licenses.page_id = normalize_batch_page_ids.page_id
+        JOIN licenses ON licenses.license_id = article_licenses.license_id
+        ORDER BY article_licenses.page_id, article_licenses.ordinal
+        """
+    ):
+        page_id = int(item["page_id"])
+        if page_id in page_ids:
+            license_ids[page_id].append(item["identifier"])
+
+    return [
+        _WorkItem(
+            page_id=int(row["page_id"]),
+            revision_id=row["revision_id"],
+            title=row["title"],
+            normalized_title=row["normalized_title"],
+            url=row["url"],
+            date_modified=row["date_modified"],
+            html_zstd=row["html_zstd"],
+            aliases=tuple(aliases[int(row["page_id"])]),
+            categories=tuple(categories[int(row["page_id"])]),
+            media=media[int(row["page_id"])],
+            license_ids=tuple(license_ids[int(row["page_id"])]),
+            model_validation_limits=model_validation_limits,
+            normalize_options=normalize_options,
+            raw_database_path=str(raw_database_path),
+            zstd_level=zstd_level,
+        )
+        for row in rows
+    ]
 
 
 def _compute_normalized(item: _WorkItem) -> _ComputedResult:
@@ -549,12 +686,72 @@ def _compute_normalized(item: _WorkItem) -> _ComputedResult:
     else:
         normalize_status = "fallback" if _contains_unsupported(article.blocks) else "complete"
 
-    return _ComputedResult(
+    canonical_json = encode_article(article)
+    result = _ComputedResult(
         article=article,
-        canonical_json=encode_article(article),
+        canonical_json=canonical_json,
+        canonical_json_zstd=b"",
+        zstd_level=item.zstd_level,
         logical_hash=compute_logical_hash(article),
         normalize_status=normalize_status,
     )
+    connection, resolution_cache = _worker_link_resolution_state(item.raw_database_path)
+    return _resolve_computed_links(result, connection, resolution_cache=resolution_cache)
+
+
+_WORKER_RAW_CONNECTION: sqlite3.Connection | None = None
+_WORKER_RAW_DATABASE_PATH: str | None = None
+_WORKER_RESOLUTION_CACHE: dict[str, ResolvedLink] = {}
+
+
+def _worker_link_resolution_state(
+    raw_database_path: str,
+) -> tuple[sqlite3.Connection, dict[str, ResolvedLink]]:
+    """Keep one raw reader and a large link cache alive in each worker process."""
+    global _WORKER_RAW_CONNECTION, _WORKER_RAW_DATABASE_PATH
+    if _WORKER_RAW_CONNECTION is None or _WORKER_RAW_DATABASE_PATH != raw_database_path:
+        if _WORKER_RAW_CONNECTION is not None:
+            _WORKER_RAW_CONNECTION.close()
+        _WORKER_RAW_CONNECTION = connect_raw_database(Path(raw_database_path))
+        _WORKER_RAW_CONNECTION.execute("PRAGMA cache_size = -524288")
+        _WORKER_RAW_CONNECTION.execute("PRAGMA mmap_size = 8589934592")
+        _WORKER_RAW_CONNECTION.execute("PRAGMA query_only = ON")
+        _WORKER_RAW_DATABASE_PATH = raw_database_path
+        _WORKER_RESOLUTION_CACHE.clear()
+    if len(_WORKER_RESOLUTION_CACHE) > 1_000_000:
+        _WORKER_RESOLUTION_CACHE.clear()
+    return _WORKER_RAW_CONNECTION, _WORKER_RESOLUTION_CACHE
+
+
+def _resolve_computed_links(
+    result: _ComputedResult,
+    raw_connection: sqlite3.Connection,
+    *,
+    resolution_cache: dict[str, ResolvedLink],
+) -> _ComputedResult:
+    """Resolve worker-produced links on the DB-owning main process."""
+    project_base_url = _project_base_url(result.article.source_url)
+    article = resolve_article_links(
+        result.article,
+        raw_connection,
+        project_base_urls=(project_base_url,) if project_base_url is not None else (),
+        resolution_cache=resolution_cache,
+    )
+    canonical_json = encode_article(article)
+    return replace(
+        result,
+        article=article,
+        canonical_json=canonical_json,
+        canonical_json_zstd=compress(canonical_json, level=result.zstd_level),
+        logical_hash=compute_logical_hash(article),
+    )
+
+
+def _project_base_url(source_url: str) -> str | None:
+    parsed = urllib.parse.urlsplit(source_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def _stamp_diagnostic(diagnostic: Diagnostic, *, page_id: int, title: str) -> Diagnostic:

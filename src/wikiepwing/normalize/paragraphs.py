@@ -9,12 +9,16 @@ wrapper and its children are recursed into rather than dropped.
 
 from __future__ import annotations
 
+from wikiepwing.ingest.repository import normalize_title
+from wikiepwing.links.external_policy import apply_external_link_policy
+from wikiepwing.links.url_parser import parse_internal_url
 from wikiepwing.model.blocks import ParagraphBlock
 from wikiepwing.model.diagnostics import Diagnostic
 from wikiepwing.model.inline import (
     CodeInline,
     EmphasisInline,
     Inline,
+    InternalLinkInline,
     LineBreakInline,
     MathInline,
     StrongInline,
@@ -50,9 +54,33 @@ def _convert_one(node: Node) -> tuple[Inline, ...]:
         return (CodeInline(value=text),) if text else ()
     if node.tag == "br":
         return (LineBreakInline(),)
+    if node.tag == "a":
+        return _convert_anchor(node)
     if is_math_node(node):
         return (_convert_math_inline(node),)
     return convert_inline_nodes(node.children)
+
+
+def _convert_anchor(node: ElementNode) -> tuple[Inline, ...]:
+    label = convert_inline_nodes(node.children)
+    href = next((value for name, value in node.attributes if name == "href"), "")
+    if not href:
+        return label
+
+    parsed = parse_internal_url(href, project_base_urls=())
+    if parsed is None:
+        return apply_external_link_policy(label, href, "plain-text")
+
+    return (
+        InternalLinkInline(
+            label=label,
+            target_title=parsed.title,
+            target_normalized_title=normalize_title(parsed.title),
+            target_fragment=parsed.fragment,
+            target_page_id=None,
+            resolution="externalized" if parsed.namespace is not None else "missing",
+        ),
+    )
 
 
 def _convert_math_inline(node: ElementNode) -> Inline:

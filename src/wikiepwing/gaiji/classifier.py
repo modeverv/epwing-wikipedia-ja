@@ -32,6 +32,8 @@ def classify_character(
     character: str, *, substitutions: Mapping[str, str] | None = None
 ) -> CharacterClass:
     """Classify one Unicode scalar per ARCHITECTURE.md 18.1."""
+    if character in {"\x1e", "\x1f"}:
+        return "A"
     if is_backend_representable(character):
         return "A"
     if substitutions is not None and character in substitutions:

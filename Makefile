@@ -4,7 +4,7 @@ FREEPWING_SOURCE ?= data/sources/freepwing_1.6.1.orig.tar.bz2
 ENTRIES ?= output/entries.jsonl
 GRAPHICS_DIR ?=
 GAIJI_DIR ?=
-TITLE ?= Wikipedia
+TITLE ?= ウィキペディア
 SUBBOOK_DIR ?= WIKIEP
 EPWING_OUTPUT ?= output/jawiki.epwing.zip
 

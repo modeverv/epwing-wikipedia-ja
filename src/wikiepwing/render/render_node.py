@@ -24,4 +24,19 @@ class LineBreakRenderNode:
     """An explicit line break between rendered sections."""
 
 
-RenderNode = TextRenderNode | LineBreakRenderNode
+@dataclass(frozen=True, slots=True)
+class LinkRenderNode:
+    """A visible inline label referencing another rendered entry."""
+
+    label: str
+    target: str
+
+
+@dataclass(frozen=True, slots=True)
+class GraphicRenderNode:
+    """A color graphic registered in the FreePWING graphics catalog."""
+
+    name: str
+
+
+RenderNode = TextRenderNode | LineBreakRenderNode | LinkRenderNode | GraphicRenderNode

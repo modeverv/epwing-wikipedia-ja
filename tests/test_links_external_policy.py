@@ -47,6 +47,12 @@ def test_scheme_without_netloc_falls_back_to_label_only() -> None:
     assert result == _LABEL
 
 
+def test_nfkc_invalid_netloc_falls_back_to_label_only() -> None:
+    result = apply_external_link_policy(_LABEL, "https://www.thefirstt？imes.jp", "plain-text")
+
+    assert result == _LABEL
+
+
 def test_unknown_policy_is_rejected() -> None:
     with pytest.raises(ExternalLinkPolicyError, match="policy"):
         apply_external_link_policy(_LABEL, "https://gnu.org", "footnote")

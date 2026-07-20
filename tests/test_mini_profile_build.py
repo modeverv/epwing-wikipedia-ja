@@ -105,12 +105,14 @@ def test_mini_profile_build_over_hundred_article_fixture(tmp_path: Path) -> None
 
     entries_path = tmp_path / "entries.jsonl"
     generate_result = run_generate(
+        config=config,
         model_database_path=model_database_path,
         entries_path=entries_path,
         manifest_path=tmp_path / "manifests" / "50-generate.json",
         run_id="mini-profile-generate",
         git_commit="abc1234",
     )
+
     assert generate_result.manifest.status == "complete"
     assert generate_result.manifest.metrics.entries_written == 100
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from wikiepwing.model.inline import TextInline
+from wikiepwing.model.inline import ExternalLinkInline, InternalLinkInline, TextInline
 from wikiepwing.normalize.html_parser import ElementNode, parse_html
 from wikiepwing.normalize.paragraphs import (
     convert_inline_nodes,
@@ -77,6 +77,48 @@ def test_convert_inline_nodes_preserves_order_across_nested_unknown_wrappers() -
     block, _ = convert_paragraph(p)
 
     assert [inline.value for inline in block.inlines] == ["one ", "two", " three"]  # type: ignore[union-attr]
+
+
+def test_convert_inline_nodes_preserves_internal_article_anchor() -> None:
+    p = _first_body_child(
+        '<html><body><p>see <a href="./History_of_Japan#Modern">日本の歴史</a></p></body></html>'
+    )
+
+    block, _ = convert_paragraph(p)
+
+    assert block.inlines == (
+        TextInline(value="see "),
+        InternalLinkInline(
+            label=(TextInline(value="日本の歴史"),),
+            target_title="History of Japan",
+            target_normalized_title="History of Japan",
+            target_fragment="Modern",
+            target_page_id=None,
+            resolution="missing",
+        ),
+    )
+
+
+def test_convert_inline_nodes_applies_external_link_policy() -> None:
+    p = _first_body_child(
+        '<html><body><p><a href="https://example.org/source">source</a></p></body></html>'
+    )
+
+    block, _ = convert_paragraph(p)
+
+    assert block.inlines == (
+        ExternalLinkInline(label=(TextInline(value="source"),), url="https://example.org/source"),
+    )
+
+
+def test_convert_inline_nodes_keeps_unsafe_anchor_label_as_plain_text() -> None:
+    p = _first_body_child(
+        '<html><body><p><a href="javascript:alert(1)">safe label</a></p></body></html>'
+    )
+
+    block, _ = convert_paragraph(p)
+
+    assert block.inlines == (TextInline(value="safe label"),)
 
 
 def test_convert_inline_nodes_empty_input_returns_empty_tuple() -> None:

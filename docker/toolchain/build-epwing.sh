@@ -24,7 +24,7 @@ entries=${2:?usage: build-epwing.sh IMAGE ENTRIES OUTPUT [GRAPHICS_DIR] [GAIJI_D
 output=${3:?usage: build-epwing.sh IMAGE ENTRIES OUTPUT [GRAPHICS_DIR] [GAIJI_DIR] [TITLE] [SUBBOOK_DIR]}
 graphics_dir=${4:-}
 gaiji_dir=${5:-}
-title=${6:-Wikipedia}
+title=${6:-ウィキペディア}
 subbook_dir=${7:-WIKIEP}
 
 if [ ! -f "$entries" ]; then

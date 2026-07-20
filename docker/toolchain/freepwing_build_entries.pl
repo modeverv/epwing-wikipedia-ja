@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # Generic FreePWING source builder: reads entries.jsonl (written by
-# wikiepwing.render.freepwing_source.write_entries_jsonl) and drives
+# wikiepwing.render.freepwing_source.write_entries_jsonl_stream) and drives
 # FreePWING::FPWUtils::FPWParser to build the fpwmake source tree
 # (work/text, work/heading, work/word2). Unlike
 # tests/fixtures/handcrafted/build_fixture.pl (a fixed 3-entry/2-alias smoke
@@ -78,6 +78,9 @@ sub is_empty_search_word {
 # choose add_half_user_character vs add_full_user_character is read directly
 # off the token's own prefix -- no separate lookup table is needed here.
 my $GAIJI_TOKEN = qr/\@\@GAIJI:([a-z0-9-]+)\@\@/;
+my $REF_TOKEN = qr/\x1eR:([a-z][a-z0-9_-]{0,31})\x1f(.*?)\x1eE\x1f/s;
+my $GRAPHIC_TOKEN = qr/\x1eG:([A-Za-z0-9_-]+)\x1f/;
+my $BODY_TOKEN = qr/\x1eR:([a-z][a-z0-9_-]{0,31})\x1f(.*?)\x1eE\x1f|\x1eG:([A-Za-z0-9_-]+)\x1f/s;
 
 # Splits $value on GAIJI_TOKEN (v1/toolchain/records/build_records.pl's
 # proven placeholder-token design) into a flat op list -- ['t', euc_bytes]
@@ -86,7 +89,7 @@ my $GAIJI_TOKEN = qr/\@\@GAIJI:([a-z0-9-]+)\@\@/;
 # stage only replays writer calls. A capturing split alternates
 # [text, code, text, code, ..., text], so odd indices are always the
 # captured gaiji code.
-sub body_to_ops {
+sub plain_text_to_ops {
     my ($value) = @_;
     return [] unless defined $value && $value ne '';
     my @ops;
@@ -101,9 +104,33 @@ sub body_to_ops {
                 die "invalid gaiji code: $piece\n";
             }
         } else {
+            die "unparsed body marker: " . unpack('H*', $piece) . "\n"
+                if $piece =~ /[\x1e\x1f]/;
             push @ops, ['t', to_euc_jp($piece)];
         }
     }
+    return \@ops;
+}
+
+sub body_to_ops {
+    my ($value) = @_;
+    return [] unless defined $value && $value ne '';
+    my @ops;
+    my $position = 0;
+    while ($value =~ /$BODY_TOKEN/g) {
+        my $plain = substr($value, $position, $-[0] - $position);
+        push @ops, @{plain_text_to_ops($plain)};
+        if (defined $3) {
+            push @ops, ['g', $3];
+        } else {
+            my ($target, $label) = ($1, $2);
+            push @ops, ['s', ''];
+            push @ops, @{plain_text_to_ops($label)};
+            push @ops, ['r', $target];
+        }
+        $position = $+[0];
+    }
+    push @ops, @{plain_text_to_ops(substr($value, $position))};
     return \@ops;
 }
 
@@ -119,6 +146,13 @@ sub add_body_ops {
             $writer->add_half_user_character($payload) or die $writer->error_message(), "\n";
         } elsif ($kind eq 'f') {
             $writer->add_full_user_character($payload) or die $writer->error_message(), "\n";
+        } elsif ($kind eq 's') {
+            $writer->add_reference_start() or die $writer->error_message(), "\n";
+        } elsif ($kind eq 'r') {
+            $writer->add_reference_end($payload) or die $writer->error_message(), "\n";
+        } elsif ($kind eq 'g') {
+            $writer->add_color_graphic_start($payload) or die $writer->error_message(), "\n";
+            $writer->add_color_graphic_end() or die $writer->error_message(), "\n";
         } else {
             $writer->add_text($payload) or die $writer->error_message(), "\n";
         }
@@ -196,6 +230,7 @@ sub parse_chunk {
             if !defined($record->{title}) || $record->{title} eq '';
 
         my @targets = map { to_euc_jp($_) } @{$record->{targets} // []};
+        my %declared_targets = map { $_ => 1 } @targets;
         for my $target (@targets) {
             # Every real tag matches the pattern below, so a target that
             # does not can never resolve; rejecting it here also keeps the
@@ -203,14 +238,22 @@ sub parse_chunk {
             die "unknown link target: $target\n"
                 if $target !~ /\A[a-z][a-z0-9_-]{0,31}\z/;
         }
+        my $body_ops = body_to_ops($record->{body});
+        for my $op (@{$body_ops}) {
+            next unless $op->[0] eq 'r';
+            die "inline reference target not declared: $op->[1]\n"
+                if !$declared_targets{$op->[1]};
+        }
 
         my $frozen = freeze({
             tag => $tag,
             title => to_euc_jp($record->{title}),
             aliases => [map { to_euc_jp($_) } @{$record->{aliases} // []}],
-            body_ops => body_to_ops($record->{body}),
+            keywords => [map { to_euc_jp($_) } @{$record->{keywords} // []}],
+            body_ops => $body_ops,
             targets => \@targets,
         });
+
         print {$spool} pack('N', length $frozen), $frozen;
         print {$tags_out} $tag, "\n";
         print {$targets_out} map { "$_\n" } @targets;
@@ -282,6 +325,7 @@ initialize_fpwparser(
     'text' => \my $text,
     'heading' => \my $heading,
     'word2' => \my $word2,
+    'keyword' => \my $keyword,
 );
 
 my %global_headwords;
@@ -289,6 +333,11 @@ my $indexed = 0;
 my $duplicate_headwords = 0;
 my $skipped_empty_headwords = 0;
 my $last_report = time();
+
+my $first_heading_pos;
+my $first_text_pos;
+my $has_keyword = 0;
+
 for my $spool_path (@spools) {
     open my $spool, '<:raw', $spool_path or die "cannot open $spool_path: $!\n";
     my ($header, $frozen);
@@ -302,19 +351,17 @@ for my $spool_path (@spools) {
         $heading->new_entry() or die $heading->error_message(), "\n";
         $heading->add_text($entry->{title}) or die $heading->error_message(), "\n";
 
+        if (!defined $first_heading_pos) {
+            $first_heading_pos = $heading->entry_position();
+            $first_text_pos = $text->entry_position();
+        }
+
         $text->add_tag($entry->{tag}) or die $text->error_message(), "\n";
         $text->add_text($entry->{title}) or die $text->error_message(), "\n";
         $text->add_newline() or die $text->error_message(), "\n";
 
         if (@{$entry->{body_ops}}) {
             add_body_ops($text, $entry->{body_ops});
-            $text->add_newline() or die $text->error_message(), "\n";
-        }
-
-        for my $target (@{$entry->{targets}}) {
-            $text->add_reference_start() or die $text->error_message(), "\n";
-            $text->add_text($target) or die $text->error_message(), "\n";
-            $text->add_reference_end($target) or die $text->error_message(), "\n";
             $text->add_newline() or die $text->error_message(), "\n";
         }
 
@@ -332,6 +379,19 @@ for my $spool_path (@spools) {
                 or die "headword rejected for tag $entry->{tag}: "
                     . $word2->error_message() . "\n";
         }
+
+        my %seen_keywords;
+        for my $kw (@{$entry->{keywords} // []}) {
+            next if $seen_keywords{$kw}++;
+            if (is_empty_search_word($kw)) {
+                next;
+            }
+            $keyword->add_entry($kw, $heading->entry_position(), $text->entry_position())
+                or die "keyword rejected for tag $entry->{tag}: "
+                    . $keyword->error_message() . "\n";
+            $has_keyword = 1;
+        }
+
         $indexed++;
         if ($indexed % $PROGRESS_CHECK_EVERY == 0
             && time() - $last_report >= $PROGRESS_SECONDS) {
@@ -345,7 +405,12 @@ print STDERR "index $indexed/$total_entries\n";
 print STDERR "headwords duplicated count=$duplicate_headwords\n";
 print STDERR "headwords skipped reason=word-is-empty count=$skipped_empty_headwords\n";
 
+if (!$has_keyword && defined $first_heading_pos) {
+    $keyword->add_entry(to_euc_jp("dummy"), $first_heading_pos, $first_text_pos)
+        or die "failed to add dummy keyword: " . $keyword->error_message() . "\n";
+}
+
 die "spool entry count mismatch: indexed $indexed, expected $total_entries\n"
     if $indexed != $total_entries;
 
-finalize_fpwparser('text' => \$text, 'heading' => \$heading, 'word2' => \$word2);
+finalize_fpwparser('text' => \$text, 'heading' => \$heading, 'word2' => \$word2, 'keyword' => \$keyword);

@@ -59,9 +59,16 @@ class MediaPlanEntry:
 def plan_media(
     model_database_path: Path,
     *,
+    page_ids: tuple[int, ...] | None = None,
     on_progress: Callable[[PhaseProgress], None] | None = None,
 ) -> tuple[MediaPlanEntry, ...]:
     """Read every non-rejected article's selected media from `model.sqlite3`."""
+    if page_ids is not None:
+        if len(page_ids) > 10_000:
+            raise ValueError("page_ids must contain at most 10000 values")
+        if any(page_id < 1 for page_id in page_ids):
+            raise ValueError("page_ids must contain only positive integers")
+        page_ids = tuple(dict.fromkeys(page_ids))
     connection = sqlite3.connect(model_database_path)
     connection.row_factory = sqlite3.Row
     progress_calls = 0
@@ -82,13 +89,21 @@ def plan_media(
         _report_phase(on_progress, "image-plan-query", 0, None, "vm-steps")
         if on_progress is not None:
             connection.set_progress_handler(report_sql_progress, _SQL_PROGRESS_VM_STEPS)
+        page_filter = ""
+        parameters: tuple[int, ...] = ()
+        if page_ids is not None:
+            placeholders = ",".join("?" for _ in page_ids)
+            page_filter = f"AND m.page_id IN ({placeholders}) " if page_ids else "AND 0 "
+            parameters = page_ids
         rows = connection.execute(
             "SELECT m.page_id, m.media_id, m.source_url, m.source_name, m.alt_text, "
             "m.caption, m.role, m.source_width, m.source_height "
             "FROM media_references AS m "
             "JOIN articles AS a ON a.page_id = m.page_id "
             "WHERE a.normalize_status != 'rejected' "
-            "ORDER BY m.page_id, m.ordinal"
+            f"{page_filter}"
+            "ORDER BY m.page_id, m.ordinal",
+            parameters,
         ).fetchall()
     finally:
         connection.set_progress_handler(None, 0)
@@ -159,33 +174,20 @@ def fetch_media(
     allow_svg: bool,
     max_workers: int = 1,
     limit: int | None = None,
+    existing_outcomes: Sequence[FetchOutcome] | None = None,
     on_progress: Callable[[FetchProgress], None] | None = None,
 ) -> tuple[FetchOutcome, ...]:
-    """Download and validate each unique `source_url` in `plan`, once each.
-
-    `max_workers` (default 1, sequential) fetches multiple URLs concurrently
-    via a thread pool -- this is network I/O (each `SecureMediaDownloader.download`
-    call already backs off on its own on HTTP 429), so threads are the right
-    tool, unlike normalize's CPU-bound process pool. Keep this modest (a
-    handful of workers, not `os.cpu_count()`) to stay polite to the single
-    upstream host (`upload.wikimedia.org`) rather than hammering it with as
-    many concurrent connections as this machine has cores.
-
-    `limit`, if set, stops after attempting the first `limit` unique URLs
-    (in `plan` order) rather than every one -- useful for exercising the rest
-    of the pipeline (convert, generate, EPWING build) end-to-end without
-    waiting for a full-scale fetch to finish first.
-
-    `on_progress`, if set, is called once per URL as it finishes -- in
-    completion order, which with `max_workers > 1` is not `plan` order --
-    so a long fetch run has visible progress instead of going silent for
-    however long the whole run takes. The returned tuple is still in `plan`
-    order regardless of how URLs completed.
-    """
+    """Download and validate each unique `source_url` in `plan`, once each."""
     if max_workers < 1:
         raise ValueError("max_workers must be positive")
     if limit is not None and limit < 0:
         raise ValueError("limit must not be negative")
+
+    existing_map: dict[str, FetchOutcome] = {}
+    if existing_outcomes:
+        for outcome in existing_outcomes:
+            if outcome.ok and outcome.content is not None and outcome.content_hash is not None:
+                existing_map[outcome.source_url] = outcome
 
     seen_urls: dict[str, None] = {}
     unique_urls: list[str] = []
@@ -202,30 +204,51 @@ def fetch_media(
         _fetch_one, downloader=downloader, max_pixels=max_pixels, allow_svg=allow_svg
     )
     total = len(unique_urls)
+    outcome_by_url: dict[str, FetchOutcome] = {}
+
+    to_fetch_urls: list[str] = []
+    succeeded = 0
+    for url in unique_urls:
+        if url in existing_map:
+            outcome_by_url[url] = existing_map[url]
+            succeeded += 1
+        else:
+            to_fetch_urls.append(url)
+
+    if on_progress is not None and len(outcome_by_url) > 0:
+        on_progress(
+            FetchProgress(
+                completed=len(outcome_by_url),
+                total=total,
+                succeeded=succeeded,
+                failed=0,
+            )
+        )
+
+    if not to_fetch_urls:
+        return tuple(outcome_by_url[url] for url in unique_urls)
 
     if max_workers == 1:
-        outcomes: list[FetchOutcome] = []
-        succeeded = 0
-        for url in unique_urls:
+        completed = len(outcome_by_url)
+        for url in to_fetch_urls:
             outcome = fetch_one(url)
-            outcomes.append(outcome)
+            outcome_by_url[url] = outcome
+            completed += 1
             succeeded += 1 if outcome.ok else 0
             if on_progress is not None:
                 on_progress(
                     FetchProgress(
-                        completed=len(outcomes),
+                        completed=completed,
                         total=total,
                         succeeded=succeeded,
-                        failed=len(outcomes) - succeeded,
+                        failed=completed - succeeded,
                     )
                 )
-        return tuple(outcomes)
+        return tuple(outcome_by_url[url] for url in unique_urls)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_by_url = {executor.submit(fetch_one, url): url for url in unique_urls}
-        outcome_by_url: dict[str, FetchOutcome] = {}
-        completed = 0
-        succeeded = 0
+        future_by_url = {executor.submit(fetch_one, url): url for url in to_fetch_urls}
+        completed = len(outcome_by_url)
         for future in as_completed(future_by_url):
             outcome = future.result()
             outcome_by_url[future_by_url[future]] = outcome

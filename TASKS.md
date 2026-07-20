@@ -996,3 +996,110 @@
 **依存:** T020
 
 TASK-T020で実際に成功した外字容量調整、toolchain image、EPWING生成、ZIP検証のコマンドと全件ビルドの実測結果をREADMEへ反映する。新規generate出力と、上限制御導入前の既存生成物を再利用する場合を区別する。
+
+### TASK-T022 [x] Record viewer-observed differences as TODOs
+
+**依存:** T021
+
+ユーザーがEmacs Lookupでインターネット配布版と今回の全件ビルドを比較し、本文の読みやすさ、内部リンク、画像、検索候補に差があることを確認した。`DIFF.md`を追加し、確定した実装上の差と、辞書横断検索など追加測定が必要な差を分け、今後の改善TODO・優先順位・完了判定を記録する。
+
+### TASK-T023 [x] Preserve inline internal links in FreePWING output
+
+**依存:** T022
+
+`DIFF.md`の最優先TODO。正規化済み本文中の内部リンク位置・表示ラベル・target entry tagを`RenderedEntry`からFreePWING adapterまで保持し、本文末尾の内部tag列挙ではなく、本文中の表示語句をクリック可能な参照として出力する。missing/externalizedリンクは安全なplain textを維持する。
+
+### TASK-T024 [x] Measure the `日本` query against the distributed reference EPWING
+
+**依存:** T022
+
+比較範囲を`日本`の1 queryに限定し、`ref/Wikip_ja20230120`と今回版へ同一EB Library検索を実行する。検索能力、上位候補、重複、読み表示、Lookup画面との差を`DIFF.md`へ記録する。
+
+### TASK-T025 [x] Preserve block structure inside Parsoid section wrappers
+
+**依存:** T024
+
+実データの「日本」が全17件`UnsupportedBlock`へ平坦化され、見出し・段落・情報ボックス・リンク構造を失っている問題を修正する。Parsoidの`section` wrapperだけを再帰的に展開し、未知のblock要素に対する既存fallbackは維持する。
+
+### TASK-T026 [x] Preserve Parsoid related-link blocks
+
+**依存:** T025
+
+実データ「日本」に42件ある`div.rellink`を未知要素fallbackではなくParagraphBlockへ変換し、「→詳細は…」の表示境界を保持する。anchorの実リンク解決は次タスクへ分離する。
+
+### TASK-T027 [x] Preserve article anchors as unresolved internal links
+
+**依存:** T026
+
+normalizeのinline変換で透明化されている`a[href]`を、表示ラベルとtarget title/fragmentを持つ`InternalLinkInline`へ変換する。DB解決前のためresolutionは`missing`とし、安全な外部URLは既存policyに従う。raw DBによるpage ID/redirect解決は次タスクへ分離する。
+
+### TASK-T028 [x] Resolve normalized internal links against raw DB
+
+**依存:** T027
+
+workerで生成したInternalLinkInlineをmain processでraw DBへ照合し、直接記事、redirect、missing、namespace externalizedを確定する。同一projectのabsolute URLも記事URLのoriginと照合して内部リンクへ戻し、解決後のcanonical JSONとlogical hashを保存する。
+
+### TASK-T029 [x] Preserve figure placement as ImageBlock
+
+**依存:** T028
+
+実データ「日本」の42件の`figure`をUnsupportedBlockではなく、media_idとalt textを持つImageBlockへ変換する。captionは同じmedia_idのArticle.media metadataに保持し、画像binary/FreePWING graphic名との接続は次タスクへ分離する。
+
+### TASK-T030 [x] Wire ImageBlock placement to FreePWING graphics
+
+**依存:** T029
+
+image-fetch reportのsource URLからcontent hash（FreePWING graphic名）への対応をgenerateへ渡し、ImageBlock位置にgraphic render nodeとcaptionを出力する。未取得・変換失敗画像はalt/captionのplain text fallbackを維持する。
+
+### TASK-T031 [x] Filter image planning and fetch by page ID
+
+**依存:** T030
+
+`image-plan`と`image-fetch`へ反復可能な`--page-id`を追加し、全Wikipedia画像を走査・取得せず「日本」（page ID 4821051）のselected mediaだけを安全に取得できるようにする。
+
+### TASK-T032 [x] Rebuild the full model with reference-gap fixes
+
+**依存:** T031
+
+既存`model.sqlite3`を保持し、`model-diff.sqlite3`へ1,508,200記事を新しいsection/link/figure正規化処理で再生成する。完了後に「日本」のblock/link/media指標をDB成果物から再測定する。
+
+### TASK-T033 [x] Wire extracted keyword terms to FreePWING keyword search
+
+**依存:** T032
+
+実装済みのheading/infobox keyword抽出とbudgetをgenerateへ接続し、FreePWING::FPWUtils::KeyWord indexを生成する。`ebinfo`のkeyword宣言と`日本`の同一query fixtureを実toolchainで検証する。
+
+### TASK-T034 [x] Determine and implement the EPWING cross-search backend contract
+
+**依存:** T033
+
+本文内referenceだけでは`ebinfo`のcross search能力が有効にならないことを実toolchainで確認済み。配布版のcrossがFreePWING/EPWINGのどのindex/control contractに対応するかを一次資料・参照辞書測定で確定し、cross_component抽出済みtermを対応backendへ接続する。keywordへの単純混載でcross対応とみなしてはいけない。
+
+### TASK-T035 [x] Full rebuild with new normalized model and index fixes
+
+**依存:** T034
+
+全件モデル `model-diff-ram8.sqlite3`（150万記事）から、新規実装された keyword / cross インデックス、インラインリンク、および画像位置反映を含む全件 EPWING 辞書を再ビルドした。一括メモリ保持による OOM (exit code 137) に対処するため generate ステージを 2パス・ストリーム処理へ移行・最適化し、`entries.jsonl` （19.4GB）の出力を成功させた。その後 `make build-epwing` を実行し、全件 EPWING 辞書 `data/output/jawiki.epwing.zip` （7.1GB、4検索方式 `word endword keyword cross` 対応）の正常構築・検証を達成した。
+
+### TASK-T036 [x] Support Infobox image rendering and 16-worker parallel fetch
+
+**依存:** T035
+
+Infobox画像（`InfoboxBlock.images`）の EPWING グラフィック表示化（`cgraph`化）対応および、画像取得処理 (`image-fetch`) の並列数 16 への増強。`mini_layout.py` の `_render_infobox` でグラフィック表示制御コード `\x1eG:graphic_name\x1f` を選択出力できるように改修し、全テストにパスした。
+
+### TASK-T037 [x] Support resumable image-fetch from existing report/originals
+
+**依存:** T036
+
+`image-fetch` 実行時に既存の `report` および `originals-dir` を参照し、すでにダウンロード・検証成功済みの画像 URL に対する二重 HTTP リクエストを自動スキップして途中から再開・復帰（レジューム）できるように改修し、全テストにパスした。
+
+### TASK-T038 [x] Implement EDIT.md layout rules (Infobox, Headings, Lists, Tables)
+
+**依存:** T037
+
+ユーザー指定の表示ルール（`EDIT.md`）に従い、`mini_layout.py` のレンダリング処理を改修した。Infobox `【項目|値】` 形式、見出し `■ 見出し` 形式、リスト `1. ` / ` ・` 形式、Table のテキストグリッド化を適用し、全テストにパスした。
+
+
+
+
+

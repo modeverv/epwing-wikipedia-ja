@@ -14,7 +14,7 @@ def test_smoke_script_and_driver_exist_and_are_wired() -> None:
 def test_smoke_script_uses_the_python_writer_and_generic_driver() -> None:
     content = SMOKE_SCRIPT.read_text(encoding="utf-8")
 
-    assert "write_entries_jsonl" in content
+    assert "write_entries_jsonl_stream" in content
     assert "freepwing_build_entries.pl" in content
     assert "wikiepwing-eb-search" in content
     assert "headwords skipped reason=word-is-empty count=1" in content
@@ -34,6 +34,25 @@ def test_driver_script_rejects_unknown_link_targets() -> None:
     content = DRIVER_SCRIPT.read_text(encoding="utf-8")
 
     assert "unknown link target" in content
+
+
+def test_driver_script_renders_references_inline_not_at_entry_end() -> None:
+    content = DRIVER_SCRIPT.read_text(encoding="utf-8")
+
+    assert "REF_TOKEN" in content
+    assert "inline reference target not declared" in content
+    assert "add_reference_start" in content
+    assert "add_reference_end" in content
+    assert "for my $target (@{$entry->{targets}})" not in content
+
+
+def test_driver_script_renders_color_graphics_at_body_position() -> None:
+    content = DRIVER_SCRIPT.read_text(encoding="utf-8")
+
+    assert "GRAPHIC_TOKEN" in content
+    assert "add_color_graphic_start" in content
+    assert "add_color_graphic_end" in content
+    assert 'GraphicRenderNode(name="wiki-mark")' in SMOKE_SCRIPT.read_text(encoding="utf-8")
 
 
 def test_driver_script_counts_duplicate_headwords_across_entries() -> None:

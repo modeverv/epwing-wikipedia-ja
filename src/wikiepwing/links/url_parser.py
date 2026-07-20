@@ -36,6 +36,16 @@ _KNOWN_NAMESPACES = frozenset(
         "Portal talk",
         "Module talk",
         "MediaWiki talk",
+        "カテゴリ",
+        "テンプレート",
+        "ファイル",
+        "特別",
+        "利用者",
+        "利用者‐会話",
+        "Wikipedia‐ノート",
+        "ヘルプ",
+        "ポータル",
+        "モジュール",
     }
 )
 
@@ -62,6 +72,7 @@ def parse_internal_url(url: str, *, project_base_urls: tuple[str, ...]) -> Parse
     if path is None:
         return None
 
+    path, _, _query = path.partition("?")
     fragment: str | None = None
     if "#" in path:
         path, _, fragment_raw = path.partition("#")

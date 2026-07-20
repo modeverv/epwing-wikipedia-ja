@@ -61,4 +61,4 @@ def test_freepwing_patch_directory_has_an_explicit_policy() -> None:
     assert "FreePWING 1.6.1" in readme
     assert "TASK-B004" in readme
     assert "patch -p1" in readme
-    assert list(PATCH_DIRECTORY.glob("*.patch")) == []
+    assert [p.name for p in PATCH_DIRECTORY.glob("*.patch")] == ["cross_search.patch"]

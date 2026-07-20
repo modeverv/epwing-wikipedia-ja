@@ -54,3 +54,28 @@ def decode_article(data: bytes) -> Article:
         return parse_article(fields)
     except ArticleError as error:
         raise CanonicalCodecError(f"canonical article envelope is invalid: {error}") from error
+
+
+def decode_article_metadata_only(data: bytes) -> Article:
+    """Parse canonical JSON bytes back into an Article, ignoring blocks to save memory."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise CanonicalCodecError("canonical article bytes are not valid UTF-8") from error
+    try:
+        envelope = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise CanonicalCodecError(f"canonical article bytes are not valid JSON: {error}") from error
+    if not isinstance(envelope, dict):
+        raise CanonicalCodecError("canonical article envelope must be a JSON object")
+
+    schema_version = envelope.get("schema_version")
+    if schema_version != CURRENT_SCHEMA_VERSION:
+        raise CanonicalCodecError(f"unsupported schema_version: {schema_version!r}")
+
+    envelope["blocks"] = []
+    fields = {key: value for key, value in envelope.items() if key != "schema_version"}
+    try:
+        return parse_article(fields)
+    except ArticleError as error:
+        raise CanonicalCodecError(f"canonical article envelope is invalid: {error}") from error

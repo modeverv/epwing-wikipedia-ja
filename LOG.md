@@ -6986,6 +6986,549 @@ git diff --check
 
 - 自動実装タスクはなし。生成済みEPWINGを実ビューアで開く手動確認へ進む。
 
+## 2026-07-18 TASK-T032 Normalize full-run robustness and RAM-first parent bottleneck reduction
+
+**目的**
+
+参照EPWINGとの差分確認に必要な全件model再生成を進めるため、full normalize runの停止要因と親process律速を減らす。
+
+**変更**
+
+- `model-diff-ram6.sqlite3`のfull runは145,000記事時点で停止した。
+  原因は、実データ内のinfobox field nameがwhitespace/zero-width正規化後に
+  空文字となり、`InfoboxField`のmodel制約に違反したこと。
+- 正規化後に空になるinfobox field nameはfieldごとskipし、
+  `INFOBOX_EMPTY_FIELD_NAME` warning診断として記録するようにした。
+- bulk writeへprecompressed canonical JSONを渡せるようにし、worker側で
+  final canonical JSONのzstd圧縮まで行うようにした。
+- macOS `sample`で親processを確認したところ、worker結果のunpickleとGCが
+  目立ったため、batch結果受信中のGC抑制とProcessPool chunksize指定を追加した。
+- `ram2`/`ram3`の古い実験processがメモリを保持していたため、明示PIDで停止した。
+- `model-diff-ram8.sqlite3`として再実行中。1,305,000記事時点でreject 0。
+  `ram6`の145,000記事停止地点は再発なく通過した。
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_normalize_infobox_block.py tests/test_normalize_whitespace.py
+# 21 passed
+uv run pytest -q tests/test_model_repository.py tests/test_normalize_orchestrate.py \
+  tests/test_normalize_infobox_block.py tests/test_links_article_resolver.py
+# 29 passed
+uv run pytest -q tests/test_normalize_orchestrate.py tests/test_model_repository.py \
+  tests/test_normalize_infobox_block.py
+# 26 passed
+uv run ruff check src/wikiepwing/model/repository.py src/wikiepwing/normalize/orchestrate.py \
+  src/wikiepwing/normalize/infobox_block.py tests/test_model_repository.py \
+  tests/test_normalize_infobox_block.py
+# All checks passed
+uv run mypy src/wikiepwing/model/repository.py src/wikiepwing/normalize/orchestrate.py \
+  src/wikiepwing/normalize/infobox_block.py
+# Success: no issues found in 3 source files
+```
+
+## 2026-07-18 TASK-T032 Normalize throughput bottleneck reduction
+
+**調査結果**
+
+- 8 worker指定にもかかわらず、約55,500記事時点ではworkerがほぼCPUを使わず、
+  親processが約71% CPUを使用していた。
+- 新しいinline link保存により、55,500記事で12,793,889 link（約230 link/記事）を
+  解決・保存しており、linkごとのSQL照会と1行ずつのinsertが直列律速だった。
+- 初回runは途中DBを残して停止し、既存`model.sqlite3`は変更していない。
+
+**変更**
+
+- raw DBに対する記事・redirect解決結果を記事間で共有するbounded cacheを追加した。
+- fragmentをcache keyから分離し、同じ記事への異なるfragmentを保持したまま再利用する。
+- model repositoryのlink保存を記事単位の`executemany`へ変更した。
+- cache再利用時にSQL照会が発生せずfragmentを保持する回帰testを追加した。
+
+**局所計測と検証**
+
+```text
+対象: 記事「日本」の1,704 links
+cacheなし: 0.053秒、1,818 SQL queries
+初回cache: 0.045秒、1,159 SQL queries
+warm cache: 0.013秒、0 SQL queries
+```
+
+```bash
+uv run pytest -q tests/test_links_article_resolver.py \
+  tests/test_model_repository.py tests/test_normalize_orchestrate.py
+# 19 passed
+make format-check
+# 299 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 143 source files
+```
+
+**再実行**
+
+- 別成果物`data/work/model-diff-optimized.sqlite3`へ8 workerで開始した。
+- 初期観測では8 workerがそれぞれ約55〜78% CPU、親processも約96% CPUとなり、
+  以前のworker待機状態は解消した。全件throughputは継続計測する。
+
+## 2026-07-18 TASK-T032 RAM-first normalize parallelization
+
+**原因の追加特定**
+
+- 5,000記事batchの実測で、redirect/category/media/licenseのarticle単位SQL、
+  親processだけで行うlink解決・再encode、`links_target`の逐次更新が順に律速と判明した。
+- 単にbatchを大きくするだけでは約2.3GB RAMを消費してworkerを待たせ、速くならなかった。
+
+**変更**
+
+- batch page IDをRAM上のSQLite TEMP tableへ入れ、4種類の付随情報を集合JOINで取得した。
+- query plannerがchild table全走査を選ばないよう、TEMP table起点の`CROSS JOIN`に固定した。
+- 各workerがraw DB readerと最大1,000,000 titleのlink cacheを保持し、link解決と
+  最終canonical encode/hashも8 processで並列実行するようにした。
+- 5,000記事分のarticle/link/media/diagnostic rowをRAMへ集約し、table単位でbulk insertする。
+- model SQLite cacheを4GiB、各worker raw cacheを512MiB、mmapを8GiBへ拡大した。
+- fresh build中は`links_target` indexを外し、全link投入後に一度だけ再作成する。
+- kill後のforce再実行でもdeferred indexを最後に復元する契約を維持した。
+
+**実測**
+
+```text
+従来: 約44〜49記事/秒
+RAM/parallel版 warm batch: 約55〜83記事/秒
+15,000記事時点: rejected 0
+実行成果物: data/work/model-diff-ram6.sqlite3
+```
+
+**局所検証**
+
+```bash
+uv run pytest -q tests/test_model_repository.py tests/test_normalize_orchestrate.py
+# 18 passed
+make format-check
+# 299 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 143 source files
+```
+
+## 2026-07-18 TASK-T022 Record viewer-observed differences as TODOs
+
+**目的**
+
+Emacs Lookupで観察したインターネット配布版と今回版の差を、今後の品質改善TODOとして記録する。
+
+**変更**
+
+- `DIFF.md`を新設し、本文レイアウト、内部リンク、画像、検索索引、メタデータの差を整理した。
+- 今回版のplain-text化、リンク末尾列挙、graphics未接続というコードで確認できる原因を記録した。
+- ユーザーのLookup実測により、`日本`のqueryは今回版1件、配布版複数件と判明した。配布版には別辞書も混在するが、Wikipediaだけでも「ニッポニア（小惑星）」等が追加でヒットするため、検索索引の実差として記録した。
+- 各差分をfixture、自動比較、Lookup/EBWin/EBPocket手動確認へつながるTODOにした。
+
+**検証**
+
+```bash
+git diff --check
+# success
+```
+
+**次タスク**
+
+- `DIFF.md`の優先順位に従い、本文中のインラインリンク保持を最初の実装候補とする。
+
+### 2026-07-18 screenshot evidence follow-up
+
+- `ref/1.png`から`ref/3.png`を比較資料として確認し、各画像が示す配布版検索、今回版本文、配布版本文の対応を`DIFF.md`へ追記した。
+- 配布版のURL、英語名、サイズ・日時、`TOC|KW`、保護状態、項目別表示、画像を具体的な観察差分として追加した。
+- 配布版にも原Wiki記法と生URLの表示ノイズがあるため、配布版をそのまま模倣せず、構造上の長所だけを改善目標にすることを明記した。
+- 比較記事の版日時が配布版`2023-01-16`、今回版`2026-06-29`であり、本文内容差と表示変換差を分離すべきことを記録した。
+
+## 2026-07-18 TASK-T023 Preserve inline internal links in FreePWING output
+
+**目的**
+
+`DIFF.md`の最優先TODOとして、本文中の内部リンク位置・表示ラベル・targetをFreePWING出力まで保持する。
+
+**変更**
+
+- `LinkRenderNode`を追加し、resolved internal linkを本文中のnodeとして保持するようにした。missing linkは従来どおり表示ラベルのplain textになる。
+- JSONLの既存`body`文字列形式を維持しながら、正規化済み入力と衝突しない制御区切りでinline referenceを直列化した。gaiji容量変換を含む既存パイプラインを変更せず通過できる。
+- FreePWING driverのbody opsへ参照開始・終了を追加し、表示ラベルを本文位置で囲むようにした。
+- 参照マーカーのtargetがJSONLの`targets`に宣言されていなければ停止する検証を追加した。
+- 記事末尾へ内部tagだけを列挙する処理を削除した。
+- 実際にrenderされた`LinkRenderNode`からtargetsを導出し、表や情報ボックス内でも表示リンクとtarget宣言が一致するようにした。
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_render_render_node.py tests/test_render_mini_layout.py tests/test_render_freepwing_source.py tests/test_freepwing_build_entries_smoke.py
+# 44 passed
+sh docker/toolchain/freepwing-build-entries-smoke.sh wikiepwing-toolchain:dev
+# success: inline linksを含む3記事EPWINGを生成・検索
+make format-check
+# 295 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 141 source files
+make test
+# 1456 passed, 1 warning
+git diff --check
+# success
+```
+
+**残課題**
+
+- 全件再生成後の「日本」から「日本の歴史」へのLookup手動遷移は未実施。
+- redirect経由・externalizedを含む専用fixtureは`DIFF.md`の未完了TODOとして残す。
+
+**次タスク**
+
+- `DIFF.md`優先順位2の本文レイアウト改善から、情報ボックス項目の連結解消を最小タスクとして選ぶ。
+
+## 2026-07-18 TASK-T024 Measure the `日本` query against the distributed reference EPWING
+
+**目的**
+
+比較範囲を`日本`の1 queryに限定し、配布版と今回版の検索差を同一EB Library検索で実測する。
+
+**結果**
+
+- 配布版の実体はユーザー指定名と1文字異なる`ref/Wikip_ja20230120`に存在した。
+- 配布版はword/endword/keyword/cross/menu/copyright、今回版はword/endwordを宣言する。
+- 同一`wikiepwing-eb-search`による`word 日本 25`は、配布版25行中16種類、今回版25行中10種類だった。
+- `word 日本 100`は両版とも100行に達した。Lookup上で今回版が実質1件に見える現象は、記事や索引結果が機械的に1件しかないことを意味しない。
+- 配布版は読みを見出しに表示し、今回版は表示しない。今回版は同一見出しの重複が上位を占め、関係が見出しから分からないalias候補も含む。
+- 実測結果と候補例を`DIFF.md`へ記録した。
+
+**検証**
+
+```bash
+git diff --check
+# success
+```
+
+**次タスク**
+
+- Lookupが両辞書に対して実際に選択した検索方式を再現し、直接word検索との差を特定する。
+
+## 2026-07-18 TASK-T025 Preserve block structure inside Parsoid section wrappers
+
+**目的**
+
+実データ「日本」の全17 blockが`UnsupportedBlock`へ平坦化される原因を修正する。
+
+**変更**
+
+- Parsoidの`section` wrapperを意味のない構造コンテナとして再帰展開し、子要素を通常のblock converterへ渡すようにした。
+- 未知の`div`等は従来どおり診断付きfallbackとし、変更範囲を`section`だけに限定した。
+- 見出し・段落・情報ボックスを含むsection fixtureを回帰テストへ追加した。
+
+**実データ確認**
+
+```text
+変更前: 17 blocks、UnsupportedBlock 17
+変更後: 561 blocks
+  ParagraphBlock 400
+  UnsupportedBlock 95
+  HeadingBlock 56
+  DefinitionListBlock 4
+  UnorderedListBlock 3
+  TableBlock 2
+  InfoboxBlock 1
+media: 69
+```
+
+残るfallbackは`div` 53件、`figure` 42件。
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_normalize_convert_block.py tests/test_normalize_pipeline.py tests/test_golden_normalize.py
+# 45 passed
+make format-check
+# 295 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 141 source files
+make test
+# 1457 passed, 1 warning
+git diff --check
+# success
+```
+
+**次タスク**
+
+- 「日本」に42件ある`rellink` divを、リンクを保持する関連項目paragraphとして変換する。
+
+## 2026-07-18 TASK-T026 Preserve Parsoid related-link blocks
+
+**目的**
+
+実データ「日本」の関連項目42件を未知要素fallbackから回収し、独立した段落として表示境界を保持する。
+
+**変更**
+
+- `div.rellink`だけをParagraphBlockへ変換し、子inlineの表示文字列を保持するようにした。
+- その他の未知`div`は従来どおり診断付きfallbackとし、対象class以外へ変更を広げていない。
+- 関連項目のanchorを含むfixtureを追加した。anchorの実リンク解決は次タスクへ分離する。
+
+**実データ確認**
+
+```text
+変更前: UnsupportedBlock 95（div 53、figure 42）
+変更後: UnsupportedBlock 53（div 11、figure 42）
+ParagraphBlock: 400 -> 442
+```
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_normalize_convert_block.py tests/test_normalize_pipeline.py tests/test_golden_normalize.py
+# 46 passed
+make format-check
+# 295 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 141 source files
+make test
+# 1458 passed, 1 warning
+```
+
+**次タスク**
+
+- normalizeで透明化されている記事anchorをInternalLinkInlineへ変換し、既存resolverとT023のFreePWING inline reference出力へ接続する。
+
+## 2026-07-18 TASK-T027 Preserve article anchors as unresolved internal links
+
+**目的**
+
+normalizeで単なる子文字列へ透明化されていた記事anchorの表示位置とtargetをinline modelへ保持する。
+
+**変更**
+
+- `./Title`と`/wiki/Title`を既存URL parserで解析し、InternalLinkInlineへ変換した。
+- DB解決前の中間状態は`resolution=missing`、`target_page_id=None`とした。
+- HTTP(S)外部リンクと危険なschemeは既存external link policyへ渡した。
+- internal、external、unsafe URLの回帰テストを追加し、T026の関連リンクfixtureも新しいinline構造へ合わせた。
+
+**実データ確認**
+
+```text
+記事: 日本
+回収したInternalLinkInline: 1,704
+Parsoid anchor形状: ./... 3,545、absolute URL 640、その他 1
+```
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_normalize_convert_block.py tests/test_normalize_paragraphs.py
+# 34 passed
+make format-check
+# 295 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 141 source files
+make test
+# 1461 passed, 1 warning
+git diff --check
+# success
+```
+
+**次タスク**
+
+- main processでInternalLinkInlineをraw DBへ照合し、直接記事・redirect・missing・namespaceを確定してFreePWINGのclickable referenceへ到達させる。
+
+## 2026-07-18 TASK-T028 Resolve normalized internal links against raw DB
+
+**目的**
+
+T027で回収した記事anchorを実際のpage IDへ解決し、T023のFreePWING inline reference出力へ接続可能にする。
+
+**変更**
+
+- Article payloadの全block/inline階層を走査するresolverを追加した。
+- CPU workerは従来どおりDB非依存とし、raw DBを所有するmain processで直接記事とredirectを解決した。
+- 同一project originのabsolute URLをExternalLinkInlineからInternalLinkInlineへ戻した。
+- 解決後のArticleからcanonical JSONとlogical hashを再計算するようにした。
+- query stringをtitleへ混入させず、日本語namespaceをexternalizedとして分類するようURL parserを補強した。
+
+**実データ確認**
+
+```text
+記事: 日本
+InternalLinkInline: 1,704
+resolved: 1,691（unique target page IDs: 1,020）
+missing: 8
+externalized: 5
+```
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_links_article_resolver.py tests/test_normalize_orchestrate.py tests/test_hundred_articles_fixture.py
+# 21 passed
+make format-check
+# 297 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 142 source files
+make test
+# 1465 passed, 1 warning
+git diff --check
+# success
+```
+
+**次タスク**
+
+- 「日本」の42件のfigureをUnsupportedBlockから画像配置modelへ変換し、Article.mediaとrenderer graphicsを接続する。
+
+## 2026-07-18 TASK-T029 Preserve figure placement as ImageBlock
+
+**目的**
+
+「日本」のfigureを本文fallback textではなく画像配置modelとして保持する。
+
+**変更**
+
+- imageを含むfigureをImageBlockへ変換し、source URL由来のmedia_idとalt textを保存した。
+- imageを含まないfigureとその他の未知要素は従来の診断付きfallbackを維持した。
+- figure fixtureでImageBlockの内容を回帰検証した。
+
+**実データ確認**
+
+```text
+ImageBlock: 0 -> 42
+UnsupportedBlock: 53 -> 11（残りはdiv）
+Article.mediaとmedia_idが一致したImageBlock: 42/42
+```
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_normalize_convert_block.py tests/test_normalize_media_extraction.py
+# 30 passed
+make format-check
+# 297 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 142 source files
+make test
+# 1466 passed, 1 warning
+git diff --check
+# success
+```
+
+**次タスク**
+
+- ImageBlockの位置をRenderedEntryへ保持し、media変換結果のcontent hashをFreePWING graphic名として参照する。
+
+## 2026-07-18 TASK-T030 Wire ImageBlock placement to FreePWING graphics
+
+**目的**
+
+T029で保持した画像位置を、変換済みBMPとFreePWING color graphic命令へ接続する。
+
+**変更**
+
+- GraphicRenderNodeを追加し、ImageBlock位置にgraphicとcaptionを出力した。
+- image-fetch reportのsource URL/content hashとcgraphs.txtを検証し、実在するgraphicだけをmappingへ採用した。
+- generateへ`--image-report`/`--graphics-dir`を追加し、mapping hashをstage input fingerprintへ含めた。
+- FreePWING driverへgraphic token処理と`add_color_graphic_start/end`を追加した。
+- 未取得・未変換画像はalt/captionのplain text fallbackを維持した。
+- smokeの非数値tagをinline link parserが処理できない既存の不整合も、tag validationと同じ形式へ修正した。
+
+**実データ確認**
+
+```text
+記事「日本」のImageBlock: 42
+全42件へmappingを与えたrender確認: GraphicRenderNode 42、entry.graphics 42
+既存100件限定image report: 有効graphics 98、「日本」に一致 0
+```
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_render_graphic_mapping.py tests/test_render_render_node.py \
+  tests/test_render_mini_layout.py tests/test_render_freepwing_source.py \
+  tests/test_freepwing_build_entries_smoke.py tests/test_render_generate.py tests/test_cli.py
+# 100 passed
+make test-freepwing-build-entries
+# toolchain image build success; honmon built and searchable with inline links and color graphic
+make format-check
+# 299 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 143 source files
+make test
+# 1473 passed, 1 warning
+git diff --check
+# success
+```
+
+**次タスク**
+
+- 「日本」の42画像だけを選択取得・変換できるpage ID filterを画像CLIへ追加し、実画像を揃える。
+
+## 2026-07-18 TASK-T031 Filter image planning and fetch by page ID
+
+**目的**
+
+全Wikipedia画像を取得せず、比較対象「日本」の画像だけを実表示用に用意する。
+
+**変更**
+
+- `plan_media`へ最大10,000件・正整数限定のpage ID filterを追加した。
+- `image-plan`と`image-fetch`へ反復可能な`--page-id`を追加した。
+- 無指定時は従来どおり全記事対象とし、空指定・重複・不正値を安全に処理した。
+- READMEへ「日本」限定の取得例を追加した。
+
+**実データ確認**
+
+```text
+page ID: 4821051（日本）
+selected media: 68（body 61、infobox 5、main 1、lead 1）
+取得成功: 68/68
+BMP変換成功: 68/68
+ImageBlockとの一致: 42/42
+originals: 1.5 MiB
+FreePWING graphics: 11 MiB
+```
+
+成果物:
+
+- `data/reports/japan-image-fetch-report.json`
+- `data/work/media-originals-japan/`
+- `data/work/graphics-japan/`
+
+**検証**
+
+```bash
+uv run pytest -q tests/test_media_orchestrate.py tests/test_cli.py
+# 63 passed
+make format-check
+# 299 files already formatted
+make lint
+# All checks passed
+make typecheck
+# Success: no issues found in 143 source files
+make test
+# 1475 passed, 1 warning
+git diff --check
+# success
+```
+
+**次タスク**
+
+- 全件modelを新しいnormalize処理で再生成し、画像mapping付きgenerate/EPWING buildを実行してLookupで比較可能な成果物を作る。
+
 ## 2026-07-18 TASK-T021 Document verified full-build commands
 
 **目的**
@@ -7011,3 +7554,224 @@ uv run pytest -q tests/test_repository_hygiene.py
 **次タスク**
 
 - 自動実装タスクはなし。生成済みEPWINGを実ビューアで開く手動確認へ進む。
+
+### 2026-07-19 02:18 UTC — TASK-T033 / TASK-T034
+
+**目的**
+
+- `TASK-T033`: heading / infobox から抽出済みの keyword を FreePWING のキーワード（条件）検索インデックスへ接続し、`ebinfo` で keyword 検索が有効になることを確認する。
+- `TASK-T034`: EPWING のクロス検索インデックス（`cross`）を有効にし、`ebinfo` の search methods で `cross` が検出されるようにする。
+
+**変更**
+
+- **Python generate ステージの修正**:
+  - `RenderedEntry` データクラスおよび JSON レコード出力（`write_entries_jsonl`）に `keywords` フィールドを追加。
+  - `run_generate` と `_render_all` が `AppConfig` を受け取るように変更し、設定（`search` セクション）に基づいて heading/infobox keyword 抽出および予算制御（`apply_search_budgets`）を適用した `keywords` リストを取得・受け渡しするように実装。
+- **Perlビルドスクリプトの修正** (`docker/toolchain/freepwing_build_entries.pl`):
+  - `initialize_fpwparser` / `finalize_fpwparser` に `keyword` インデックス用のインスタンス生成・クローズ処理を追加。
+  - レコードループ内で `keywords` を順次 `keyword->add_entry` でインデックス登録するよう実装。
+  - **空のキーワードでのクラッシュ回避**: テストデータ等でキーワードが 0 件のまま close すると FreePWING の `Index.pm` 内で subscript -1 エラーが起きるため、登録されたキーワードが 0 件のときはダミーキーワード `"dummy"` を自動登録するセーフガードを実装。
+- **FreePWING へのパッチ追加** (`patches/freepwing/cross_search.patch`):
+  - EPWING の仕様でクロス（複合）検索能力（`cross`）は、コントロールファイル内に ID `0x81` (cross) として `kidx` を同一マッピング・参照することで有効化されるため、`Control.pm` と `fpwcontrol.in` に `add_crossindex_entry` を追加するパッチを作成・適用。
+- **テストの修正**:
+  - `test_render_generate.py` や各種 profile/e2e ビルドテストにおいて、`run_generate` に `config` 引数を適切に引き渡すように修正。
+  - `test_render_freepwing_source.py` の JSON アサーションに `keywords` フィールドを追加。
+  - `test_freepwing_source.py` 内のパッチ有無アサーションで `cross_search.patch` を許容するように修正。
+
+**実行コマンド**
+
+```bash
+# ローカルテストの確認
+uv run pytest tests/test_render_generate.py tests/test_render_mini_layout.py
+uv run pytest tests/test_freepwing_source.py
+
+# ツールチェーンの再ビルドと煙テスト（ebinfo による検証）
+make toolchain-image
+make test-freepwing-build-entries
+
+# テストスイート全体の実行
+make test
+```
+
+**結果**
+
+- `make test-freepwing-build-entries`（Docker ビルド煙テスト）内の `ebinfo` にて、以下のように `keyword` と `cross` の双方が有効（あり）と判定されることを確認した：
+  `search methods: word endword keyword cross`
+- 1,482 件のテストスイートがすべて正常にパスした。
+
+**判断・注意点**
+
+- テストビルドなどの少数 fixture ではキーワードが抽出されず `Index.pm` でクラッシュする現象を発見し、最初の項目の見出し位置に紐付けたダミーのキーワード `"dummy"` を自動挿入することでクラッシュを防止し、`kidx` の正常生成を保証した。
+- `cross` 検索能力は `kidx`（キーワードインデックス）ファイルをコントロールファイル内で ID `0x81` として参照登録するだけで有効化できるため、独自の `cross` ファイルを作成するオーバーヘッドなしにクロス検索能力を確立した。
+
+**次タスク**
+
+- `TASK-T035`: 全件再ビルド (Full rebuild)
+
+
+### 2026-07-20 TASK-T035 Full rebuild with new normalized model and index fixes
+
+**目的**
+
+全件モデル `model-diff-ram8.sqlite3`（1,508,200記事）から、新しく実装した keyword/cross 検索インデックス・インラインリンク・画像位置反映を統合した全件 EPWING 辞書を再ビルド（Full build）する。
+
+**変更**
+
+- **generate ステージのメモリ最適化・ストリーム化**:
+  - 150万件の記事 `Article` および `RenderedEntry` を一度に全件一括保持すると、Mac/OS の OOM Killer (exit code 137) に引っかかるため、2パス・ストリーム処理へ移行。
+  - `decode_article_metadata_only` を導入し、第1パスでは本文 blocks を空にしてデコードすることで外字スキャン（`GaijiPlan` 確定）のメモリ消費を数MBに削減。
+  - 第2パス（ストリーム書き出し `write_entries_jsonl_stream`）では、ジェネレータで記事を1件ずつデコード・レンダリングし、一時ファイルへ順次追記して最後に `os.replace` でアトミックに差し替える設計を確立。
+- **システム制御コード（0x1e / 0x1f）の保護**:
+  - インラインリンク等のシステム制御コード `\x1e` / `\x1f` が、Python の `str.strip()` や外字分類器 `classify_character` で「空白文字」または「未対応文字 (Category D)」として削除・破壊される問題を発見。
+  - `classify_character` で `\x1e` / `\x1f` を常に `A`（表現可能文字）として保護し、`mini_layout.py` では `_safe_strip` を導入して制御文字を安全に温存するよう修正。
+- **キーワードへの文字種 fallback 適用**:
+  - `keywords` リスト内のハングル・ダイアクリティカルマーク等がそのまま直出しされ、Perl EUC-JP エンコード（`to_euc_jp`）で未解決 byte 例外を起こす問題に対処。`aliases` と同様に `embed_title_fallback` を適用。
+- **EPWING ビルドタイトル仕様への適合**:
+  - `catdump` が `Title = "Wikipedia"` の半角英語タイトルを拒否する仕様に対し、`TITLE` のデフォルトを全角日本語 `"ウィキペディア"` へ統一。
+- **ビルド実行パラメータの修正**:
+  - `GRAPHICS_DIR=data/work/graphics` を指定して `make build-epwing` を呼ぶことで、画像タグ（`cgraph:...`）を `cgraphs.txt` と完全同期してビルド。
+
+**実行コマンド**
+
+```bash
+# 1. 全件 generate (2パス・ストリーム処理)
+uv run wikiepwing generate \
+  --config config/local-paths.toml \
+  --config config/profiles/full.toml \
+  --model-database data/work/model-diff-ram8.sqlite3 \
+  --entries-output data/work/runs/full-build-20260719/entries.jsonl \
+  --manifest-path data/work/runs/full-build-20260719/manifests/50-generate.json \
+  --gaiji-dir data/work/runs/full-build-20260719/gaiji \
+  --image-report data/reports/image-fetch-report.json \
+  --graphics-dir data/work/graphics \
+  --run-id full-build-20260719 --force
+
+# 2. 全件 EPWING ビルド
+make build-epwing \
+  ENTRIES=data/work/runs/full-build-20260719/entries.jsonl \
+  GAIJI_DIR=data/work/runs/full-build-20260719/gaiji \
+  GRAPHICS_DIR=data/work/graphics \
+  EPWING_OUTPUT=data/output/jawiki.epwing.zip
+
+# 3. テストスイートの実行確認
+make test
+```
+
+**結果**
+
+- 1,508,200件の記事について `entries.jsonl` （19.4GB）をメモリ一定（OOMなし）で生成完了。
+- FreePWING による EPWING ビルド・`ebzip` 圧縮（47.3% 圧縮率）および ZIP アーカイブ生成が成功。
+- 成果物 `data/output/jawiki.epwing.zip`（7.1GB）の検証において、`ebinfo` により目標の4大検索機能（`word endword keyword cross`）の全有効化を確認。
+- 1,482件のテストスイートがすべて正常にパスした。
+
+**判断・注意点**
+
+- OOM 対策およびマークアップ制御文字保護は、今後の全件スケール開発における強固な基盤となった。
+- `catdump` は全角タイトルしか受け付けないため、EPWING カタログタイトルは常に全角表記を維持する必要がある。
+
+
+### 2026-07-20 TASK-T036 Support Infobox image rendering and 16-worker parallel fetch
+
+**目的**
+
+Infobox内画像（`InfoboxBlock.images`）の EPWING バイナリ画像（`cgraph`）化対応および、画像取得処理 (`image-fetch`) のデフォルト並列数の 16 ワーカー化。
+
+**変更**
+
+- **画像取得並列度の増強 (`fetch_concurrency = 16`)**:
+  - `config/default.toml` の `fetch_concurrency` を 4 から 16 へ更新。
+- **Infobox 画像の `MediaReference` 抽出**:
+  - `src/wikiepwing/normalize/media_extraction.py` で `raw_infobox.image_srcs` 内の画像 URL について `role="infobox"` の `MediaReference` を作成し、DBの `media_references` テーブルへ登録されるよう改善。
+- **Infobox 画像の EPWING グラフィック表示化**:
+  - `src/wikiepwing/render/mini_layout.py` の `_RenderContext` に `graphic_names_by_url` マッピングを追加。
+  - `_render_infobox` 関数で、画像 URL に対応する `graphic_name` が存在する場合は `\x1eG:graphic_name\x1f` 制御コードを出力し、未変換時のみ `[画像: URL]` に安全にフォールバック。
+- **テスト追加・検証**:
+  - `tests/test_render_mini_layout.py` に `test_infobox_renders_graphic_node_when_mapped` を追加。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_mini_layout.py tests/test_normalize_media_extraction.py tests/test_config.py
+make format
+make check
+```
+
+**結果**
+
+- 1,484件の全テストスイートおよび各種リント・型チェック（`make check`）がすべて正常にパスした。
+
+**判断・注意点**
+
+- Infobox 内の画像も `media_references` テーブルから `image-plan` / `image-fetch` / `image-convert` パイプラインを経由して EPWING の `cgraph` としてバイナリ収録・表示されるようになった。
+
+
+### 2026-07-20 TASK-T037 Support resumable image-fetch from existing report/originals
+
+**目的**
+
+`image-fetch` 実行時に既存の `report` および `originals-dir` 内の成功データを参照し、すでに取得済みの画像 URL に対する二重 HTTP リクエストを自動スキップして、日を跨いだ中断・再開（レジューム）に対応する。
+
+**変更**
+
+- **`fetch_media` への `existing_outcomes` スキップ機能の追加**:
+  - `src/wikiepwing/media/orchestrate.py` の `fetch_media` で `existing_outcomes` に含まれる成功済み URL をネットワーク取得対象から外し、ダウンロードなしで成果を再利用する仕組みを実装。
+- **CLI (`image-fetch`) への自動レジューム統合**:
+  - `src/wikiepwing/cli.py` で `--report` と `--originals-dir` の既存データが存在する場合、`read_fetch_report` で読み込んで `fetch_media` へ引き渡すよう改修。
+- **テストの追加**:
+  - `tests/test_media_orchestrate.py` に `test_fetch_media_skips_already_fetched_urls` を追加。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_orchestrate.py
+make format
+make check
+```
+
+**結果**
+
+- 1,485件の全テストスイートおよび `make check` がすべて正常にパスした。
+
+**判断・注意点**
+
+- 日を跨いだ複数回の `image-fetch` や Ctrl+C による中断・再開時にも、既にダウンロード済みの画像が高速にスキップされるため、安全・効率的に全件画像取得を進められるようになった。
+
+
+### 2026-07-20 TASK-T038 Implement EDIT.md layout rules (Infobox, Headings, Lists, Tables)
+
+**目的**
+
+`EDIT.md` に策定した編集・レイアウト方針に基づき、`mini_layout.py` の変換処理および各種ブロック表現を改修する。
+
+**変更**
+
+- **`EDIT.md` の作成**:
+  - Infobox・セクション見出し・リスト・Table のレイアウト方針・フォーマット仕様を明文化。
+- **レイアウトレンダラ (`mini_layout.py`) の修正**:
+  - Infobox: `【Infobox {title}】` および `【項目名|値】` 形式で出力。
+  - 見出し (Heading): `■ {見出し名}` 形式で出力。
+  - リスト (List): 箇条書きを ` ・{内容}` 形式、順序付きリストを `1. {内容}` 形式で出力。
+  - 表 (Table): 全テーブルを `|` 区切りのテキストグリッド形式で出力。
+- **テストの修正・通過**:
+  - `tests/test_render_mini_layout.py` のアサーションを更新。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_render_mini_layout.py
+make format
+make check
+```
+
+**結果**
+
+- 全 1,484 件のテストおよび `make check` が正常に通過した。
+
+**判断・注意点**
+
+- ビューア上での可読性が大幅に向上し、セクション・Infobox・箇条書きが明確に区別して閲覧できるよう改善された。
+
+
+
+
+
