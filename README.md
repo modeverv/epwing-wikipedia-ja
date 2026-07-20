@@ -4,6 +4,8 @@
 
 Boookends 2023年版を表示・検索品質の参照実装として利用しますが、Boookendsのソースやブランドを複製するものではありません。目標は、現行データから同等クラスの利用体験を持つ独立実装を作ることです。
 
+本プロジェクトはBookendsプロジェクト様に敬意を表し、成果物において見た目の漸近を目指します。2026年7月現在、Bookendsプロジェクトの成果物を入手することが困難になっています。本プロジェクトはこの状況において入手可能な状態を維持することを目的としています。
+
 ## 目標
 
 - 現行の日本語Wikipedia記事をオフライン検索できる
@@ -19,8 +21,6 @@ Boookends 2023年版を表示・検索品質の参照実装として利用しま
 標準経路はWikimedia Enterprise通常Snapshotのレンダリング済みHTMLです。取得後はローカルへ固定し、後続処理をオフラインで実行します。
 
 補助・検証経路として、Wikimedia公式のXML/SQLダンプを利用します。
-
-Structured Contents Snapshotは日本語Wikipediaを対象としていないため、v2の必須入力にはしません。
 
 ## 最初に読む文書
 
@@ -85,7 +85,15 @@ wikipedia-epwing-v2/
 
 以下は実際に動作するコマンドです(詳細は[BUILD.md](BUILD.md)を参照)。「想定」ではなく、実データ全件規模(EPIC R/S)で検証済みです。
 
-### 0. 事前準備(初回のみ)
+### 0. 事前準備
+
+Wikipedia Snapshotの取得には、Wikimedia EnterpriseのアカウントとAPIキーが必要です。`.env`に次のように設定してください。
+
+```text
+# .env (例)
+WME_USERNAME=<username>
+WME_PASSWORD=<password>
+```
 
 ```bash
 # 認証情報の読み込み(.envは自動読み込みされないため毎回明示的に行う)
@@ -100,7 +108,7 @@ set +a
 # config/local-paths.toml (例、各自のパスに合わせて用意する)
 schema_version = 1
 project = "jawiki"
-profile = "lite"
+profile = "full"
 
 [paths]
 sources = "../data/sources"
@@ -112,6 +120,8 @@ reports = "../data/reports"
 logs = "../data/logs"
 ```
 
+
+<!--
 （`[paths]`の相対パスは、このTOMLファイル自身のディレクトリ`config/`からの相対で解決されるため、リポジトリ直下の`data/`を指すには`../data/...`と書きます。）
 
 以降のコマンドはすべて`--config config/local-paths.toml`(または自分で用意した上書きファイル)を付けて実行してください。
@@ -187,6 +197,8 @@ uv run python -m wikiepwing.cli update --config config/local-paths.toml
 ```
 
 `--config`は複数回指定でき、後勝ちで合成されます。パス上書き(`config/local-paths.toml`)とプロファイル(`config/profiles/*.toml`)は別ファイルなので、両方必要なコマンドには両方渡してください。詳細は[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) section 20を参照してください。
+-->
+
 
 ### Makefile を使った主要タスク実行
 
@@ -229,6 +241,7 @@ make preview
 
 CLIサブコマンド一覧は`uv run python -m wikiepwing.cli --help`で確認できます。
 
+<!--
 ### 上限制御導入前のgaiji生成物を再利用する場合
 
 半角・全角外字が各8,192文字を超えている既存の`entries-mini.jsonl`、
@@ -275,7 +288,8 @@ sh docker/toolchain/build-epwing.sh \
 `make build-epwing`が呼ぶ`docker/toolchain/build-epwing.sh`は、`entries.jsonl`から実際にEPWING本体(HONMON)をビルドする本番用スクリプトです。2026-07-18に日本語Wikipedia 1,508,200記事で全件ビルドまで確認し、5.7 GiBの`data/output/jawiki.epwing.zip`を生成しました。生成前後の`ebinfo`と`unzip -t`が成功しています。成果物のSHA-256は`d3ec046a0c710e1d6fae61a2f5ec476a555cbda32df0f1f484da1bdf2b4b8b3a`です([TROUBLESHOOTING.md](TROUBLESHOOTING.md)参照)。
 
 `image-fetch`は`upload.wikimedia.org`への逐次ダウンロードだと約250万ユニークURL全件で4〜12日かかる想定です(詳細は[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)参照)。`--concurrency`(既定: `images.fetch_concurrency`、既定値4)で相手サーバーに配慮した範囲の並列ダウンロードができ、`--limit N`を指定すると先頭N件のユニークURLを取得した時点で打ち切れます。画像が一部しかない状態でも`image-convert`以降・EPWINGビルドまで一通り動作確認したい場合は`--limit`を使ってください。
-
+-->
+<!--
 ## 開発順序の最重要ルール
 
 最初からWikipedia全件を処理しません。
@@ -287,6 +301,8 @@ sh docker/toolchain/build-epwing.sh \
 5. 表・Infobox・外字・画像・数式を段階的に追加する
 6. 10,000記事試験を通す
 7. 最後に全件ビルドを行う
+
+-->
 
 ## ライセンス
 
