@@ -7772,6 +7772,73 @@ make check
 - ビューア上での可読性が大幅に向上し、セクション・Infobox・箇条書きが明確に区別して閲覧できるよう改善された。
 
 
+### 2026-07-20 TASK-T039 Add Makefile targets for wikiepwing CLI and update README.md
+
+**目的**
+
+`wikiepwing` の主要サブコマンド（`generate`, `build`, `image-plan`, `image-fetch`, `image-convert`, `verify`, `preview`）を `Makefile` のターゲットとして追加し、`README.md` を最新状態にメンテナンスする。
+
+**変更**
+
+- **`Makefile` の拡張**:
+  - `generate`, `image-plan`, `image-fetch`, `image-convert`, `build`, `verify`, `preview` ターゲットを追加。
+  - 各種オーバーライド変数（`MODEL_DB`, `CONCURRENCY`, `LIMIT` 等）に対応。
+- **`scripts/preview_articles.py` の追加**:
+  - `make preview` 実行時に指定モデルDBから記事を抽出し、HTML（`preview_articles.html`）を生成するスクリプトを設置。
+- **`README.md` の更新**:
+  - `make` コマンドによる主要タスク実行表とコマンド例を追加。
+
+**実行コマンド**
+
+```bash
+make preview
+make format
+make check
+```
+
+**結果**
+
+- 1,485件の全テストおよび `make check` が正常に通過した。
+
+**判断・注意点**
+
+- 長い `uv run wikiepwing ...` コマンドを意識せず、`make generate` や `make build` などの単一コマンドで安全かつ手軽にパイプラインを実行できるよう改善された。
+
+
+### 2026-07-20 TASK-T040 Add acquire and normalize targets to Makefile
+
+**目的**
+
+Wikipedia Enterprise Snapshot チャンクダウンロード (`acquire`) やダンプ登録・正規化 (`register-local-source`, `ingest`, `normalize`) ターゲットを `Makefile` に追加し、`README.md` を更新する。
+
+**変更**
+
+- **`Makefile` の修正**:
+  - `acquire` (Snapshot チャンクの取得・検証・固定) ターゲットを追加。
+  - `register-local-source`, `ingest`, `normalize` ターゲットを追加。
+  - 上書き用 `FORCE=1` フラグに対応。
+- **`README.md` の更新**:
+  - `make acquire` や `make normalize` を含むデータ取得からビルドまでの全手順・コマンド例を整備。
+
+**実行コマンド**
+
+```bash
+make format
+make check
+```
+
+**結果**
+
+- 1,485件の全テストおよび `make check` が正常に通過した。
+
+**判断・注意点**
+
+- 初回データ取得（チャンクのダウンロード）から画像取得・変換・最終EPWING辞書ビルドまでの全パイプラインが Makefile 経由で正しい順序（`acquire` ➔ `normalize` ➔ `generate` ➔ `image-plan` ➔ `image-fetch` ➔ `image-convert` ➔ `build`）でワンコマンド実行可能になった。
+
+
+
+
+
 
 
 

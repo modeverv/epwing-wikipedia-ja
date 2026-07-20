@@ -188,7 +188,46 @@ uv run python -m wikiepwing.cli update --config config/local-paths.toml
 
 `--config`は複数回指定でき、後勝ちで合成されます。パス上書き(`config/local-paths.toml`)とプロファイル(`config/profiles/*.toml`)は別ファイルなので、両方必要なコマンドには両方渡してください。詳細は[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) section 20を参照してください。
 
-CLIサブコマンド一覧は`uv run python -m wikiepwing.cli --help`で確認できます。`wikiepwing`は現時点でPythonパッケージのエントリポイント(`uv run python -m wikiepwing.cli` または`pip install`後は`wikiepwing`コマンド)として提供され、`make`のサブコマンド化(`make acquire`等)はまだ行っていません。
+### Makefile を使った主要タスク実行
+
+主要な `wikiepwing` パイプライン操作は `make` コマンドで手軽に実行できます。
+
+| ターゲット | 実行内容 | 備考 |
+| :--- | :--- | :--- |
+| `make acquire` | Wikimedia Enterprise Snapshot チャンク群をダウンロード・検証・固定 | ネットワーク接続が必要 |
+| `make register-local-source` | 手元にあるローカルダンプ（XML/SQL/HTML等）を登録 | `SOURCE_DIR` を指定 |
+| `make ingest` | 登録されたソースダンプを Raw SQLite DB へ取り込み | |
+| `make normalize` | 取り込みデータを正規化・モデル DB（`model.sqlite3`）を構築 | |
+| `make generate` | モデルDBからFreePWING形式エントリー（`entries.jsonl`等）を生成 | `MODEL_DB` を指定可能 |
+| `make image-plan` | 記事に含まれる全画像URLの抽出計画を作成 | stdout ➔ `data/work/image-plan.json` |
+| `make image-fetch` | 計画に基づいて画像を出力先へ取得・保存 | レジューム機能対応・並列数 `CONCURRENCY=16` |
+| `make image-convert` | 取得した原版画像をEPWING標準BMP（DIB）へ変換 | `data/work/graphics` へ出力 |
+| `make build` | フルパイプラインまたは既存成果物から EPWING 辞書をビルド | `FORCE=1` で上書き実行 |
+| `make verify` | 生成された `entries.jsonl` の整合性を検証 | |
+| `make preview` | モデルDBから記事数件を抽出し HTML（`preview_articles.html`）を出力 | 本文レイアウト・改行等の目視検証 |
+
+例:
+```bash
+# 1. Wikipedia Snapshot チャンクのダウンロードとモデルDB構築
+make acquire
+make normalize MODEL_DB=data/work/model-diff-ram8.sqlite3
+
+# 2. テキスト生成
+make generate MODEL_DB=data/work/model-diff-ram8.sqlite3
+
+# 3. 画像の計画・フェッチ(16並列)・EPWING用BMP変換
+make image-plan MODEL_DB=data/work/model-diff-ram8.sqlite3
+make image-fetch CONCURRENCY=16 LIMIT=1000
+make image-convert
+
+# 4. 画像を含む EPWING 辞書の最終ビルド
+make build MODEL_DB=data/work/model-diff-ram8.sqlite3
+
+# 5. HTML プレビューファイルの出力・目視確認
+make preview
+```
+
+CLIサブコマンド一覧は`uv run python -m wikiepwing.cli --help`で確認できます。
 
 ### 上限制御導入前のgaiji生成物を再利用する場合
 
