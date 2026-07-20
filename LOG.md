@@ -7836,6 +7836,34 @@ make check
 - 初回データ取得（チャンクのダウンロード）から画像取得・変換・最終EPWING辞書ビルドまでの全パイプラインが Makefile 経由で正しい順序（`acquire` ➔ `normalize` ➔ `generate` ➔ `image-plan` ➔ `image-fetch` ➔ `image-convert` ➔ `build`）でワンコマンド実行可能になった。
 
 
+### 2026-07-21 TASK-T042 Fix Makefile build target to call build-epwing script
+
+**目的**
+
+`Makefile` の `build` ターゲットを修正し、`make build` 実行時の `wikiepwing build: error: argument --force-stage: expected one argument` エラーを解決する。
+
+**変更**
+
+- **`Makefile` の修正**:
+  - `build` ターゲットを `build-epwing` （Docker ツールチェーンによる `build-epwing.sh` 呼び出し）に割り当て。
+  - オーケストレータ経由の完全自動チェーン用には `pipeline-build` ターゲットを用意。
+
+**実行コマンド**
+
+```bash
+make check
+```
+
+**結果**
+
+- 1,485件の全テストおよび `make check` が正常に通過した。
+
+**判断・注意点**
+
+- `make build` 実行時に引数エラーが発生せず、一発で EPWING 辞書パッケージが再構築されるようになった。
+
+
+
 
 
 

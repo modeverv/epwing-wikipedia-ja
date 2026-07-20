@@ -7,6 +7,8 @@ FETCH_REPORT ?= data/reports/image-fetch-report.json
 ORIGINALS_DIR ?= data/work/image-originals
 GRAPHICS_DIR ?= data/work/graphics
 OUTPUT_ENTRIES ?= data/work/entries.jsonl
+DEFAULT_ENTRIES = $(if $(wildcard $(OUTPUT_ENTRIES)),$(OUTPUT_ENTRIES),$(if $(wildcard data/work/entries-mini.jsonl),data/work/entries-mini.jsonl,$(OUTPUT_ENTRIES)))
+ENTRIES ?= $(DEFAULT_ENTRIES)
 CONCURRENCY ?= 16
 LIMIT ?=
 FORCE ?=
@@ -14,12 +16,12 @@ FORCE ?=
 APP_IMAGE ?= wikiepwing-app:dev
 TOOLCHAIN_IMAGE ?= wikiepwing-toolchain:dev
 FREEPWING_SOURCE ?= data/sources/freepwing_1.6.1.orig.tar.bz2
-ENTRIES ?= output/entries.jsonl
 TITLE ?= ウィキペディア
 SUBBOOK_DIR ?= WIKIEP
 EPWING_OUTPUT ?= output/jawiki.epwing.zip
+LOCK_PATH ?= data/sources/source.lock.json
 
-.PHONY: acquire app-image build build-epwing check doctor download-freepwing format format-check generate image-convert image-fetch image-plan ingest lint normalize package-toolchain preview probe-toolchain register-local-source test test-app-image test-compose test-eb-image test-eb-source test-ebzip test-freepwing-build-entries test-freepwing-source test-handcrafted test-mini-end-to-end toolchain-image typecheck verify
+.PHONY: acquire app-image build build-epwing pipeline-build check doctor download-freepwing format format-check generate image-convert image-fetch image-plan ingest lint normalize package-toolchain preview probe-toolchain register-local-source test test-app-image test-compose test-eb-image test-eb-source test-ebzip test-freepwing-build-entries test-freepwing-source test-handcrafted test-mini-end-to-end toolchain-image typecheck verify
 
 acquire:
 	uv run wikiepwing acquire --config $(CONFIG) --config $(PROFILE) $(if $(FORCE),--force)
@@ -45,21 +47,23 @@ image-fetch:
 image-convert:
 	uv run wikiepwing image-convert --config $(CONFIG) --config $(PROFILE) --report $(FETCH_REPORT) --originals-dir $(ORIGINALS_DIR) --output-dir $(GRAPHICS_DIR)
 
-build:
-	uv run wikiepwing build --config $(CONFIG) --config $(PROFILE) --model-database $(MODEL_DB) $(if $(FORCE),--force)
+build: build-epwing
+
+build-epwing: toolchain-image
+	sh docker/toolchain/build-epwing.sh "$(TOOLCHAIN_IMAGE)" "$(ENTRIES)" "$(EPWING_OUTPUT)" \
+		"$(GRAPHICS_DIR)" "$(GAIJI_DIR)" "$(TITLE)" "$(SUBBOOK_DIR)"
+
+pipeline-build:
+	uv run wikiepwing build --config $(CONFIG) --config $(PROFILE) --lock-path $(LOCK_PATH) $(if $(FORCE),--force-stage generate)
 
 verify:
-	uv run wikiepwing verify --entries $(OUTPUT_ENTRIES)
+	uv run wikiepwing verify --entries $(ENTRIES)
 
 preview:
 	uv run python scripts/preview_articles.py $(MODEL_DB) preview_articles.html
 
 app-image:
 	docker build --file docker/app.Dockerfile --tag "$(APP_IMAGE)" .
-
-build-epwing: toolchain-image
-	sh docker/toolchain/build-epwing.sh "$(TOOLCHAIN_IMAGE)" "$(ENTRIES)" "$(EPWING_OUTPUT)" \
-		"$(GRAPHICS_DIR)" "$(GAIJI_DIR)" "$(TITLE)" "$(SUBBOOK_DIR)"
 
 doctor:
 	mkdir -p output reports/logs

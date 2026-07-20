@@ -154,7 +154,15 @@ sub add_body_ops {
             $writer->add_color_graphic_start($payload) or die $writer->error_message(), "\n";
             $writer->add_color_graphic_end() or die $writer->error_message(), "\n";
         } else {
-            $writer->add_text($payload) or die $writer->error_message(), "\n";
+            my @lines = split(/\n/, $payload, -1);
+            for my $i (0 .. $#lines) {
+                if (length($lines[$i]) > 0) {
+                    $writer->add_text($lines[$i]) or die $writer->error_message(), "\n";
+                }
+                if ($i < $#lines) {
+                    $writer->add_newline() or die $writer->error_message(), "\n";
+                }
+            }
         }
     }
 }
