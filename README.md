@@ -1,4 +1,4 @@
-# Wikipedia EPWING Builder v2
+# Wikipedia EPWING Builder
 
 2026年時点の日本語Wikipediaを、Docker内で再現可能にEPWING/JIS X 4081互換辞書へ変換するプロジェクトです。
 
