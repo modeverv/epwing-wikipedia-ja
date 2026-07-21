@@ -45,10 +45,12 @@ def test_two_unrelated_articles_each_keep_their_own_headwords() -> None:
     assert headwords[2] == ("Linux",)
 
 
-def test_colliding_variant_is_awarded_to_the_higher_priority_article_only() -> None:
-    # Both articles' titles produce the same space-removed variant key
-    # ("newyork"), so only the higher-priority (title, not redirect) article
-    # keeps that literal headword; the other keeps its own title regardless.
+def test_colliding_variant_is_preserved_for_both_articles_with_duplicate_headwords_allowed() -> (
+    None
+):
+    # Both articles' titles or aliases produce the same space-removed variant key
+    # ("newyork"). Because FreePWING supports duplicate headwords across entries,
+    # both articles keep that headword.
     new_york = _make_article(page_id=1, title="New York")
     other = _make_article(
         page_id=2,
@@ -59,7 +61,7 @@ def test_colliding_variant_is_awarded_to_the_higher_priority_article_only() -> N
     headwords = headwords_for_articles([new_york, other])
 
     assert "newyork" in headwords[1]
-    assert "newyork" not in headwords[2]
+    assert "newyork" in headwords[2]
     assert headwords[2][0] == "Other Place"
 
 

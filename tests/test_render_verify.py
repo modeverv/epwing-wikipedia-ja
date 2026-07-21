@@ -100,7 +100,7 @@ def test_verify_entries_jsonl_detects_duplicate_tag(tmp_path: Path) -> None:
     assert any(issue.code == "DUPLICATE_TAG" for issue in result.issues)
 
 
-def test_verify_entries_jsonl_detects_duplicate_headword_across_entries(tmp_path: Path) -> None:
+def test_verify_entries_jsonl_allows_duplicate_headword_across_entries(tmp_path: Path) -> None:
     path = tmp_path / "entries.jsonl"
     _write_jsonl(
         path,
@@ -112,8 +112,8 @@ def test_verify_entries_jsonl_detects_duplicate_headword_across_entries(tmp_path
 
     result = verify_entries_jsonl(path)
 
-    assert result.ok is False
-    assert any(issue.code == "DUPLICATE_HEADWORD" for issue in result.issues)
+    assert result.ok is True
+    assert result.issues == ()
 
 
 def test_verify_entries_jsonl_allows_same_headword_within_one_entry(tmp_path: Path) -> None:

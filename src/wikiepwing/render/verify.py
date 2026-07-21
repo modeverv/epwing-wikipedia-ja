@@ -77,33 +77,11 @@ def verify_entries_jsonl(
             issues.append(VerificationIssue("EMPTY_TITLE", f"entry {tag} has an empty title"))
         _report(on_progress, "verify-entries-tags", index, len(records))
 
-    headword_owners: dict[str, str] = {}
     if not records:
         _report(on_progress, "verify-entries-headwords", 0, 0)
-    if not records:
-        _report(on_progress, "verify-entries-targets", 0, 0)
-    for index, record in enumerate(records, start=1):
-        tag = record.get("tag")
-        if not isinstance(tag, str) or not tag:
-            _report(on_progress, "verify-entries-headwords", index, len(records))
-            continue
-        aliases = record.get("aliases", [])
-        headwords: list[object] = [record.get("title")]
-        if isinstance(aliases, list):
-            headwords.extend(aliases)
-        for headword in headwords:
-            if not isinstance(headword, str) or not headword:
-                continue
-            owner = headword_owners.get(headword)
-            if owner is not None and owner != tag:
-                issues.append(
-                    VerificationIssue(
-                        "DUPLICATE_HEADWORD",
-                        f"headword {headword!r} is used by both {owner} and {tag}",
-                    )
-                )
-            else:
-                headword_owners[headword] = tag
+    for index, _record in enumerate(records, start=1):
+        # Progress reporting for headwords validation phase is kept for backward compatibility,
+        # but duplicate headwords check is removed as FreePWING supports duplicate headwords.
         _report(on_progress, "verify-entries-headwords", index, len(records))
 
     for index, record in enumerate(records, start=1):
