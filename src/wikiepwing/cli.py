@@ -26,10 +26,12 @@ from wikiepwing.media.cache import MediaCache
 from wikiepwing.media.downloader import SecureMediaDownloader
 from wikiepwing.media.freepwing_graphics import GraphicBuildEntry, write_graphics_build_files
 from wikiepwing.media.orchestrate import (
+    FetchOutcome,
     convert_media,
     fetch_media,
     plan_media,
     read_fetch_report,
+    rebuild_fetch_report,
     write_fetch_report,
 )
 from wikiepwing.model.validate import ModelValidationLimits
@@ -640,6 +642,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit",
         type=int,
         help="stop after attempting this many unique media URLs (default: no limit)",
+    )
+    image_fetch.add_argument(
+        "--save-interval",
+        type=int,
+        default=10,
+        help="periodically save fetch report every N completed URLs (default: 10)",
+    )
+    rebuild_fetch = subparsers.add_parser(
+        "rebuild-fetch-report",
+        help="rebuild fetch report JSON using downloaded binaries in originals-dir",
+    )
+    rebuild_fetch.add_argument(
+        "--model-database",
+        type=Path,
+        required=True,
+        help="model.sqlite3 input path",
+    )
+    rebuild_fetch.add_argument(
+        "--originals-dir",
+        type=Path,
+        required=True,
+        help="directory storing fetched originals",
+    )
+    rebuild_fetch.add_argument(
+        "--report",
+        type=Path,
+        required=True,
+        help="fetch report JSON output path to create or update",
     )
     image_convert = subparsers.add_parser(
         "image-convert", help="raster-convert an image-fetch report's originals to BMP graphics"
@@ -1262,6 +1292,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 existing_outcomes = read_fetch_report(report_path, originals_dir=originals_dir)
             except Exception:
                 existing_outcomes = None
+
+        def _save_report(current_outcomes: Sequence[FetchOutcome]) -> None:
+            write_fetch_report(
+                current_outcomes,
+                originals_dir=originals_dir,
+                report_path=report_path,
+            )
+
+        save_interval = cast(int, arguments.save_interval)
         outcomes = fetch_media(
             plan,
             downloader=media_downloader,
@@ -1270,6 +1309,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_workers=concurrency,
             limit=cast(int | None, arguments.limit),
             existing_outcomes=existing_outcomes,
+            save_report_callback=_save_report,
+            save_interval=save_interval,
             on_progress=lambda progress: print(
                 f"fetch {progress.completed}/{progress.total} "
                 f"succeeded={progress.succeeded} failed={progress.failed}",
@@ -1285,6 +1326,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         succeeded = sum(1 for outcome in outcomes if outcome.ok)
         print(f"fetched={succeeded} failed={len(outcomes) - succeeded} total={len(outcomes)}")
         return 0 if succeeded == len(outcomes) else 1
+    if command == "rebuild-fetch-report":
+        phase_progress_reporter = _PhaseProgressReporter()
+        plan = plan_media(
+            cast(Path, arguments.model_database),
+            on_progress=phase_progress_reporter,
+        )
+        report_path = cast(Path, arguments.report)
+        originals_dir = cast(Path, arguments.originals_dir)
+        rebuilt = rebuild_fetch_report(
+            plan,
+            originals_dir=originals_dir,
+            report_path=report_path,
+            on_progress=phase_progress_reporter,
+        )
+        succeeded = sum(1 for outcome in rebuilt if outcome.ok)
+        print(
+            f"rebuilt fetch report: {len(rebuilt)} entries ({succeeded} succeeded)",
+            file=sys.stderr,
+        )
+        return 0
     if command == "image-convert":
         phase_progress_reporter = _PhaseProgressReporter()
         outcomes = read_fetch_report(

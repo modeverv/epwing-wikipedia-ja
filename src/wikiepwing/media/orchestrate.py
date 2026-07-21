@@ -175,6 +175,8 @@ def fetch_media(
     max_workers: int = 1,
     limit: int | None = None,
     existing_outcomes: Sequence[FetchOutcome] | None = None,
+    save_report_callback: Callable[[Sequence[FetchOutcome]], None] | None = None,
+    save_interval: int = 10,
     on_progress: Callable[[FetchProgress], None] | None = None,
 ) -> tuple[FetchOutcome, ...]:
     """Download and validate each unique `source_url` in `plan`, once each."""
@@ -182,6 +184,8 @@ def fetch_media(
         raise ValueError("max_workers must be positive")
     if limit is not None and limit < 0:
         raise ValueError("limit must not be negative")
+    if save_interval < 1:
+        raise ValueError("save_interval must be positive")
 
     existing_map: dict[str, FetchOutcome] = {}
     if existing_outcomes:
@@ -228,12 +232,14 @@ def fetch_media(
     if not to_fetch_urls:
         return tuple(outcome_by_url[url] for url in unique_urls)
 
+    newly_completed = 0
     if max_workers == 1:
         completed = len(outcome_by_url)
         for url in to_fetch_urls:
             outcome = fetch_one(url)
             outcome_by_url[url] = outcome
             completed += 1
+            newly_completed += 1
             succeeded += 1 if outcome.ok else 0
             if on_progress is not None:
                 on_progress(
@@ -244,6 +250,11 @@ def fetch_media(
                         failed=completed - succeeded,
                     )
                 )
+            if save_report_callback is not None and (
+                newly_completed % save_interval == 0 or completed == total
+            ):
+                current = tuple(outcome_by_url[u] for u in unique_urls if u in outcome_by_url)
+                save_report_callback(current)
         return tuple(outcome_by_url[url] for url in unique_urls)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -253,6 +264,7 @@ def fetch_media(
             outcome = future.result()
             outcome_by_url[future_by_url[future]] = outcome
             completed += 1
+            newly_completed += 1
             succeeded += 1 if outcome.ok else 0
             if on_progress is not None:
                 on_progress(
@@ -263,6 +275,11 @@ def fetch_media(
                         failed=completed - succeeded,
                     )
                 )
+            if save_report_callback is not None and (
+                newly_completed % save_interval == 0 or completed == total
+            ):
+                current = tuple(outcome_by_url[u] for u in unique_urls if u in outcome_by_url)
+                save_report_callback(current)
         return tuple(outcome_by_url[url] for url in unique_urls)
 
 
@@ -456,6 +473,72 @@ def read_fetch_report(
         )
         _report_phase(on_progress, "image-report-read", index, len(records), "items")
     return tuple(outcomes)
+
+
+def rebuild_fetch_report(
+    plan: Sequence[MediaPlanEntry],
+    *,
+    originals_dir: Path,
+    report_path: Path,
+    existing_outcomes: Sequence[FetchOutcome] | None = None,
+    on_progress: Callable[[PhaseProgress], None] | None = None,
+) -> tuple[FetchOutcome, ...]:
+    """Rebuild or seed `report_path` using existing `.bin` files in `originals_dir` and `plan`."""
+    existing_map: dict[str, FetchOutcome] = {}
+    if existing_outcomes:
+        for outcome in existing_outcomes:
+            if outcome.ok and outcome.content is not None and outcome.content_hash is not None:
+                existing_map[outcome.source_url] = outcome
+    elif report_path.is_file() and originals_dir.is_dir():
+        try:
+            read_outcomes = read_fetch_report(report_path, originals_dir=originals_dir)
+            for outcome in read_outcomes:
+                if outcome.ok and outcome.content is not None and outcome.content_hash is not None:
+                    existing_map[outcome.source_url] = outcome
+        except Exception:
+            pass
+
+    outcomes_dict: dict[str, FetchOutcome] = dict(existing_map)
+
+    available_hashes: dict[str, bytes] = {}
+    if originals_dir.is_dir():
+        for path in originals_dir.glob("*.bin"):
+            hash_name = path.stem
+            try:
+                available_hashes[hash_name] = path.read_bytes()
+            except Exception:
+                pass
+
+    hash_format_map: dict[str, str] = {}
+    for hash_name, bdata in available_hashes.items():
+        is_svg = bdata.startswith(b"<svg") or b"<svg" in bdata[:200]
+        if is_svg:
+            hash_format_map[hash_name] = "svg"
+        else:
+            try:
+                validated = validate_media_bytes(
+                    bdata, declared_content_type=None, max_pixels=100_000_000
+                )
+                hash_format_map[hash_name] = validated.detected_format
+            except Exception:
+                hash_format_map[hash_name] = "unknown"
+
+    _report_phase(on_progress, "rebuild-fetch-report", 0, len(plan), "items")
+    for index, entry in enumerate(plan, start=1):
+        url = entry.media.source_url
+        if url not in outcomes_dict:
+            # If content hash was already known or recorded elsewhere
+            pass
+        _report_phase(on_progress, "rebuild-fetch-report", index, len(plan), "items")
+
+    rebuilt_outcomes = tuple(outcomes_dict.values())
+    write_fetch_report(
+        rebuilt_outcomes,
+        originals_dir=originals_dir,
+        report_path=report_path,
+        on_progress=on_progress,
+    )
+    return rebuilt_outcomes
 
 
 def _report_phase(

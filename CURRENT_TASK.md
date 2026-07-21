@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-T043
+TASK-T046
 
 ## 目的
 
-`Makefile` の `ENTRIES` パスに `data/work/entries-mini.jsonl` への自動フォールバックロジックを追加し、`entries.jsonl` 不在時の `entries.jsonl not found` エラーを解決する。
+FreePWING の仕様上、内部リンク修飾 (`add_reference_start`) がアクティブな最中に `add_newline()` が呼ばれると発生する `modifier not terminated before newline` エラーを防止するため、リンクラベル内の改行をスペースへ変換し、リンク処理中の `add_newline()` 呼び出しをガードする。
 
 ## 事前条件
 
@@ -17,27 +17,26 @@ TASK-T043
 
 ## 変更予定ファイル
 
-- `Makefile`
+- `docker/toolchain/freepwing_build_entries.pl`
 - `CURRENT_TASK.md`
 
 ## 実行予定コマンド
 
 ```bash
-make generate MODEL_DB=data/work/model-diff-ram8.sqlite3 FORCE=1
-make build
+make toolchain-image
+make build MODEL_DB=data/work/model-diff-ram8.sqlite3
 ```
 
 ## 完了条件
 
-- [x] `Makefile` で `data/work/entries.jsonl` 不在時に手元の `data/work/entries-mini.jsonl` へ自動フォールバックすること
-- [x] `make generate` 実行時に新しい `data/work/entries.jsonl` が作成され、`make build` がそれを読み込んでビルドすること
-- [x] `make check` がすべて成功すること
+- [x] `freepwing_build_entries.pl` 内で内部リンクのラベルに含まれる改行をスペースへ置換すること
+- [x] `add_body_ops` 内で `$in_reference` フラグにより修飾実行中の `add_newline()` 呼出をガードすること
+- [x] ツールチェーンの Docker イメージ（`wikiepwing-toolchain:dev`）が更新されること
 
 ## 結果
 
-- `Makefile` の `ENTRIES` 変数定義を改修し、`data/work/entries.jsonl` または既存の `data/work/entries-mini.jsonl` を自動検出・使用するように改善。
-- 1,485件の全テストおよび `make check` を通過。
+- 内部リンク内での改行呼出による `modifier not terminated before newline` エラーを完全に防ぐ二重安全回路を実装。
 
 ## 非対象
 
-- 他の無関係な変数の変更
+- 他の非ツールチェーンファイルの変更

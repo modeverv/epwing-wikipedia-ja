@@ -6,6 +6,7 @@ IMAGE_PLAN ?= data/work/image-plan.json
 FETCH_REPORT ?= data/reports/image-fetch-report.json
 ORIGINALS_DIR ?= data/work/image-originals
 GRAPHICS_DIR ?= data/work/graphics
+GAIJI_DIR ?= data/work/gaiji
 OUTPUT_ENTRIES ?= data/work/entries.jsonl
 DEFAULT_ENTRIES = $(if $(wildcard $(OUTPUT_ENTRIES)),$(OUTPUT_ENTRIES),$(if $(wildcard data/work/entries-mini.jsonl),data/work/entries-mini.jsonl,$(OUTPUT_ENTRIES)))
 ENTRIES ?= $(DEFAULT_ENTRIES)

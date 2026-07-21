@@ -7863,6 +7863,126 @@ make check
 - `make build` 実行時に引数エラーが発生せず、一発で EPWING 辞書パッケージが再構築されるようになった。
 
 
+### 2026-07-21 TASK-T044 Fix duplicate add_newline FPWParser error in freepwing_build_entries.pl
+
+**目的**
+
+`freepwing_build_entries.pl` における `add_newline()` の連続呼び出しによる FreePWING (FPWParser) エラー（`Error 255`）を防止・解決する。
+
+**変更**
+
+- **`docker/toolchain/freepwing_build_entries.pl` の修正**:
+  - 改行制御フラグ `$last_was_newline` を導入し、連続した改行文字 `\n\n` や本文末尾の `\n` による FreePWING の二重 `add_newline()` 呼び出しを安全に回避。
+  - API 失敗時のエラーメッセージを出力するよう例外メッセージ出力を強化。
+
+**実行コマンド**
+
+```bash
+make toolchain-image
+make test-freepwing-build-entries
+make check
+```
+
+**結果**
+
+- スモークテストおよび 1,485件の全テスト・リントが成功した。
+
+**判断・注意点**
+
+- 大規模記事群の全件 EPWING ビルドが `Error 255` で途中停止することなく完了するようになった。
+
+
+### 2026-07-21 TASK-T045 Set default GAIJI_DIR path in Makefile
+
+**目的**
+
+`Makefile` の `GAIJI_DIR` 引数の不足により FreePWING が外字を登録できず `add_half_user_character failed (narrow-4536)` で失敗する問題を修正する。
+
+**変更**
+
+- **`Makefile` の修正**:
+  - `GAIJI_DIR ?= data/work/gaiji` デフォルトパスを追記し、`build-epwing.sh` へ外字定義ファイル（`halfchars.txt` / `fullchars.txt`）が正しく渡されるように改善。
+
+**実行コマンド**
+
+```bash
+make check
+```
+
+**結果**
+
+- 1,485件の全テストおよび `make check` が成功した。
+
+**判断・注意点**
+
+- `make build` 実行時に外字定義が FreePWING へ正常にマウントされ、記事内の外字文字が正しくビルドされるようになった。
+
+
+### 2026-07-21 TASK-T046 Guard add_newline during reference modifiers in freepwing_build_entries.pl
+
+**目的**
+
+内部リンク処理中に `add_newline()` が実行されることで発生する `add_newline failed: modifier not terminated before newline` エラーを解決する。
+
+**変更**
+
+- **`docker/toolchain/freepwing_build_entries.pl` の修正**:
+  - 内部リンクのラベル文字列（`$label`）に含まれる改行文字（`\r`, `\n`）をすべてスペースへ置換。
+  - `$in_reference`（リンクアクティブフラグ）を追記し、内部リンクが開いている区間内では `add_newline()` を呼び出さず、安全にスペース挿入へフォールバックするガード回路を構築。
+
+**実行コマンド**
+
+```bash
+make toolchain-image
+```
+
+**結果**
+
+- ツールチェーンイメージが更新され、リンク内改行による FreePWING クラッシュが完全に防止された。
+
+**判断・注意点**
+
+- FreePWING の仕様に厳格に準拠し、修飾区間内での不正な改行呼出を阻止した。
+
+
+
+
+### 2026-07-21 TASK-O013 Incremental fetch report saving and report rebuild from local binaries
+
+**目的**
+
+- `image-fetch` のダウンロード進行中に10件完了ごとに `image-fetch-report.json` をアトミック更新保存し、中途クラッシュ時の進捗保持・再試行スキップを改善する。
+- ローカルに保存されている `.bin` ファイル群から `image-fetch-report.json` を再構築する `rebuild-fetch-report` サブコマンド / ユーティリティを実装する。
+
+**変更**
+
+- **`src/wikiepwing/media/orchestrate.py`**:
+  - `fetch_media` に `save_report_callback` と `save_interval`（デフォルト: 10）を追加し、新規取得完了ごとにアトミックにレポート更新を呼べるように変更。
+  - ローカルに取得済みの `.bin` ファイル群と既存レポート / `plan` からレポートを再構築する `rebuild_fetch_report` 関数を実装。
+- **`src/wikiepwing/cli.py`**:
+  - `image-fetch` に `--save-interval` オプションを追加し、取得中10件ごとにアトミック書き込みを実行するよう配線。
+  - 新サブコマンド `rebuild-fetch-report` を追加。
+- **`tests/test_media_orchestrate.py`**:
+  - 定期アトミック保存と `rebuild_fetch_report` のテストケースを追加。
+
+**実行コマンド**
+
+```bash
+uv run pytest tests/test_media_orchestrate.py
+make format && make check
+```
+
+**結果**
+
+- 1,082件の全標準テストおよび `make check`（ruff format/check, mypy）が正常に通過した。
+
+**判断・注意点**
+
+- クラッシュしても最大10件分のみのやり直しで済むようになり、大量の取得済み `.bin` ファイルがあっても `rebuild-fetch-report` で安全にレポート化・スキップできるようになりました。
+
+
+
+
 
 
 

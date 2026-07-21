@@ -487,3 +487,53 @@ def test_fetch_media_skips_already_fetched_urls() -> None:
     assert outcomes[0] == cached_outcome
     assert outcomes[1].source_url == "https://example.org/new.png"
     assert downloader.calls == ["https://example.org/new.png"]
+
+
+def test_fetch_media_saves_report_periodically() -> None:
+    urls = [f"https://example.org/{i}.png" for i in range(25)]
+    downloader = _FakeDownloader(
+        results_by_url={
+            url: MediaDownloadResult(content=_png_bytes(), content_type="image/png") for url in urls
+        }
+    )
+    plan = tuple(MediaPlanEntry(page_id=i, media=_media(url)) for i, url in enumerate(urls))
+    saved_counts: list[int] = []
+
+    fetch_media(
+        plan,
+        downloader=downloader,  # type: ignore[arg-type]
+        max_pixels=10_000,
+        allow_svg=True,
+        save_interval=10,
+        save_report_callback=lambda current: saved_counts.append(len(current)),
+    )
+
+    assert saved_counts == [10, 20, 25]
+
+
+def test_rebuild_fetch_report_preserves_existing_outcomes(tmp_path: Path) -> None:
+    from wikiepwing.media.orchestrate import rebuild_fetch_report, write_fetch_report
+
+    originals_dir = tmp_path / "originals"
+    originals_dir.mkdir()
+    (originals_dir / "hash1.bin").write_bytes(_png_bytes())
+
+    report_path = tmp_path / "report.json"
+    plan = (MediaPlanEntry(page_id=1, media=_media("https://example.org/a.png")),)
+
+    existing = (
+        FetchOutcome(
+            source_url="https://example.org/a.png",
+            content=_png_bytes(),
+            content_hash="hash1",
+            detected_format="png",
+            error=None,
+        ),
+    )
+    write_fetch_report(existing, originals_dir=originals_dir, report_path=report_path)
+
+    rebuilt = rebuild_fetch_report(plan, originals_dir=originals_dir, report_path=report_path)
+
+    assert len(rebuilt) == 1
+    assert rebuilt[0].source_url == "https://example.org/a.png"
+    assert rebuilt[0].ok is True

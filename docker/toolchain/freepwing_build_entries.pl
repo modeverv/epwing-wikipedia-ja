@@ -124,6 +124,7 @@ sub body_to_ops {
             push @ops, ['g', $3];
         } else {
             my ($target, $label) = ($1, $2);
+            $label =~ s/[\r\n]+/ /g;
             push @ops, ['s', ''];
             push @ops, @{plain_text_to_ops($label)};
             push @ops, ['r', $target];
@@ -140,45 +141,69 @@ sub body_to_ops {
 # demonstrates both real API calls).
 sub add_body_ops {
     my ($writer, $ops) = @_;
+    my $last_was_newline = 0;
+    my $in_reference = 0;
     for my $op (@{$ops}) {
         my ($kind, $payload) = @{$op};
         if ($kind eq 'h') {
-            $writer->add_half_user_character($payload) or die $writer->error_message(), "\n";
+            $writer->add_half_user_character($payload)
+                or die "add_half_user_character failed ($payload): " . ($writer->error_message() // '') . "\n";
+            $last_was_newline = 0;
         } elsif ($kind eq 'f') {
-            $writer->add_full_user_character($payload) or die $writer->error_message(), "\n";
+            $writer->add_full_user_character($payload)
+                or die "add_full_user_character failed ($payload): " . ($writer->error_message() // '') . "\n";
+            $last_was_newline = 0;
         } elsif ($kind eq 's') {
-            $writer->add_reference_start() or die $writer->error_message(), "\n";
+            $writer->add_reference_start()
+                or die "add_reference_start failed: " . ($writer->error_message() // '') . "\n";
+            $last_was_newline = 0;
+            $in_reference = 1;
         } elsif ($kind eq 'r') {
-            $writer->add_reference_end($payload) or die $writer->error_message(), "\n";
+            $writer->add_reference_end($payload)
+                or die "add_reference_end failed ($payload): " . ($writer->error_message() // '') . "\n";
+            $last_was_newline = 0;
+            $in_reference = 0;
         } elsif ($kind eq 'g') {
-            $writer->add_color_graphic_start($payload) or die $writer->error_message(), "\n";
-            $writer->add_color_graphic_end() or die $writer->error_message(), "\n";
+            $writer->add_color_graphic_start($payload)
+                or die "add_color_graphic_start failed ($payload): " . ($writer->error_message() // '') . "\n";
+            $writer->add_color_graphic_end()
+                or die "add_color_graphic_end failed: " . ($writer->error_message() // '') . "\n";
+            $last_was_newline = 0;
         } else {
             my @lines = split(/\n/, $payload, -1);
             for my $i (0 .. $#lines) {
                 if (length($lines[$i]) > 0) {
-                    $writer->add_text($lines[$i]) or die $writer->error_message(), "\n";
+                    $writer->add_text($lines[$i])
+                        or die "add_text failed: " . ($writer->error_message() // '') . "\n";
+                    $last_was_newline = 0;
                 }
                 if ($i < $#lines) {
-                    $writer->add_newline() or die $writer->error_message(), "\n";
+                    if ($in_reference) {
+                        $writer->add_text(" ")
+                            or die "add_text failed inside reference: " . ($writer->error_message() // '') . "\n";
+                        $last_was_newline = 0;
+                    } elsif (!$last_was_newline) {
+                        $writer->add_newline()
+                            or die "add_newline failed: " . ($writer->error_message() // '') . "\n";
+                        $last_was_newline = 1;
+                    }
                 }
             }
         }
     }
+    return $last_was_newline;
 }
 
 # Progress is time-bounded rather than count-bounded: entry sizes vary by
-# orders of magnitude, so "every N entries" is either spam or silence
-# depending on the corpus. Every $PROGRESS_CHECK_EVERY entries the clock is
-# checked (cheap), and a line is emitted at most every $PROGRESS_SECONDS.
-# $| = 1 so it's never buffered and delayed behind the loop's own work.
+# orders of magnitude, so tracking processed counts would give misleading
+# output.
 $| = 1;
-my $PROGRESS_SECONDS = 2;
+my $PROGRESS_SECONDS = 10;
 my $PROGRESS_CHECK_EVERY = 1000;
 
 my $input_path = $ARGV[0] // 'entries.jsonl';
 my $input_size = -s $input_path;
-die "cannot stat $input_path: $!\n" if !defined $input_size;
+die "input file is empty: $input_path\n" if !$input_size;
 
 # Worker count: WIKIEPWING_PARSE_JOBS overrides, else every online CPU.
 # Small inputs (the smoke fixtures) stay single-process -- forking 16 workers
@@ -355,22 +380,24 @@ for my $spool_path (@spools) {
             or die "truncated spool record in $spool_path\n";
         my $entry = thaw($frozen);
 
-        $text->new_entry() or die $text->error_message(), "\n";
-        $heading->new_entry() or die $heading->error_message(), "\n";
-        $heading->add_text($entry->{title}) or die $heading->error_message(), "\n";
+        $text->new_entry() or die "text->new_entry failed for tag $entry->{tag}: " . ($text->error_message() // '') . "\n";
+        $heading->new_entry() or die "heading->new_entry failed for tag $entry->{tag}: " . ($heading->error_message() // '') . "\n";
+        $heading->add_text($entry->{title}) or die "heading->add_text failed for tag $entry->{tag}: " . ($heading->error_message() // '') . "\n";
 
         if (!defined $first_heading_pos) {
             $first_heading_pos = $heading->entry_position();
             $first_text_pos = $text->entry_position();
         }
 
-        $text->add_tag($entry->{tag}) or die $text->error_message(), "\n";
-        $text->add_text($entry->{title}) or die $text->error_message(), "\n";
-        $text->add_newline() or die $text->error_message(), "\n";
+        $text->add_tag($entry->{tag}) or die "text->add_tag failed for tag $entry->{tag}: " . ($text->error_message() // '') . "\n";
+        $text->add_text($entry->{title}) or die "text->add_text failed for tag $entry->{tag}: " . ($text->error_message() // '') . "\n";
+        $text->add_newline() or die "text->add_newline failed for tag $entry->{tag}: " . ($text->error_message() // '') . "\n";
 
         if (@{$entry->{body_ops}}) {
-            add_body_ops($text, $entry->{body_ops});
-            $text->add_newline() or die $text->error_message(), "\n";
+            my $ends_with_newline = add_body_ops($text, $entry->{body_ops});
+            if (!$ends_with_newline) {
+                $text->add_newline() or die "text->add_newline failed for tag $entry->{tag}: " . ($text->error_message() // '') . "\n";
+            }
         }
 
         my %seen_in_entry;
