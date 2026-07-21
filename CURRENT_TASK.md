@@ -2,11 +2,11 @@
 
 ## Task ID
 
-TASK-T046
+TASK-T047
 
 ## 目的
 
-FreePWING の仕様上、内部リンク修飾 (`add_reference_start`) がアクティブな最中に `add_newline()` が呼ばれると発生する `modifier not terminated before newline` エラーを防止するため、リンクラベル内の改行をスペースへ変換し、リンク処理中の `add_newline()` 呼び出しをガードする。
+`mini_layout.py` の `ImageBlock` レンダリングにおいて、ローカルBMP埋め込み画像が存在しない場合のフォールバックとして `【画像|URL】` を出力するように改修し、Emacs Lookup (`lookup-image-url.el`) によるWebインライン画像の自動取得・表示に対応する。
 
 ## 事前条件
 
@@ -17,26 +17,29 @@ FreePWING の仕様上、内部リンク修飾 (`add_reference_start`) がアク
 
 ## 変更予定ファイル
 
-- `docker/toolchain/freepwing_build_entries.pl`
+- `src/wikiepwing/render/mini_layout.py`
+- `tests/test_render_mini_layout.py`
 - `CURRENT_TASK.md`
 
 ## 実行予定コマンド
 
 ```bash
-make toolchain-image
-make build MODEL_DB=data/work/model-diff-ram8.sqlite3
+make generate MODEL_DB=data/work/model-diff-ram8.sqlite3 FORCE=1
+make check
 ```
 
 ## 完了条件
 
-- [x] `freepwing_build_entries.pl` 内で内部リンクのラベルに含まれる改行をスペースへ置換すること
-- [x] `add_body_ops` 内で `$in_reference` フラグにより修飾実行中の `add_newline()` 呼出をガードすること
-- [x] ツールチェーンの Docker イメージ（`wikiepwing-toolchain:dev`）が更新されること
+- [x] `_RenderContext` に `urls_by_media_id` を保持させること
+- [x] `ImageBlock` でローカルBMP変換画像が存在しない場合、画像URLがあれば `【画像|URL】` 形式のフォールバックを出力すること
+- [x] 対応する単体テスト（`test_unavailable_image_falls_back_to_url_when_media_reference_exists`）を追加しパスすること
+- [x] `make check`（全1,485テスト）がパスすること
 
 ## 結果
 
-- 内部リンク内での改行呼出による `modifier not terminated before newline` エラーを完全に防ぐ二重安全回路を実装。
+- `mini_layout.py` を改修し、未埋め込み画像について `【画像|URL】` 形式で出力する機能を追加。
+- `lookup-image-url.el` のパターンに完全適合し、Lookup バッファ上でのインラインWeb画像自動描画に対応。
 
 ## 非対象
 
-- 他の非ツールチェーンファイルの変更
+- 他のレンダラファイルの変更

@@ -93,6 +93,7 @@ def render_article_to_entry(
         graphic_names_by_media_id=graphic_names_by_media_id or {},
         graphic_names_by_url=graphic_names_by_url,
         captions_by_media_id={media.media_id: media.caption for media in article.media},
+        urls_by_media_id={media.media_id: media.source_url for media in article.media},
     )
     numberer = _HeadingNumberer()
     for block in article.blocks:
@@ -157,6 +158,7 @@ class _RenderContext:
     graphic_names_by_media_id: dict[str, str]
     graphic_names_by_url: dict[str, str]
     captions_by_media_id: dict[str, str | None]
+    urls_by_media_id: dict[str, str]
 
 
 def _render_block(
@@ -214,6 +216,9 @@ def _render_block(
         caption = context.captions_by_media_id.get(block.media_id) or block.alt_text or "画像"
         graphic_name = context.graphic_names_by_media_id.get(block.media_id)
         if graphic_name is None:
+            media_url = context.urls_by_media_id.get(block.media_id)
+            if media_url:
+                return [f"{prefix}【画像|{media_url}】", ""]
             return [f"{prefix}[画像: {caption}]", ""]
         return [f"{prefix}\x1eG:{graphic_name}\x1f", f"{prefix}{caption}", ""]
     if isinstance(block, TableBlock):
@@ -318,7 +323,7 @@ def _flatten_table_cell(cell: TableCell) -> str:
             for line in _render_block(
                 child,
                 _HeadingNumberer(),
-                context=_RenderContext({}, {}, {}),
+                context=_RenderContext({}, {}, {}, {}),
                 indent=0,
             )
             if _safe_strip(line)

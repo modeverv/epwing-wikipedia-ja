@@ -105,6 +105,32 @@ def test_unavailable_image_falls_back_to_alt_text() -> None:
     )
 
 
+def test_unavailable_image_falls_back_to_url_when_media_reference_exists() -> None:
+    media_url = "https://upload.wikimedia.org/wikipedia/commons/9/9e/Flag_of_Japan.svg"
+    article = _make_article(
+        blocks=(ImageBlock(media_id="flag_id", alt_text="国旗"),),
+        media=(
+            MediaReference(
+                media_id="flag_id",
+                source_url=media_url,
+                source_name="flag.svg",
+                alt_text="国旗",
+                caption="日本の国旗",
+                role="lead",
+                source_width=None,
+                source_height=None,
+            ),
+        ),
+    )
+
+    entry = render_article_to_entry(article)
+
+    assert entry.graphics == ()
+    assert f"【画像|{media_url}】" in "".join(
+        node.text for node in entry.body if isinstance(node, TextRenderNode)
+    )
+
+
 def test_headwords_include_title_and_aliases() -> None:
     article = _make_article(aliases=(Alias(title="GNU Emacs", source="redirect", confidence=1.0),))
 
