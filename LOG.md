@@ -7947,6 +7947,32 @@ make toolchain-image
 
 
 
+### 2026-07-22 TASK-T049 Exact-match candidates, reading headings, and Lookup comparison
+
+**目的**
+
+`日本`の完全一致検索で括弧付き同名記事も候補に残し、候補を読み付きの固有見出しで識別できるようにする。Bookends版との固定クエリ比較およびLookup.elの検索方式契約も自動化する。
+
+**変更**
+
+- 括弧付き記事へ括弧前の基底タイトルをaliasとして追加した。
+- Wikipedia導入部に明記されたかな読みだけを抽出し、`記事名〔よみ〕` を表示見出しにした。
+- FreePWINGのEUC-JP正規化後キーと本文位置の組で重複word2を除去した。異なる記事位置の同じキーは維持する。
+- EB検索補助をexact/word/endword/keyword/crossへ拡張した。
+- `日本`、`にほん`、`にっぽん`、`Japan` のexact/prefix/keyword query setと候補重複率・同順位一致率を追加した。
+- 実際のLookupソースを読み、通常入力=exact、`語*`=prefix、`@語`=keyword/crossであることを検証するテストを追加した。
+
+**実行コマンドと結果**
+
+```bash
+uv run pytest <対象9ファイル>             # 134 passed
+make test-freepwing-build-entries          # passed; 日本 exact=3 distinct positions
+make check                                 # 1499 passed; ruff/mypy passed
+make generate MODEL_DB=data/work/model-n1.sqlite3 FORCE=1
+```
+
+全件generateはモデル読み出しを完了後、本文レンダリングが数時間規模と判明したため手動中断した。アトミック出力により既存18GBの`entries.jsonl`と`output/`は変更されていない。新しい全件辞書を得るには同じgenerateを完走後、`make build MODEL_DB=data/work/model-n1.sqlite3`を実行する。
+
 ### 2026-07-21 TASK-O013 Incremental fetch report saving and report rebuild from local binaries
 
 **目的**
@@ -7979,7 +8005,6 @@ make format && make check
 **判断・注意点**
 
 - クラッシュしても最大10件分のみのやり直しで済むようになり、大量の取得済み `.bin` ファイルがあっても `rebuild-fetch-report` で安全にレポート化・スキップできるようになりました。
-
 
 
 

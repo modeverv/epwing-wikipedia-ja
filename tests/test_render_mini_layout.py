@@ -142,6 +142,20 @@ def test_headwords_include_title_and_aliases() -> None:
     assert "別名: GNU Emacs" in body_node.text
 
 
+def test_entry_heading_includes_reading_extracted_from_lead() -> None:
+    article = _make_article(
+        title="日本 (アルバム)",
+        normalized_title="日本 (アルバム)",
+        blocks=(
+            ParagraphBlock(inlines=(TextInline(value="『日本』（にほん／にっぽん）はアルバム。"),)),
+        ),
+    )
+
+    entry = render_article_to_entry(article)
+
+    assert entry.heading == "日本 (アルバム)〔にほん〕"
+
+
 def test_headings_are_numbered_with_sibling_and_nesting_rules() -> None:
     article = _make_article(
         blocks=(

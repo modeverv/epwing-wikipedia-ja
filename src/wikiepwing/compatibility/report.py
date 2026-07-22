@@ -45,6 +45,7 @@ def build_compatibility_report(
             "target_coverage": summary.target_coverage,
             "false_positive_count": summary.false_positive_count,
             "overlap_at_n_mean": summary.overlap_at_n_mean,
+            "rank_agreement_at_n_mean": summary.rank_agreement_at_n_mean,
         },
         "thresholds": {
             "min_target_coverage": evaluation.config.min_target_coverage,
@@ -83,6 +84,8 @@ def _render_html(payload: dict[str, object]) -> str:
 
     overlap = queries["overlap_at_n_mean"]
     overlap_text = f"{overlap:.3f}" if overlap is not None else "n/a"
+    rank_agreement = queries["rank_agreement_at_n_mean"]
+    rank_agreement_text = f"{rank_agreement:.3f}" if rank_agreement is not None else "n/a"
 
     return f"""<!doctype html>
 <html lang="en">
@@ -116,6 +119,7 @@ td, th {{ border: 1px solid #ccc; padding: 0.25rem 0.5rem; text-align: left; }}
 <tr><th>target_coverage</th><td>{queries["target_coverage"]:.3f}</td></tr>
 <tr><th>false_positive_count</th><td>{_escape(queries["false_positive_count"])}</td></tr>
 <tr><th>overlap_at_n_mean</th><td>{overlap_text}</td></tr>
+<tr><th>rank_agreement_at_n_mean</th><td>{rank_agreement_text}</td></tr>
 </table>
 <h2>Thresholds</h2>
 <table>

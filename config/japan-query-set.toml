@@ -1,0 +1,24 @@
+schema_version = 1
+identifier = "boookends-japan-candidates-v1"
+search_modes = ["exact", "word", "keyword"]
+max_results_per_query = 100
+
+[[queries]]
+key = "japan_kanji"
+text = "日本"
+expected_presence = true
+
+[[queries]]
+key = "japan_hiragana"
+text = "にほん"
+expected_presence = true
+
+[[queries]]
+key = "japan_hiragana_alt"
+text = "にっぽん"
+expected_presence = true
+
+[[queries]]
+key = "japan_latin"
+text = "Japan"
+expected_presence = true

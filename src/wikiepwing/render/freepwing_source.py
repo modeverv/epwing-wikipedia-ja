@@ -91,6 +91,12 @@ def write_entries_jsonl_stream(
                     page_id=entry.page_id,
                     title=entry.title,
                 )
+                record["heading"] = embed_title_fallback(
+                    cast(str, record["heading"]),
+                    tracker=tracker,
+                    page_id=entry.page_id,
+                    title=entry.title,
+                )
                 record["aliases"] = [
                     embed_title_fallback(
                         alias, tracker=tracker, page_id=entry.page_id, title=entry.title
@@ -151,6 +157,7 @@ def _entry_record(entry: RenderedEntry) -> dict[str, object]:
     return {
         "tag": entry.entry_id,
         "title": entry.title,
+        "heading": entry.heading or entry.title,
         "aliases": aliases,
         "keywords": list(entry.keywords),
         "body": body_text,

@@ -78,6 +78,25 @@ def test_title_terms_include_article_title() -> None:
     assert terms[0].target_page_id == 1
 
 
+def test_parenthesized_title_gets_base_title_alias_for_exact_search() -> None:
+    article = _make_article(title="日本 (アルバム)", normalized_title="日本 (アルバム)")
+
+    terms = title_terms_for_article(article)
+
+    base_terms = [term for term in terms if term.source == "parenthetical_base_title"]
+    assert [(term.key, term.kind, term.target_page_id) for term in base_terms] == [
+        ("日本", "alias", article.page_id)
+    ]
+
+
+def test_non_suffix_parentheses_do_not_create_a_base_title_alias() -> None:
+    article = _make_article(title="Foo (bar) baz", normalized_title="Foo (bar) baz")
+
+    terms = title_terms_for_article(article)
+
+    assert not any(term.source == "parenthetical_base_title" for term in terms)
+
+
 def test_title_terms_include_redirect_aliases() -> None:
     article = _make_article(
         aliases=(

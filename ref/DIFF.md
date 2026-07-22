@@ -43,8 +43,8 @@
 | subbook | 1 | 1 |
 | word | あり | あり |
 | endword | あり | あり |
-| keyword | あり | なし |
-| cross | あり | なし |
+| keyword | あり | あり |
+| cross | あり | あり |
 | menu / copyright | あり | なし |
 
 ### `word 日本`の上位25行
@@ -84,9 +84,7 @@
 - 配布版では`ニッポニア (小惑星)`が先頭だが、今回版の対応候補は`(727) ニッポニア`で10位だった。Wikipedia snapshotの版差による記事名変更も含まれる。
 - 今回版は同じ見出し・本文位置が複数回返る重複が上位を多く占める。
 - 今回版では`P&Gプレステージ`、`セントラル・タンクターミナル`など、見出しだけでは`日本`との関係が分からない候補も上位25件に入る。redirect/alias由来かを追加調査する必要がある。
-- 配布版はkeyword/cross検索能力を持つが、今回版にはない。Lookup上の候補差に影響する可能性がある。
-- heading/infobox keywordとcross componentのterm抽出コードは存在するが、現行generateはtitle/redirect系だけをFreePWINGへ渡している。したがって抽出済みであることとEPWING backendがkeyword/crossを宣言することは別である。
-- 本文内referenceを持つ実FreePWING smokeでも`ebinfo`は`word endword`だけを宣言した。本文リンク対応だけでcross search対応になったとは扱わない。（TASK-T034）
+- TASK-T033/T034以降、今回版もkeyword/cross検索能力を宣言する。現在のLookup差は、検索能力の有無ではなく、通常入力がexactを選ぶこと、共有headword、表示見出し、読み、順位の差として扱う。
 - 今回版の検索候補不足は単純な記事欠落ではなく、読み表示、順位付け、重複、alias/redirect、検索能力の組み合わせによる差である。
 
 ## 差分とTODO
@@ -161,13 +159,25 @@
 **TODO**
 
 - [ ] LookupでWikipedia辞書だけを有効にし、同じ検索方式・同じqueryで結果件数と上位候補を採取する。
-- [ ] Lookupが各版に対して完全一致、前方一致、後方一致、条件検索のどれを呼び出しているか確認する。
-- [ ] 完全一致、前方一致、後方一致、かな読み、別名の検索方式を分けて比較する。
-- [ ] `日本`、`にほん`、`にっぽん`、`にほんこく`、`Japan`を固定比較queryにする。
+- [x] Lookupが通常入力でexact、`語*`でprefix/word、`@語`でkeyword+crossを呼ぶことをLookup.el/ndeb.elのコードと自動検査で確認する。（TASK-T049）
+- [x] exact、prefix/word、keywordの検索方式を分けて比較できるEB検索器へ拡張する。（TASK-T049）
+- [x] `日本`、`にほん`、`にっぽん`、`Japan`を固定比較queryにする。（TASK-T049、`config/japan-query-set.toml`）
 - [ ] 配布版と今回版の上位N件、重複、欠落、順位差を機械可読なレポートに保存する。
 - [ ] 配布版で`日本`からヒットした各Wikipedia項目について、見出し・読み・キーワード・カテゴリ・本文のどの索引が一致したか調査する。
-- [ ] redirect、記事名の読み、見出し語、情報ボックス語、カテゴリ語のどれを索引へ含めるか再評価する。
+- [x] 括弧付き同名記事の基底タイトルを共有headwordへ追加し、導入部で明示された読みを表示見出しへ付与する。（TASK-T049）
+- [x] EUC-JP変換・FreePWING正規化後の同一検索キー・同一本文位置を登録前に除去する。（TASK-T049）
+- [ ] カテゴリ語を通常word索引へ含めるか再評価する。
 - [ ] 今回版の空検索語skip、共有headword、索引拒否を検索品質レポートへ統合する。
+
+### 2026-07-22 TASK-T049再測定
+
+同一EB Library検索器をexact/word/keyword対応へ拡張し、既存成果物を再測定した。
+
+- 配布版の`exact 日本`は上限10件中7件、修正前の今回版ZIPは1件だった。
+- 配布版は4固定queryすべてについてexact/word/keywordで候補を返した。
+- 修正後の実FreePWING 6記事fixtureでは`exact 日本`が異なる本文位置の3件を返し、表示見出しは`日本〔にほんこく〕`、`日本 (アルバム)〔にほん〕`、`日本 (新聞)〔にっぽん〕`となった。
+- 同じ記事内の`日本`と`日 本`はFreePWING正規化後に1索引へ統合された。
+- 全件ZIPは修正前のため、Lookupでの最終確認にはTASK-T049後の`make generate`と`make build`が必要である。
 
 ### 5. 記事メタデータとナビゲーション
 

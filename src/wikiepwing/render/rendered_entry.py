@@ -31,6 +31,7 @@ class RenderedEntry:
     estimated_size: int
     diagnostics: tuple[Diagnostic, ...]
     keywords: tuple[str, ...] = ()
+    heading: str | None = None
 
     def __post_init__(self) -> None:
         if not self.entry_id:
@@ -39,5 +40,7 @@ class RenderedEntry:
             raise RenderedEntryError(f"page_id must be positive: {self.page_id!r}")
         if not self.title:
             raise RenderedEntryError("title must be a non-empty string")
+        if self.heading is not None and not self.heading:
+            raise RenderedEntryError("heading must be non-empty when present")
         if self.estimated_size < 0:
             raise RenderedEntryError(f"estimated_size must be >= 0: {self.estimated_size!r}")

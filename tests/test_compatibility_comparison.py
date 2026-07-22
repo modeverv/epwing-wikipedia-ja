@@ -78,6 +78,17 @@ def test_overlap_at_n_computed_by_heading_intersection() -> None:
     assert summary.per_query[0].overlap_at_n == pytest.approx(2 / 3)
 
 
+def test_rank_agreement_distinguishes_same_candidates_in_different_order() -> None:
+    reference = [_hit_set("japan_exact", True, ("日本", "日本 (アルバム)", "日本 (新聞)"))]
+    candidate = [_hit_set("japan_exact", True, ("日本", "日本 (新聞)", "日本 (アルバム)"))]
+
+    summary = compare_query_results(reference, candidate)
+
+    assert summary.per_query[0].overlap_at_n == 1.0
+    assert summary.per_query[0].rank_agreement_at_n == pytest.approx(1 / 3)
+    assert summary.rank_agreement_at_n_mean == pytest.approx(1 / 3)
+
+
 def test_overlap_at_n_is_none_when_reference_headings_are_empty() -> None:
     reference = [_hit_set("q1", False, ())]
     candidate = [_hit_set("q1", False, ())]
@@ -86,6 +97,7 @@ def test_overlap_at_n_is_none_when_reference_headings_are_empty() -> None:
 
     assert summary.per_query[0].overlap_at_n is None
     assert summary.overlap_at_n_mean is None
+    assert summary.rank_agreement_at_n_mean is None
 
 
 def test_overlap_at_n_mean_averages_over_queries_with_a_defined_overlap() -> None:
@@ -120,6 +132,7 @@ def test_empty_reference_yields_zero_total_and_zero_coverage() -> None:
     assert summary.target_coverage == 0.0
     assert summary.false_positive_count == 0
     assert summary.overlap_at_n_mean is None
+    assert summary.rank_agreement_at_n_mean is None
     assert summary.per_query == ()
 
 

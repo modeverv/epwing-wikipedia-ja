@@ -164,8 +164,10 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
     validate_reference_root(argv[1]);
-    if (strcmp(argv[2], "word") != 0 && strcmp(argv[2], "endword") != 0) {
-        fail_message("search mode must be word or endword");
+    if (strcmp(argv[2], "exact") != 0 && strcmp(argv[2], "word") != 0
+        && strcmp(argv[2], "endword") != 0 && strcmp(argv[2], "keyword") != 0
+        && strcmp(argv[2], "cross") != 0) {
+        fail_message("search mode must be exact, word, endword, keyword, or cross");
     }
     validate_query(argv[3]);
     max_results = parse_max_results(argv[4]);
@@ -218,10 +220,19 @@ int main(int argc, char **argv) {
         if (error_code != EB_SUCCESS) {
             fail_eb("eb_subbook_title", error_code);
         }
-        if (strcmp(argv[2], "word") == 0) {
+        if (strcmp(argv[2], "exact") == 0) {
+            error_code = eb_search_exactword(&book, encoded_query);
+        } else if (strcmp(argv[2], "word") == 0) {
             error_code = eb_search_word(&book, encoded_query);
-        } else {
+        } else if (strcmp(argv[2], "endword") == 0) {
             error_code = eb_search_endword(&book, encoded_query);
+        } else {
+            const char *input_words[] = {encoded_query, NULL};
+            if (strcmp(argv[2], "keyword") == 0) {
+                error_code = eb_search_keyword(&book, input_words);
+            } else {
+                error_code = eb_search_cross(&book, input_words);
+            }
         }
         if (error_code != EB_SUCCESS) {
             fail_eb("eb_search", error_code);

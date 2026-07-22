@@ -7,6 +7,7 @@ import pytest
 from wikiepwing.reference.queries import QuerySetError, load_query_set
 
 QUERY_SET = Path(__file__).parents[1] / "config" / "query-set.toml"
+JAPAN_QUERY_SET = Path(__file__).parents[1] / "config" / "japan-query-set.toml"
 
 
 def test_fixed_query_set_matches_phase_two_contract() -> None:
@@ -41,6 +42,20 @@ def test_fixed_query_set_matches_phase_two_contract() -> None:
     ]
     assert len(query_set.sha256) == 64
     assert query_set.source_path == QUERY_SET.resolve()
+
+
+def test_japan_candidate_query_set_covers_lookup_search_contract() -> None:
+    query_set = load_query_set(JAPAN_QUERY_SET)
+
+    assert query_set.identifier == "boookends-japan-candidates-v1"
+    assert query_set.search_modes == ("exact", "word", "keyword")
+    assert [query.text for query in query_set.queries] == [
+        "日本",
+        "にほん",
+        "にっぽん",
+        "Japan",
+    ]
+    assert all(query.expected_presence for query in query_set.queries)
 
 
 @pytest.mark.parametrize(

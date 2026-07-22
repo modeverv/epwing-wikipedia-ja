@@ -51,6 +51,7 @@ from wikiepwing.render.render_node import (
     TextRenderNode,
 )
 from wikiepwing.render.rendered_entry import RenderedEntry
+from wikiepwing.search.reading import reading_for_article
 
 
 def render_article_to_entry(
@@ -131,7 +132,13 @@ def render_article_to_entry(
         estimated_size=sum(_render_node_size(node) for node in body),
         diagnostics=article.diagnostics,
         keywords=keywords or (),
+        heading=_display_heading(article),
     )
+
+
+def _display_heading(article: Article) -> str:
+    reading = reading_for_article(article)
+    return article.title if reading is None else f"{article.title}〔{reading}〕"
 
 
 class _HeadingNumberer:

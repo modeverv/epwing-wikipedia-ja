@@ -37,11 +37,25 @@ def test_write_entries_jsonl_writes_one_json_object_per_line(tmp_path: Path) -> 
     assert record == {
         "tag": "p1",
         "title": "Emacs",
+        "heading": "Emacs",
         "aliases": ["GNU Emacs"],
         "keywords": [],
         "body": "line one\nline two",
         "targets": ["p2"],
     }
+
+
+def test_write_entries_jsonl_keeps_search_title_separate_from_display_heading(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "entries.jsonl"
+    entry = _make_entry(heading="日本 (アルバム)〔にほん〕")
+
+    write_entries_jsonl_stream(lambda: (entry,), destination)
+
+    record = json.loads(destination.read_text(encoding="utf-8"))
+    assert record["title"] == "Emacs"
+    assert record["heading"] == "日本 (アルバム)〔にほん〕"
 
 
 def test_write_entries_jsonl_handles_no_aliases_and_no_targets(tmp_path: Path) -> None:

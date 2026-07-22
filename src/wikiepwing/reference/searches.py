@@ -231,7 +231,7 @@ def _run_bounded(
 def _validate_search_request(root: Path, mode: str, query: str, max_results: int) -> None:
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
         raise ReferenceSearchError(f"reference root must be an absolute real directory: {root}")
-    if mode not in {"word", "endword"}:
+    if mode not in {"exact", "word", "endword", "keyword", "cross"}:
         raise ReferenceSearchError(f"unsupported reference search mode: {mode}")
     if not query or query != query.strip() or len(query.encode("utf-8")) > 4096:
         raise ReferenceSearchError("reference query must be trimmed and at most 4096 UTF-8 bytes")

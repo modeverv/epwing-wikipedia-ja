@@ -68,6 +68,42 @@ entries = (
         estimated_size=0,
         diagnostics=(),
     ),
+    RenderedEntry(
+        entry_id="pjapan",
+        page_id=4,
+        title="日本",
+        heading="日本〔にほんこく〕",
+        headwords=("日本", "Japan", "日 本"),
+        body=(TextRenderNode(text="日本の本文。"),),
+        internal_targets=(),
+        graphics=(),
+        estimated_size=0,
+        diagnostics=(),
+    ),
+    RenderedEntry(
+        entry_id="pjapanalbum",
+        page_id=5,
+        title="日本 (アルバム)",
+        heading="日本 (アルバム)〔にほん〕",
+        headwords=("日本 (アルバム)", "日本", "にほん"),
+        body=(TextRenderNode(text="アルバムの本文。"),),
+        internal_targets=(),
+        graphics=(),
+        estimated_size=0,
+        diagnostics=(),
+    ),
+    RenderedEntry(
+        entry_id="pjapanpaper",
+        page_id=6,
+        title="日本 (新聞)",
+        heading="日本 (新聞)〔にっぽん〕",
+        headwords=("日本 (新聞)", "日本", "にっぽん"),
+        body=(TextRenderNode(text="新聞の本文。"),),
+        internal_targets=(),
+        graphics=(),
+        estimated_size=0,
+        diagnostics=(),
+    ),
 )
 write_entries_jsonl_stream(lambda: entries, Path(sys.argv[1]))
 
@@ -98,7 +134,7 @@ docker run --rm \
         perl ./generate_gaiji.pl half16.xbm full16.xbm
         fpwmake 2> "$work/build.stderr" \
             || { cat "$work/build.stderr" >&2; exit 1; }
-        grep -q "headwords duplicated count=1" "$work/build.stderr"
+        grep -q "headwords duplicated count=3" "$work/build.stderr"
         grep -q "headwords skipped reason=word-is-empty count=1" "$work/build.stderr"
         fpwmake catalogs
         test -s work/cgr
@@ -131,6 +167,21 @@ docker run --rm \
         [ "$title_heading" != "$alias_heading" ] \
             || { echo "FAIL: alias resolved to the same heading as an unrelated title" >&2; exit 1; }
 
-        echo "OK: honmon built and searchable for a variable-shaped 3-entry set" \
+        # Lookup plain input uses EB exactword. The shared base headword
+        # must therefore resolve to distinct article positions/headings,
+        # while a space-normalized duplicate in the same entry ("日 本") must
+        # not add a fourth hit.
+        japan_exact=$(/opt/eb/bin/wikiepwing-eb-search "$stage" exact "日本" 10)
+        [ "$(printf "%s\n" "$japan_exact" | grep -c "^R")" -eq 3 ] \
+            || { echo "FAIL: exact 日本 did not return three distinct articles" >&2; printf "%s\n" "$japan_exact" >&2; exit 1; }
+        [ "$(printf "%s\n" "$japan_exact" | grep "^R" | cut -f7,8 | sort -u | wc -l | tr -d " ")" -eq 3 ] \
+            || { echo "FAIL: exact 日本 contains duplicate text positions" >&2; exit 1; }
+        for expected in "日本〔にほんこく〕" "日本 (アルバム)〔にほん〕" "日本 (新聞)〔にっぽん〕"; do
+            expected_hex=$(printf "%s" "$expected" | iconv -f UTF-8 -t EUC-JP | od -An -tx1 | tr -d " \n")
+            printf "%s\n" "$japan_exact" | grep -q "$expected_hex" \
+                || { echo "FAIL: missing reading heading $expected" >&2; exit 1; }
+        done
+
+        echo "OK: honmon built and searchable for a variable-shaped 6-entry set" \
             "(title + multi-alias headwords both resolve correctly)"
     '

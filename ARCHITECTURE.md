@@ -1090,6 +1090,12 @@ Full:
 - lead bold term
 - configured keyword
 
+括弧付き同名記事（例: `日本 (アルバム)`）は、完全一致検索でも候補を失わないよう
+括弧前の基底タイトル（`日本`）を追加のaliasとして持つ。検索キーと表示見出しは
+分離し、表示見出しには導入部で記事名に明示的に付随する仮名読みだけを
+`記事名〔よみ〕`形式で付与する。読みを推測してはならず、抽出できない場合は元の
+記事名をそのまま表示する。
+
 本文全単語の全文索引は初期スコープ外です。
 
 ---
@@ -1186,6 +1192,7 @@ class RenderedEntry:
     entry_id: str
     page_id: int
     title: str
+    heading: str | None
     headwords: tuple[str, ...]
     body: tuple["RenderNode", ...]
     internal_targets: tuple[str, ...]
@@ -1193,6 +1200,9 @@ class RenderedEntry:
     estimated_size: int
     diagnostics: tuple[Diagnostic, ...]
 ```
+
+`title`は記事の正規タイトルおよび検索語生成の入力、`heading`はEPWING検索結果に
+表示する見出しである。両者を混同せず、読み表示の追加で検索キーを変化させない。
 
 ### 16.1 entry ID
 
@@ -1293,6 +1303,7 @@ class EpwingBackend(Protocol):
 - command invocation
 - stderr解析
 - output構造確認
+- EUC-JP変換後かつFreePWING `BaseWord`正規化後の同一検索キー・同一本文位置の重複除去
 
 非責務:
 

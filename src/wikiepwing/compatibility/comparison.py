@@ -48,6 +48,7 @@ class QueryComparison:
     candidate_present: bool
     presence_matches_expectation: bool
     overlap_at_n: float | None
+    rank_agreement_at_n: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ class ComparisonSummary:
     target_coverage: float
     false_positive_count: int
     overlap_at_n_mean: float | None
+    rank_agreement_at_n_mean: float | None
     per_query: tuple[QueryComparison, ...]
 
 
@@ -76,6 +78,7 @@ def compare_query_results(
     covered = 0
     false_positives = 0
     overlaps: list[float] = []
+    rank_agreements: list[float] = []
 
     for reference_hit_set in reference:
         candidate_hit_set = candidate_by_key.get(reference_hit_set.query_key)
@@ -95,6 +98,11 @@ def compare_query_results(
         overlap_at_n = _overlap_at_n(reference_hit_set.headings, candidate_hit_set.headings)
         if overlap_at_n is not None:
             overlaps.append(overlap_at_n)
+        rank_agreement_at_n = _rank_agreement_at_n(
+            reference_hit_set.headings, candidate_hit_set.headings
+        )
+        if rank_agreement_at_n is not None:
+            rank_agreements.append(rank_agreement_at_n)
 
         per_query.append(
             QueryComparison(
@@ -103,6 +111,7 @@ def compare_query_results(
                 candidate_present=candidate_present,
                 presence_matches_expectation=matches,
                 overlap_at_n=overlap_at_n,
+                rank_agreement_at_n=rank_agreement_at_n,
             )
         )
 
@@ -112,6 +121,9 @@ def compare_query_results(
         target_coverage=covered / total if total else 0.0,
         false_positive_count=false_positives,
         overlap_at_n_mean=sum(overlaps) / len(overlaps) if overlaps else None,
+        rank_agreement_at_n_mean=(
+            sum(rank_agreements) / len(rank_agreements) if rank_agreements else None
+        ),
         per_query=tuple(per_query),
     )
 
@@ -123,6 +135,21 @@ def _overlap_at_n(
         return None
     intersection = set(reference_headings) & set(candidate_headings)
     return len(intersection) / len(set(reference_headings))
+
+
+def _rank_agreement_at_n(
+    reference_headings: tuple[str, ...], candidate_headings: tuple[str, ...]
+) -> float | None:
+    """Return the fraction of reference ranks occupied by the same heading."""
+    if not reference_headings:
+        return None
+    matches = sum(
+        reference_heading == candidate_heading
+        for reference_heading, candidate_heading in zip(
+            reference_headings, candidate_headings, strict=False
+        )
+    )
+    return matches / len(reference_headings)
 
 
 @dataclass(frozen=True, slots=True)

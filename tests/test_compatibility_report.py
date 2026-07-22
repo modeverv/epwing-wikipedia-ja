@@ -38,6 +38,7 @@ def test_build_compatibility_report_matches_schema_fields() -> None:
         "target_coverage": 1.0,
         "false_positive_count": 0,
         "overlap_at_n_mean": 1.0,
+        "rank_agreement_at_n_mean": 1.0,
     }
     assert payload["thresholds"] == {"min_target_coverage": 0.95, "max_false_positives": 0}
     assert payload["status"] == "pass"
@@ -72,6 +73,7 @@ def test_write_compatibility_report_writes_json_and_html(tmp_path: Path) -> None
     html_text = html_path.read_text(encoding="utf-8")
     assert "pass" in html_text
     assert "target_coverage" in html_text
+    assert "rank_agreement_at_n_mean" in html_text
 
 
 def test_write_compatibility_report_html_reflects_fail_status(tmp_path: Path) -> None:
@@ -124,6 +126,7 @@ def test_build_compatibility_report_handles_none_overlap() -> None:
     )
 
     assert payload["queries"]["overlap_at_n_mean"] is None  # type: ignore[index]
+    assert payload["queries"]["rank_agreement_at_n_mean"] is None  # type: ignore[index]
 
 
 def test_write_compatibility_report_renders_html_with_none_overlap(tmp_path: Path) -> None:

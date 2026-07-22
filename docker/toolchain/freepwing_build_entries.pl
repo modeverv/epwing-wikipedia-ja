@@ -23,6 +23,7 @@ use Encode qw(encode);
 use Fcntl qw(SEEK_SET);
 use File::Temp qw(tempdir);
 use FreePWING::FPWUtils::FPWParser;
+use FreePWING::CharConv;
 use POSIX qw(_exit);
 use Storable qw(freeze thaw);
 
@@ -70,6 +71,51 @@ sub is_empty_search_word {
     my ($value) = @_;
     $value =~ s/(?:[ '\-]|\xa1(?:\xa1|\xa6|\xbe|\xc7|\xdd))//g;
     return $value eq '';
+}
+
+# Mirror FreePWING::BaseWord's key normalization so aliases which become the
+# same index key after EUC-JP conversion are registered only once for the same
+# heading/text position. Raw-string deduplication is insufficient because the
+# backend removes spaces/punctuation, folds ASCII case, and maps ASCII to its
+# JIS X 0208 form before sorting the index.
+sub canonical_search_word {
+    my ($value) = @_;
+    my @bytes = unpack('C*', $value);
+    my $fixed = '';
+    my $index = 0;
+    while ($index < @bytes) {
+        my $first = $bytes[$index];
+        if ($first == 0x20 || $first == 0x27 || $first == 0x2d) {
+            $index++;
+        } elsif (0x21 <= $first && $first <= 0x7e) {
+            $first -= 0x20 if 0x61 <= $first && $first <= 0x7a;
+            $fixed .= $FreePWING::CharConv::ascii_to_jisx0208_table->[$first - 0x20];
+            $index++;
+        } elsif (0xa1 <= $first && $first <= 0xfe) {
+            my $second = $bytes[$index + 1];
+            die sprintf("invalid character in search word: \\x%02x\n", $first)
+                if !defined($second) || $second < 0xa1 || 0xfe < $second;
+            if ($first == 0xa3 && 0xc1 <= $second && $second <= 0xda) {
+                $fixed .= pack('CC', $first & 0x7f, ($second - 0x20) & 0x7f);
+            } elsif ($first == 0xa1
+                && ($second == 0xa1 || $second == 0xc7 || $second == 0xdd
+                    || $second == 0xa6 || $second == 0xbe)) {
+                # FreePWING removes these JIS X 0208 punctuation characters.
+            } else {
+                $fixed .= pack('CC', $first & 0x7f, $second & 0x7f);
+            }
+            $index += 2;
+        } elsif ($first == 0x8e) {
+            my $second = $bytes[$index + 1];
+            die sprintf("invalid kana in search word: \\x%02x\n", $first)
+                if !defined($second) || $second < 0xa1 || 0xfe < $second;
+            $fixed .= $FreePWING::CharConv::jisx0201_to_jisx0208_table->[$second - 0xa0];
+            $index += 2;
+        } else {
+            die sprintf("invalid character in search word: \\x%02x\n", $first);
+        }
+    }
+    return $fixed;
 }
 
 # GAIJI_TOKEN matches wikiepwing.gaiji.embedding.GAIJI_TOKEN_FORMAT
@@ -261,6 +307,8 @@ sub parse_chunk {
             if !defined($tag) || $tag !~ /\A[a-z][a-z0-9_-]{0,31}\z/;
         die "empty title for tag $tag\n"
             if !defined($record->{title}) || $record->{title} eq '';
+        die "empty heading for tag $tag\n"
+            if exists($record->{heading}) && (!defined($record->{heading}) || $record->{heading} eq '');
 
         my @targets = map { to_euc_jp($_) } @{$record->{targets} // []};
         my %declared_targets = map { $_ => 1 } @targets;
@@ -281,6 +329,7 @@ sub parse_chunk {
         my $frozen = freeze({
             tag => $tag,
             title => to_euc_jp($record->{title}),
+            heading => to_euc_jp($record->{heading} // $record->{title}),
             aliases => [map { to_euc_jp($_) } @{$record->{aliases} // []}],
             keywords => [map { to_euc_jp($_) } @{$record->{keywords} // []}],
             body_ops => $body_ops,
@@ -382,7 +431,7 @@ for my $spool_path (@spools) {
 
         $text->new_entry() or die "text->new_entry failed for tag $entry->{tag}: " . ($text->error_message() // '') . "\n";
         $heading->new_entry() or die "heading->new_entry failed for tag $entry->{tag}: " . ($heading->error_message() // '') . "\n";
-        $heading->add_text($entry->{title}) or die "heading->add_text failed for tag $entry->{tag}: " . ($heading->error_message() // '') . "\n";
+        $heading->add_text($entry->{heading}) or die "heading->add_text failed for tag $entry->{tag}: " . ($heading->error_message() // '') . "\n";
 
         if (!defined $first_heading_pos) {
             $first_heading_pos = $heading->entry_position();
@@ -402,13 +451,14 @@ for my $spool_path (@spools) {
 
         my %seen_in_entry;
         for my $headword ($entry->{title}, @{$entry->{aliases}}) {
-            next if $seen_in_entry{$headword}++;
             if (is_empty_search_word($headword)) {
                 $skipped_empty_headwords++;
                 print STDERR "headword skipped tag=$entry->{tag} "
                     . "reason=word-is-empty value=$headword\n";
                 next;
             }
+            my $canonical = canonical_search_word($headword);
+            next if $seen_in_entry{$canonical}++;
             $duplicate_headwords++ if $global_headwords{$headword}++;
             $word2->add_entry($headword, $heading->entry_position(), $text->entry_position())
                 or die "headword rejected for tag $entry->{tag}: "

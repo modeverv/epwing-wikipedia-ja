@@ -31,6 +31,7 @@ stable tie-break for same-priority collisions (14.2).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
@@ -61,6 +62,8 @@ _HEADING_KEYWORD_PRIORITY = 400
 _INFOBOX_KEYWORD_PRIORITY = 300
 _LEAD_ALIAS_PRIORITY = 200
 _CROSS_COMPONENT_PRIORITY = 100
+
+_PARENTHETICAL_TITLE = re.compile(r"^(.+?)\s*[（(][^（）()]+[）)]$")
 
 _BUDGETED_KINDS = frozenset({"keyword", "cross_component"})
 
@@ -113,6 +116,20 @@ def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
         )
     ]
     terms.extend(_variant_terms(title_normalized_key, article.page_id))
+    parenthetical_base = _parenthetical_base_title(article.title)
+    if parenthetical_base is not None:
+        base_normalized_key = normalize_index_key(parenthetical_base)
+        terms.append(
+            SearchTerm(
+                key=parenthetical_base,
+                normalized_key=base_normalized_key,
+                target_page_id=article.page_id,
+                kind="alias",
+                priority=_NORMALIZED_TITLE_VARIANT_PRIORITY,
+                source="parenthetical_base_title",
+            )
+        )
+        terms.extend(_variant_terms(base_normalized_key, article.page_id))
     for alias in article.aliases:
         if alias.source != "redirect":
             continue
@@ -129,6 +146,14 @@ def title_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
         )
         terms.extend(_variant_terms(alias_normalized_key, article.page_id))
     return tuple(terms)
+
+
+def _parenthetical_base_title(title: str) -> str | None:
+    match = _PARENTHETICAL_TITLE.fullmatch(title)
+    if match is None:
+        return None
+    base = match.group(1).strip()
+    return base or None
 
 
 def category_terms_for_article(article: Article) -> tuple[SearchTerm, ...]:
