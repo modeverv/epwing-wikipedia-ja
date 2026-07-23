@@ -304,6 +304,20 @@ sh docker/toolchain/build-epwing.sh \
 
 -->
 
+## Emacs Lookup連携(画像インライン表示)
+
+Mini profileのようにEPWING本体へ画像(BMP/graphics)を埋め込んでいない場合、本文中の画像箇所は`【画像|URL】`という参照テキストに置き換わります([mini_layout.py](src/wikiepwing/render/mini_layout.py)の`ImageBlock`フォールバック出力)。`elisp/lookup-image-url.el`は、この参照テキストをEmacs Lookup(`lookup.el`)のエントリ表示バッファ(`lookup-content-mode`)内で検出し、画像をその場でダウンロードしてインライン表示する任意の拡張です。ビルドパイプラインには含まれず、[VIEWER_VERIFICATION.md](VIEWER_VERIFICATION.md)にあるlookup.elでの目視確認を補助する位置づけです。
+
+使い方(Emacs初期化ファイルに追加):
+
+```elisp
+(add-to-list 'load-path "/path/to/epwing-wikipedia/elisp")
+(require 'lookup-image-url)
+(lookup-image-url-setup)
+```
+
+`lookup-image-url-setup`が`lookup-content-mode-hook`へ自動描画フックを登録し、エントリ表示のたびに画像URLを検出・インライン表示します。手動で表示/非表示を切り替えるには`M-x lookup-image-url-toggle`を使用してください。ダウンロードした画像は`lookup-image-url-cache-dir`(既定: `~/.emacs.d/lookup-image-cache/`)にキャッシュされます。
+
 ## ライセンス
 
 プログラムのライセンスと、生成辞書に含まれるWikipedia本文・画像のライセンスは別です。生成物には入力Snapshot、Wikipediaライセンス、画像帰属情報、ビルドツール情報を含めます。
